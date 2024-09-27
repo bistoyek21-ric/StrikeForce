@@ -26,8 +26,8 @@ SOFTWARE.
 
 signed main(){
 	std::ios::sync_with_stdio(false), std::cin.tie(nullptr);
-	Enviorment::Item::download_items();
-	Enviorment::Random::make_p();
+	Environment::Item::download_items();
+	Environment::Random::make_p();
 	#if defined(__unix__) || defined(__APPLE__)
 	signal(SIGINT, handleSignal);
 	signal(SIGTERM, handleSignal);

@@ -30,10 +30,10 @@ signed main(){
 	Enviorment::Random::make_p();
 	#if defined(__unix__) || defined(__APPLE__)
 	signal(SIGINT, handleSignal);
-    signal(SIGTERM, handleSignal);
-    #else
-    SetConsoleCtrlHandler(ConsoleHandler, TRUE);
-    #endif
+	signal(SIGTERM, handleSignal);
+	#else
+	SetConsoleCtrlHandler(ConsoleHandler, TRUE);
+	#endif
 	enter();
 	return 0;
 }

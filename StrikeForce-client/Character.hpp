@@ -24,19 +24,19 @@ SOFTWARE.
 */
 #include"Item.hpp"
 
-namespace Enviorment::Character{
+namespace Environment::Character{
 
 	const int wdx[4] = {1, 0, -1, 0}, wdy[4] = {0, 1, 0, -1};
 
 	class Backpack{
 
-	using pci = std::pair<Enviorment::Item::ConsumableItem, int>;
+	using pci = std::pair<Environment::Item::ConsumableItem, int>;
 
-	using pbii = std::pair<Enviorment::Item::Bullet, std::pair<int, int>>;
+	using pbii = std::pair<Environment::Item::Bullet, std::pair<int, int>>;
 
 	using pii = std::pair<int, int>;
 
-	using pwi = std::pair<Enviorment::Item::Weapon, int>;
+	using pwi = std::pair<Environment::Item::Weapon, int>;
 
 	private:
 		int capacity, lvl, vol, price;
@@ -57,17 +57,17 @@ namespace Enviorment::Character{
 		}
 
 		void build(){
-		    def_blocks = 8;
-		    def_portals = 1;
+			def_blocks = 8;
+			def_portals = 1;
 			capacity = 2000, lvl = 1, vol = 0, price = 100;
 			portal_ind = -1;
 			vec = ind = -1;
 			for(int i = 0; i < 4; ++i)
-				list_cons[i] = pci{Enviorment::Item::cons[i], 0};
+				list_cons[i] = pci{Environment::Item::cons[i], 0};
 			for(int i = 0; i < 4; ++i)
-				list_throw[i] = pbii{Enviorment::Item::throw_[i], pii{1, 0}};
+				list_throw[i] = pbii{Environment::Item::throw_[i], pii{1, 0}};
 			for(int i = 0; i < 8; ++i)
-				list_w[i] = pwi{Enviorment::Item::w[i], 0};
+				list_w[i] = pwi{Environment::Item::w[i], 0};
 			return;
 		}
 

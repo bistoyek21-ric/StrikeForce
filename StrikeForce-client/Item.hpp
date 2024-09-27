@@ -24,7 +24,7 @@ SOFTWARE.
 */
 #include "random.hpp"
 
-namespace Enviorment::Item{
+namespace Environment::Item{
 
 	class Item{
 

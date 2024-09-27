@@ -283,7 +283,7 @@ namespace Enviorment::Character{
 			mindamage += c.get_effect();
 			if((--backpack.list_cons[backpack.ind].second) < 1)
 				backpack.vec = -1;
-            backpack.set_vol(backpack.get_vol() - c.get_vol());
+            		backpack.set_vol(backpack.get_vol() - c.get_vol());
 			return true;
 		}
 
@@ -296,7 +296,7 @@ namespace Enviorment::Character{
 		}
 
 		bool shot_it(Enviorment::Item::Bullet &b){
-		    Enviorment::Item::Weapon w = backpack.list_w[backpack.ind].first;
+			Enviorment::Item::Weapon w = backpack.list_w[backpack.ind].first;
 			if(stamina + w.get_stamina() < 0)
 				return false;
 			stamina += w.get_stamina();
@@ -386,27 +386,42 @@ namespace Enviorment::Character{
 			sscanf(buffer, "%s", &nm);
 			while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
 				++buffer;
+			while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
+				++buffer;
 			name = (std::string)(nm);
 			sscanf(buffer, "%d %d %d", &def_Hp, &mindamage_def, &def_stamina);
-			for(int _ = 0; _ < 3; ++_)
+			for(int _ = 0; _ < 3; ++_){
 				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
 					++buffer;
+				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
+					++buffer;
+			}
 			Hp = def_Hp, mindamage = mindamage_def, stamina = def_stamina;
 			sscanf(buffer, "%d %d %d", &level_solo, &level_timer, &level_squad);
-			for(int _ = 0; _ < 3; ++_)
+			for(int _ = 0; _ < 3; ++_){
 				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
 					++buffer;
+				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
+					++buffer;
+			}
 			sscanf(buffer, "%d", &money);
 			while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
 				++buffer;
+			while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
+				++buffer;
 			sscanf(buffer, "%d %d %d %d", &rate_solo, &rate_timer, &rate_squad, &rate);
-			for(int _ = 0; _ < 4; ++_)
+			for(int _ = 0; _ < 4; ++_){
 				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
 					++buffer;
+				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
+					++buffer;
+			}
 			Hp = def_Hp, mindamage = mindamage_def, stamina = def_stamina;
 			for(int i = 0; i < 4; ++i){
 				sscanf(buffer, "%d", &backpack.list_cons[i].second);
 				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
+					++buffer;
+				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
 					++buffer;
 				backpack.set_vol(backpack.get_vol() + backpack.list_cons[i].second * backpack.list_cons[i].first.get_vol());
 			}
@@ -414,8 +429,12 @@ namespace Enviorment::Character{
 				sscanf(buffer, "%d", &backpack.list_throw[i].second.first);
 				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
 					++buffer;
+				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
+					++buffer;
 				sscanf(buffer, "%d", &backpack.list_throw[i].second.second);
 				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
+					++buffer;
+				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
 					++buffer;
 				for(int j = 0; j + 1 < backpack.list_throw[i].second.first; ++j)
 					backpack.list_throw[i].first.upgrade();
@@ -425,31 +444,31 @@ namespace Enviorment::Character{
 				sscanf(buffer, "%d", &backpack.list_w[i].second);
 				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
 					++buffer;
+				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
+					++buffer;
 				for(int j = 0; j < backpack.list_w[i].second; ++j)
 					backpack.list_w[i].first.upgrade();
 				backpack.set_vol(backpack.get_vol() + backpack.list_w[i].second * backpack.list_w[i].first.get_vol());
 			}
 			int k, k1;
 			sscanf(buffer, "%d", &k);
-			while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-				++buffer;
 			while(--k)
 				backpack.upgrade();
-            k1 = k = level_solo;
-            level_solo = 1;
+			k1 = k = level_solo;
+			level_solo = 1;
 			while(--k)
 				level_solo_up();
-            level_solo = k1;
-            k1 = k = level_timer;
-            level_timer = 1;
+			level_solo = k1;
+			k1 = k = level_timer;
+			level_timer = 1;
 			while(--k)
 				level_timer_up();
-            level_timer = k1;
-            k1 = k = level_squad;
-            level_squad = 1;
+			level_timer = k1;
+			k1 = k = level_squad;
+			level_squad = 1;
 			while(--k)
 				level_squad_up();
-            level_squad = k1;
+			level_squad = k1;
 			backpack.back_tmp();
 			return;
 		}

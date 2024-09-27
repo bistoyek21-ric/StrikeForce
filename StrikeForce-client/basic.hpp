@@ -82,7 +82,8 @@ int getch(){
 #include "win_arpa_inet.hpp"
 
 void usleep(int x){
-    return Sleep(x / 1000);
+	Sleep(x / 1000);
+	return;
 }
 
 int constexpr BK = 8, EN = 13;
@@ -130,17 +131,17 @@ std::string head(bool b = true){
 }
 
 void my_recv(int sock, char *buffer, const int buffer_size, int flag){
-    int len = 0;
+	int len = 0;
 	while(true){
-    	recv(sock, buffer, 1, 0);
-        if(!buffer[len])
+		recv(sock, buffer, 1, 0);
+		if(!buffer[len])
 			return;
 		++buffer;
 	}
 	return;
 }
 
-namespace Enviorment{
+namespace Environment{
 
 	namespace Random{
 

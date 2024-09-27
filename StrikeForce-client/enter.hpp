@@ -110,7 +110,7 @@ void sign_up(std::vector<std::pair<std::string, std::string>> &users){
 			std::cout << "username is taken" << std::endl;
 		if(b && s1 == "")
 			std::cout << "username can't be null" << std::endl;
-        if(b && s1 == "sign up")
+  if(b && s1 == "sign up")
 			std::cout << "username can't be sign up or sign in" << std::endl;
 		std::cout << "username: ";
 		std::cout.flush();
@@ -119,6 +119,11 @@ void sign_up(std::vector<std::pair<std::string, std::string>> &users){
 			sign_in(users);
 			return;
 		}
+		if(s1 == "sign up")
+			continue;
+		for(auto &e: s1)
+			if(e == ' ')
+				e = '_';
 		int ind = get_ind(users, s1);
 		if(ind == -1 && s1 != "")
 			break;
@@ -135,18 +140,10 @@ void sign_up(std::vector<std::pair<std::string, std::string>> &users){
 		std::cout << "password: ";
 		std::cout.flush();
 		psw(s2);
-		if(s2 == "sign in"){
-			sign_in(users);
-			return;
-		}
 		std::cout << std::endl;
 		std::cout << "confirm passwaord: ";
 		std::cout.flush();
 		psw(s3);
-		if(s3 == "sign in"){
-			sign_in(users);
-			return;
-		}
 		if(s2 == s3)
 			break;
 	}
@@ -158,9 +155,9 @@ void sign_up(std::vector<std::pair<std::string, std::string>> &users){
 	us.close();
 	ps.close();
 	#if defined(__unix__) || defined(__APPLE__)
-        system(("mkdir ./accounts/game/" + user).c_str());
+ system(("mkdir ./accounts/game/" + user).c_str());
 	#else
-        system(("mkdir .\\accounts\\game\\" + user).c_str());
+	system(("mkdir .\\accounts\\game\\" + user).c_str());
 	#endif
 	Environment::Character::init();
 	std::string modes[4] = {"", "solo", "timer", "squad"};
@@ -198,10 +195,9 @@ void sign_in(std::vector<std::pair<std::string, std::string>> &users){
 		std::cout << "password: ";
 		std::cout.flush();
 		psw(s2);
-		if(s2 == "sign up"){
-			sign_up(users);
-			return;
-		}
+		for(auto &e: s1)
+			if(e == ' ')
+				e = '_';
 		int ind = get_ind(users, s1);
 		if(ind != -1 && users[ind].first == s1 && users[ind].second == hs(s2)){
 			user = s1;
@@ -255,7 +251,7 @@ void enter(){
 	    if(c == '1'){
     		std::ofstream slo("./accounts/saved_login.txt");
 	    	slo << user << '\n';
-    		slo << time(0) << '\n';
+	    	slo << time(0) << '\n';
 		}
 		Environment::Character::recovery();
 		Environment::Character::menu();

@@ -373,7 +373,7 @@ namespace Environment::Field{
 				int server_port = 0;
 				std::cout << "Enter the server IP: ";
 				std::cout.flush();
-                		std::cin >> server_ip;
+                		getline(std::cin, server_ip);
                 		std::cout << "Enter the server port: ";
 				std::cout.flush();
 				std::string server_port_s;

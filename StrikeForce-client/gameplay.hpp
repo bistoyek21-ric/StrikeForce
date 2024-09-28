@@ -377,7 +377,7 @@ namespace Environment::Field{
                 		std::cout << "Enter the server port: ";
 				std::cout.flush();
 				std::string server_port_s;
-				std::cin >> server_port_s;
+				getline(std::cin, server_port_s);
 				for(auto e: server_port_s)
 					server_port = 10 * server_port + (e - '0');
 				server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);

@@ -81,7 +81,7 @@ namespace Environment::Field{
 				std::cout << "WSAStartup failed" << std::endl;
 				disconnect = true;
 				return;
-            }
+            		}
 			#endif
 			server_addr.sin_family = AF_INET;
 			server_addr.sin_port = htons(server_port);
@@ -224,16 +224,16 @@ namespace Environment::Field{
 			std::string ans = "";
 			if(s[3]){
 				if(s[10]){
-                    if(s[9])
+                    			if(s[9])
 						ans += c_col(35, 47, false) + "#";
-                    else
+                    			else
 						ans += c_col(35, 40, false) + "#";
-                }
-                else
+				}
+				else
 					ans += c_col(0, 0, false) + "#";
-                s[9] = 0;
+				s[9] = 0;
 				return ans;
-            }
+			}
 			if(s[0]){
 				if(!s[9]){
 					if(human == &hum[ind])
@@ -276,15 +276,15 @@ namespace Environment::Field{
 				if(s[10]){
 					if(s[9])
 						ans += c_col(35, 47, false) + "^";
-            		else
+					else
 						ans += c_col(35, 40, false) + "^";
-                }
-                else
-                	ans += c_col(0, 0, false) + "^";
-                s[9] = 0;
+				}
+				else
+					ans += c_col(0, 0, false) + "^";
+				s[9] = 0;
 				return ans;
-            }
-            s[9] = 0;
+			}
+            		s[9] = 0;
 			if(s[6])
 				return c_col(0, 0, false) + "v";
 			if(s[2])
@@ -297,7 +297,7 @@ namespace Environment::Field{
 			}
 			if(s[7]){
 				if(s[10])
-                    return c_col(35, 40, false) + "O";
+					return c_col(35, 40, false) + "O";
 				return c_col(32, 40, false) + "O";
 			}
 			return c_col(0, 0, false) + ".";
@@ -350,7 +350,7 @@ namespace Environment::Field{
 
 		char human_rnpc_bot(Environment::Character::Human& player) const{
 			if(frame % 50 == 1){
-                char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
+                		char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
 				return c[rand() % 8];
 			}
 			else if(rand() % 5 < 3)
@@ -370,19 +370,22 @@ namespace Environment::Field{
 			if(online){
 				disconnect = false;
 				std::string server_ip;
-				int server_port;
+				int server_port = 0;
 				std::cout << "Enter the server IP: ";
 				std::cout.flush();
-                std::cin >> server_ip;
-                std::cout << "Enter the server port: ";
+                		std::cin >> server_ip;
+                		std::cout << "Enter the server port: ";
 				std::cout.flush();
-				std::cin >> server_port;
+				std::string server_port_s;
+				std::cin >> server_port_s;
+				for(auto e: server_port_s)
+					server_port = 10 * server_port + (e - '0');
 				server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
 				client.start(server_ip, server_port);
 				if(disconnect){
-                    std::cout << "press space button to continue" << std::endl;
-                    while(getch() != ' ');
-                    return;
+                    			std::cout << "press space button to continue" << std::endl;
+					while(getch() != ' ');
+					return;
 				}
 				client.give_info();
 				client.get_info();

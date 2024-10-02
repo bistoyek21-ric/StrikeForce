@@ -27,10 +27,12 @@ To install and run this project, you need a C++ compiler. Follow these steps:
     ```sh
     g++ StrikeForce.cpp -o StrikeForce -lws2_32
     ```
+    (If you using windows you have to enter the linker -lws2_32)
 4. Run the executable:
     ```sh
     ./StrikeForce
     ```
+    (If you using windows you souldn't enter "./" at the first)
 
 ---
 

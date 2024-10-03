@@ -33,8 +33,8 @@ To install and run this project, you need a C++ compiler. Follow these steps:
     ```
 
 Attention:\
-    If you using windows you have to enter the linker -lws2_32 otherwise you shouldn't.\
-    If you using windows you souldn't enter "./" at the first.\
+    1. If you using windows you have to enter the linker -lws2_32 otherwise you shouldn't.\
+    2. If you using windows you souldn't enter "./" at the first.
     
 ---
 

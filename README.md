@@ -32,9 +32,9 @@ To install and run this project, you need a C++ compiler. Follow these steps:
     ./StrikeForce
     ```
 
-Attention:
-    If you using windows you have to enter the linker -lws2_32 otherwise you shouldn't.
-    If you using windows you souldn't enter "./" at the first
+Attention:\
+    If you using windows you have to enter the linker -lws2_32 otherwise you shouldn't.\
+    If you using windows you souldn't enter "./" at the first.\
     
 ---
 

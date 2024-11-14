@@ -82,7 +82,7 @@ int getch(){
 #include "win_arpa_inet.hpp"
 
 void usleep(int x){
-	Sleep(x / 1000);
+	Sleep((x + 500) / 1000);
 	return;
 }
 
@@ -128,6 +128,24 @@ std::string head(bool b = true){
 	if(b)
 		std::cout << res;
 	return res;
+}
+
+int damage(int x, int y){
+    int l = 0, r = x + 1, z = 2;
+    while(1 < y){
+        y >>= 1;
+        ++z;
+    }
+    while(r - l > 1){
+        int mid = (l + r) >> 1, tmp = x;
+        for(int i = 0; i < z && mid; ++i)
+            tmp /= mid;
+        if(tmp)
+            l = mid;
+        else
+            r = mid;
+    }
+    return l;
 }
 
 void my_recv(int sock, char *buffer, const int buffer_size, int flag){

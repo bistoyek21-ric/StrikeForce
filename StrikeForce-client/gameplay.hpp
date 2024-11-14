@@ -899,11 +899,12 @@ namespace Environment::Field{
 			std::cout << " 1 : turn to left" << '\n';
 			std::cout << " 2 : turn to right" << '\n';
 			std::cout << " a : move to left" << '\n';
+			std::cout << " d : move to right" << '\n';
+			std::cout << " w : move to up" << '\n';
 			std::cout << " s : move to down" << '\n';
-			std::cout << " d : move to up" << '\n';
 			std::cout << " p : punch" << '\n';
 			std::cout << " [ : add block" << '\n';
-            std::cout << " ] : add portal" << '\n';
+			std::cout << " ] : add portal" << '\n';
 			std::cout << " (Item's sign)* : change item" << '\n';
 			std::cout << " u : use item(for consumables)" << '\n';
 			std::cout << " x : attack" << '\n';

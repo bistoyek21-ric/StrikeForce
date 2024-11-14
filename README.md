@@ -21,16 +21,18 @@ To install and run this project, you need a C++ compiler. Follow these steps:
     ```
 2. Navigate to the project directory:
     ```sh
-    cd StrikeForce
+    cd StrikeForce/StrikeForce-client
     ```
 3. Compile the project:
     ```sh
-    g++ StrikeForce.cpp -o StrikeForce -lws2_32
+    g++ main.cpp -o main -lws2_32
     ```
 4. Run the executable:
     ```sh
-    ./StrikeForce
+    ./main
     ```
+
+You should do almost the same thing to run the server the only difference is between the name of folders and source files.
 
 Attention:\
     1. If you using windows you have to enter the linker -lws2_32 otherwise you shouldn't.\

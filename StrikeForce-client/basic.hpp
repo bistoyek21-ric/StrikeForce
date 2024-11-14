@@ -148,15 +148,16 @@ int damage(int x, int y){
     return l;
 }
 
-void my_recv(int sock, char *buffer, const int buffer_size, int flag){
+int my_recv(int sock, char* buffer, const int buffer_size, int flags){
 	int len = 0;
-	while(true){
-		recv(sock, buffer, 1, 0);
-		if(!buffer[len])
-			return;
-		++buffer;
+	while(len < buffer_size){
+		if(recv(sock, buffer, 1, 0) < 0)
+            return -1;
+		if(!(*buffer))
+			return len;
+		++buffer, ++len;
 	}
-	return;
+	return len;
 }
 
 namespace Environment{

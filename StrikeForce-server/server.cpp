@@ -39,17 +39,20 @@ SOFTWARE.
 
 int constexpr PORT = 10000, BUFFER_SIZE = 2048, BS = 2;
 
-std::vector<int> clients;
-std::vector<bool> alive;
+std::vector<int> clients, team;
+std::vector<bool> alive, disconnect;
 std::vector<char> command;
 
 int n, cnt;
 
-void my_recv(int sock, char *buffer, const int buffer_size, int flag){
-    int len = 0;
+void my_recv(int sock, char* buffer, int i){
 	while(true){
-    	recv(sock, buffer, 1, 0);
-        if(!buffer[len])
+    	if(recv(sock, buffer, 1, 0) < 0){
+            (*buffer) = '_';
+            disconnect[i] = true;
+            return;
+        }
+        if(!(*buffer))
 			return;
 		++buffer;
 	}
@@ -61,29 +64,50 @@ void get_commands(){
 	for(int i = 0; i < n; ++i)
 		if(alive[i]){
 			memset(buffer, 0, BS);
-			my_recv(clients[i], buffer, BS, 0);
+			my_recv(clients[i], buffer, i);
 			sscanf(buffer, "%c", &command[i]);
-			if(command[i] == '_')
+			if(command[i] == '_'){
 				alive[i] = false, --cnt, close(clients[i]);
+                std::cout << "player with index " << i << " from team " << team[i] << (disconnect[i] ? " disconnected\n" : " eleminated\n");
+			}
 		}
 	return;
 }
 
 void give_commands(){
+    std::string msg;
 	for(int i = 0; i < n; ++i)
 		if(alive[i]){
-			for(int j  = 0; j < i; ++j)
+			for(int j = 0; j < i; ++j)
 				if(alive[j]){
-					char msg[2] = {command[j]};
-					send(clients[i], msg, 2, 0);
+                    msg = "", msg += command[j];
+					send(clients[i], msg.c_str(), 2, 0);
 				}
-			for(int j  = i + 1; j < n; ++j)
+				else if(disconnect[j]){
+                    send(clients[i], "_", 1, 0);
+                    disconnect[j] = false;
+				}
+			for(int j = i + 1; j < n; ++j)
 				if(alive[j]){
-					char msg[2] = {command[j]};
-					send(clients[i], msg, 2, 0);
+					msg = "", msg += command[j];
+					send(clients[i], msg.c_str(), 2, 0);
 				}
+                else if(disconnect[j]){
+                    send(clients[i], "_", 1, 0);
+                    disconnect[j] = false;
+                }
 		}
 	return;
+}
+
+int result(){
+    int winner = 0, num = 0;
+    for(int i = 0; i < n && num <= 1; ++i)
+        if(alive[i] && team[i] != winner)
+            ++num, winner = team[i];
+    if(num == 1)
+        return winner;
+    return 0;
 }
 
 int main(){
@@ -101,7 +125,6 @@ int main(){
 	gethostname(host, sizeof(host));
 	std::cout << "Server IP: " << inet_ntoa(*((struct in_addr*)gethostbyname(host)->h_addr_list[0])) << '\n';
 	std::cout << "Running on port: " << PORT << '\n';
-	std::vector<int> team;
 	time_t tb = time(nullptr);
 	srand(tb);
 	long long serial_number = ((rand() & 1023) << 20) + ((rand() & 1023) << 10) + (rand() & 1023);
@@ -111,8 +134,8 @@ int main(){
 	std::cout << "serial_number: " << serial_number << '\n';
 	std::cout << "-------------\n";
 	std::cout << '\n';
-	std::cout << "Please enter n (the number of the players) and  m (number of teams respectively)\n";
-	std::cout << "And enter the team of i-th player (they should be in range of [1, m])\n";
+	std::cout << "Please enter n (the number of the players)\nand m (number of teams) respectively\n";
+	std::cout << "And enter the team of i-th player\n(they should be in range of [1, m])\n";
 	std::cin >> n >> m;
 	for(int i = 0; i < n; ++i){
 		int num;
@@ -122,6 +145,7 @@ int main(){
 	cnt = n;
 	command.assign(n, '+');
 	alive.assign(n, true);
+	disconnect.assign(n, false);
 	int server_socket, client_socket;
 	struct sockaddr_in server_addr, client_addr;
 	socklen_t addr_len = sizeof(client_addr);
@@ -162,7 +186,7 @@ int main(){
 	for(int i = 0; i < n; ++i){
 		char buffer[BUFFER_SIZE];
 		memset(buffer, 0, BUFFER_SIZE);
-		my_recv(clients[i], buffer, BUFFER_SIZE, 0);
+		my_recv(clients[i], buffer, i);
 		for(int j = 0; j < n; ++j)
 			if(i != j){
 				send(clients[j], buffer, strlen(buffer) + 1, 0);
@@ -170,10 +194,36 @@ int main(){
 				send(clients[j], msg.c_str(), msg.size() + 1, 0);
 			}
     }
-	while(cnt){
+    for(int client_socket: clients){
+        struct timeval timeout;
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+        #if defined(__unix__) || defined(__APPLE__)
+        auto t = &timeout;
+        #else
+        int ms = 1000;
+        char* t = (char*)&ms;
+        #endif
+        if(setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, t, sizeof(timeout)) < 0){
+            std::cout << "Error setting socket options" << '\n';
+            return 1;
+        }
+    }
+    int winner = 0;
+	while(!winner && cnt){
 		get_commands();
 		give_commands();
+		winner = result();
 	}
+	std::cout << "Final result" << '\n';
+	if(winner)
+        std::cout << "Team " << winner << " won the match!!!\n";
+    else
+        std::cout << "This match didn't have a winner.\n";
+    std::cout << "___________________________\n";
+	std::string str = "";
+	while(str != "done!")
+        std::cin >> str;
 	close(server_socket);
 	#if !defined(__unix__) && !defined(__APPLE__)
     WSACleanup();

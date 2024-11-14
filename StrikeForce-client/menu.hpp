@@ -363,6 +363,7 @@ namespace Environment::Character{
             std::cout << "  5. Show Back pack" << '\n';
             std::cout << "  6. Sign out" << '\n';
             std::cout << "  7. Clear history and sign out" << '\n';
+            std::cout << "  8. Exit" << '\n';
             std::cout << "\n----------------------------\n";
             std::cout << "to choose an option write it's section number" << '\n';
             std::cout << "----------------------------" << std::endl;
@@ -422,6 +423,8 @@ namespace Environment::Character{
                 user = "";
                 return;
             }
+            if(c == '8')
+                exit(0);
         }
         return;
     }

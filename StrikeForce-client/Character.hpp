@@ -259,8 +259,8 @@ namespace Environment::Character{
 	public:
 		Backpack backpack;
 
-		void show_backpack() const{
-	        backpack.show(money);
+		void show_backpack(bool b = false) const{
+	        backpack.show(money, b);
 	        return;
 	    }
 

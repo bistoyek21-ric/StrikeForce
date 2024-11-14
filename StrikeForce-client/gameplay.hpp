@@ -24,13 +24,6 @@ SOFTWARE.
 */
 #include "Character.hpp"
 
-#if defined(__unix__) || defined(__APPLE__)
-void handleSignal(int signal);
-
-#else
-BOOL WINAPI ConsoleHandler(DWORD signal);
-#endif
-
 int rand_(){
 	return rand();
 }
@@ -40,13 +33,13 @@ namespace Environment::Field{
 	int rand(){
 		return Environment::Random::_rand();
 	}
-
+    // if you changed the map you have to change F, N and M too
 	int constexpr F = 3, N = 29, M = 100, H = 9000, Z = 9000, B = 9000, C = 9000, lim_portal = 1000, lim_block = 1100;
 
-	int ind;
+	int ind, countdown;
 
 	bool disconnect;
-	// you can set symbol[0] = {'V', '>', 'A', '<'} if your terminal can't show unit seperators
+	// you can set symbol[0] = {'V', '>', 'A', '<'} if your terminal can't show unit separators
 	char command[H], symbol[8][4] = {{31, 16, 30, 17}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
 
     int agent[H];
@@ -68,6 +61,7 @@ namespace Environment::Field{
 	auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(50000000LL);
 
 	class Client{
+
 	public:
 		bool open = false;
 
@@ -83,7 +77,7 @@ namespace Environment::Field{
 				std::cout << "WSAStartup failed" << std::endl;
 				disconnect = true;
 				return;
-            		}
+            }
 			#endif
 			server_addr.sin_family = AF_INET;
 			server_addr.sin_port = htons(server_port);
@@ -115,8 +109,9 @@ namespace Environment::Field{
 		}
 
 		void send_it(){
-			char msg[2] = {command[ind]};
-			send(sock, msg, 2, 0);
+			std::string msg = "";
+			msg += command[ind];
+			send(sock, msg.c_str(), 2, 0);
 			return;
 		}
 
@@ -153,20 +148,43 @@ namespace Environment::Field{
 			return;
 		}
 
+		void prepare(){
+		    struct timeval timeout;
+            timeout.tv_sec = 1;
+            timeout.tv_usec = 0;
+            #if defined(__unix__) || defined(__APPLE__)
+            auto t = &timeout;
+            #else
+            int ms = 1000;
+            char* t = (char*)&ms;
+            #endif
+            if(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, t, sizeof(timeout)) < 0){
+                std::cout << "Error setting socket options" << '\n';
+                exit(1);
+            }
+            return;
+		}
+
 		void recieve(){
 			char buffer[BS];
 			for(int i = 0; i < ind; ++i){
 				if(!mh[i])
 					continue;
 				memset(buffer, 0, BS);
-				my_recv(sock, buffer, BS, 0);
+				if(my_recv(sock, buffer, BS, 0) < 0){
+                    command[ind] = '_';
+                    return;
+                }
 				sscanf(buffer, "%c", &command[i]);
 			}
 			for(int i = ind + 1; i < n; ++i){
 				if(!mh[i])
 					continue;
 				memset(buffer, 0, BS);
-				my_recv(sock, buffer, BS, 0);
+				if(my_recv(sock, buffer, BS, 0) < 0){
+                    command[ind] = '_';
+                    return;
+                }
 				sscanf(buffer, "%c", &command[i]);
 			}
 			return;
@@ -348,11 +366,11 @@ namespace Environment::Field{
 
 		node themap[F][N][M], themap1[F][N][M];
 
+		void print_game();
+
 		void view() const;
 
 		char bot(Environment::Character::Human& player) const;
-
-		void print_game();
 
 		char human_rnpc_bot(Environment::Character::Human& player) const{
 			if(frame % 50 == 1){
@@ -412,7 +430,7 @@ namespace Environment::Field{
 				}
 				return;
 			}
-			if(mode == "squad"){
+			if(mode == "Squad"){
 				ind = 0;
 				mh[ind] = true;
 				hum[ind] = Environment::Character::me;
@@ -444,7 +462,7 @@ namespace Environment::Field{
 				}
 				return;
 			}
-			if(mode == "solo" || mode == "timer"){
+			if(mode == "Solo" || mode == "Timer"){
 				ind = 0;
 				mh[ind] = true;
 				remote[ind] = false;
@@ -638,6 +656,10 @@ namespace Environment::Field{
 		}
 
 		void obey(const char c, Environment::Character::Human &player){
+		    if(c == '_'){
+                player.set_Hp(0);
+                return;
+		    }
 		    if(c == '[' || c == ']'){
                 std::vector<int> v = player.get_cor();
                 int d = player.get_way() - 1;
@@ -818,7 +840,7 @@ namespace Environment::Field{
 			}
 	        if(command[ind] == '-'){
 				silent = online;
-				hum[ind].show_backpack();
+				hum[ind].show_backpack(silent);
 				command[ind] = '+';
 				return;
 	        }
@@ -979,22 +1001,34 @@ namespace Environment::Field{
 		}
 
 		bool check_end(){
+		    if(command[ind] == '_'){
+                std::cout << "You're disconnected :(\n";
+                std::cout << "press space button to continue" << std::endl;
+				hum[ind].back_Hp();
+				hum[ind].back_mindamage();
+				hum[ind].back_stamina();
+				hum[ind].backpack.back_tmp();
+				if(online)
+					client.end_it();
+				while(getch() != ' ');
+				return true;
+		    }
 			if(hum[ind].get_Hp() <= 0){
-				std::cout << "You Died :(\n";
+                if(online){
+					command[ind] = '_';
+					client.send_it();
+					client.end_it();
+				}
+                std::cout << "You Died :(\n";
 				std::cout << "press space button to continue" << std::endl;
 				hum[ind].back_Hp();
 				hum[ind].back_mindamage();
 				hum[ind].back_stamina();
 				hum[ind].backpack.back_tmp();
-				if(online){
-					command[ind] = '_';
-					client.send_it();
-					client.end_it();
-				}
 				while(getch() != ' ');
 				return true;
 			}
-			if(mode == "timer"){
+			if(mode == "Timer"){
 				if(time(0) - tb >= level * 60 * 5){
 					if(kills < level * 5){
 						std::cout << "You Lost :(\n";
@@ -1024,7 +1058,7 @@ namespace Environment::Field{
 				}
 				return false;
 			}
-			if(level * 5 <= kills && mode == "solo"){
+			if(level * 5 <= kills && mode == "Solo"){
 				std::cout << "You won :)\n";
 				std::cout << "reward: " << (int)(hum[ind].get_level_solo() == level) * level * 1000 + loot << "$\n";
 				std::cout << "level " << level << " has done successfully!\n";
@@ -1039,7 +1073,7 @@ namespace Environment::Field{
 				while(getch() != ' ');
 				return true;
 			}
-			if(level * 10 <= teams_kills && rivals_are_dead() && mode == "squad"){
+			if(level * 10 <= teams_kills && rivals_are_dead() && mode == "Squad"){
 				std::cout << "You won :)\n";
 				std::cout << "reward: " << (int)(hum[ind].get_level_squad() == level) * level * 1000 + loot << "$\n";
 				std::cout << "level " << level << " has done successfully!\n";
@@ -1055,13 +1089,14 @@ namespace Environment::Field{
 				return true;
 			}
 			if(online && rivals_are_dead()){
+                if(countdown > 0){
+                    --countdown;
+                    return false;
+                }
 				c_col(32, 40);
 				std::cout << "*** Congratulations! You won the match :) ***";
 				c_col(0, 0);
 				std::cout << "\npress space button to continue" << std::endl;
-				command[ind] = '_';
-				client.send_it();
-				client.end_it();
 				while(getch() != ' ');
 				std::cout.flush();
 				return true;
@@ -1070,6 +1105,7 @@ namespace Environment::Field{
 		}
 
 		void setup(){
+		    countdown = 1;
 			Environment::Character::me.backpack.vec = -1;
 			tb = time(nullptr);
 			loot = teams_kills = kills = frame = 0;
@@ -1224,6 +1260,8 @@ namespace Environment::Field{
 			setup();
 			if(disconnect && online)
 				return;
+            if(online)
+                client.prepare();
 			start = std::chrono::steady_clock::now();
 			view();
 			++frame, find_recom(), print_game();
@@ -1437,21 +1475,14 @@ namespace Environment::Field{
 	} g;
 
 	void gameplay::print_game(){
-        if(silent){
-            if(agent[ind] != -1)
-                return;
-            auto end_ = std::chrono::steady_clock::now();
-            int k = (lim.count() - (end_ - start).count() + 999) / 1000;
-            usleep(std::max(k, 0));
-            return;
-        }
         std::string res = "";
         if(!full){
-            res += head(false) + "Mode: ";
-            res += mode;
-            if(online)
-                res += ", ind = " + std::to_string(ind);
-            res += '\n' + "_____________________" + '\n';
+            res += head(false) + "Mode: " + mode;
+            if(online){
+                res += " | index: " + std::to_string(ind);
+                res += ", team: " + std::to_string(hum[ind].get_team());
+            }
+            res += "\n_____________________\n";
             res += c_col(33, 40, false);
             res += "Frame: " + std::to_string(frame) + "\n";
 			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
@@ -1480,7 +1511,7 @@ namespace Environment::Field{
 			else
 				res += "\n\n\n\n\n";
 			res += c_col(0, 0, false);
-            if(agent[ind] != -1){
+            if(agent[ind] == -1){
                 res += "to see the command list";
                 res += (!online ? " or pause the game" : "");
                 res += " press 0\n";
@@ -1500,32 +1531,15 @@ namespace Environment::Field{
             for(int j = v[2] - W; j <= v[2] + W; ++j)
                 res += themap[v[0]][i][j].showit_();
         res += c_col(0, 0, false);
-        puts(res.c_str());
+        if(silent){
+            if(agent[ind] != -1)
+                return;
+        }
+        else
+            puts(res.c_str());
         auto end_ = std::chrono::steady_clock::now();
         int k = (lim.count() - (end_ - start).count() + 999) / 1000;
         usleep(std::max(k, 0));
         return;
     }
 }
-
-#if defined(__unix__) || defined(__APPLE__)
-void handleSignal(int signal){
-    if((signal == SIGINT || signal == SIGTERM) && Environment::Field::client.open){
-    	Environment::Field::command[Environment::Field::ind] = '_';
-		Environment::Field::client.send_it();
-		Environment::Field::client.end_it();
-    }
-}
-
-#else
-BOOL WINAPI ConsoleHandler(DWORD signal){
-    if(signal == CTRL_CLOSE_EVENT && Environment::Field::client.open){
-    	Environment::Field::command[Environment::Field::ind] = '_';
-		Environment::Field::client.send_it();
-		Environment::Field::client.end_it();
-	}
-    return TRUE;
-}
-
-#endif
-/// g++ StrikeForce.cpp -o StrikeForce -lws2_32

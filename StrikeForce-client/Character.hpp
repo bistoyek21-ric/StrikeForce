@@ -147,7 +147,7 @@ namespace Environment::Character{
 		    return;
 		}
 
-		void show(int money, bool b = false){
+		void show(int money, bool b = false) const{
 			head();
 			std::cout << "Your money: " << money << "$\n";
 			std::cout << "Accopied volume: " << vol << " / " << capacity << "\n\n";
@@ -258,6 +258,11 @@ namespace Environment::Character{
 
 	public:
 		Backpack backpack;
+
+		void show_backpack() const{
+	        backpack.show(money);
+	        return;
+	    }
 
 		void set_team(int team){
 			this->team = team;

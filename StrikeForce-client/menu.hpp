@@ -376,7 +376,7 @@ namespace Environment::Character{
             if(c == '4')
                 history();
             if(c == '5')
-                me.backpack.show(me.get_money());
+                me.show_backpack();
             if(c == '6'){
                 head();
                 std::cout << "are you sure you want to sign out? (n: no / any other key: yes)" << std::endl;

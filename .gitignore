@@ -1,0 +1,6 @@
+*.exe
+*.ghc
+*.out
+
+/StrikeForce-client/accounts/game/*
+!/StrikeForce-client/accounts/game/.gitkeep

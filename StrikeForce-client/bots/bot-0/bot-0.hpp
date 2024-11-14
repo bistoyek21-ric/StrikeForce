@@ -25,7 +25,15 @@ SOFTWARE.
 #include "../../gameplay.hpp"
 
 namespace Environment::Field{
-	char gameplay::bot(Environment::Character::Human& player) const{
-		return '+';
-	}
+
+	void gameplay::view() const{
+	    for(int i = 0; i < H; ++i)
+            if(~agent[i])
+                int x;
+        return;
+    }
+
+    char gameplay::bot(Environment::Character::Human& player) const{
+        return '+';
+    }
 }

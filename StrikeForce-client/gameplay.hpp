@@ -49,6 +49,8 @@ namespace Environment::Field{
 	// you can set symbol[0] = {'V', '>', 'A', '<'} if your terminal can't show unit seperators
 	char command[H], symbol[8][4] = {{31, 16, 30, 17}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
 
+    int agent[H];
+
 	const std::string valid_commands = "12upxawsdfghjkl;'cvbnm,./[]+";
 
 	Environment::Item::Bullet bull[B];
@@ -224,9 +226,9 @@ namespace Environment::Field{
 			std::string ans = "";
 			if(s[3]){
 				if(s[10]){
-                    			if(s[9])
+                    if(s[9])
 						ans += c_col(35, 47, false) + "#";
-                    			else
+                    else
 						ans += c_col(35, 40, false) + "#";
 				}
 				else
@@ -346,6 +348,8 @@ namespace Environment::Field{
 
 		node themap[F][N][M], themap1[F][N][M];
 
+		void view() const;
+
 		char bot(Environment::Character::Human& player) const;
 
 		void print_game();
@@ -375,8 +379,8 @@ namespace Environment::Field{
 				int server_port = 0;
 				std::cout << "Enter the server IP: ";
 				std::cout.flush();
-                		getline(std::cin, server_ip);
-                		std::cout << "Enter the server port: ";
+                getline(std::cin, server_ip);
+                std::cout << "Enter the server port: ";
 				std::cout.flush();
 				std::string server_port_s;
 				getline(std::cin, server_port_s);
@@ -385,7 +389,7 @@ namespace Environment::Field{
 				server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
 				client.start(server_ip, server_port);
 				if(disconnect){
-                    			std::cout << "press space button to continue" << std::endl;
+                    std::cout << "press space button to continue" << std::endl;
 					while(getch() != ' ');
 					return;
 				}
@@ -571,6 +575,7 @@ namespace Environment::Field{
 			mb[pix->bullet - bull] = false;
 			if(pix->human->get_Hp() <= 0 && pix->human != &hum[ind]){
 				mh[pix->human - hum] = false;
+				agent[pix->human - hum] = -1;
 				pix->s[8] = true;
 				pix->s[0] = 0;
 				if(owner && owner->get_team() == hum[ind].get_team() && pix->human->get_team() != hum[ind].get_team()){
@@ -813,7 +818,7 @@ namespace Environment::Field{
 			}
 	        if(command[ind] == '-'){
 				silent = online;
-				hum[ind].backpack.show(hum[ind].get_money(), online);
+				hum[ind].show_backpack();
 				command[ind] = '+';
 				return;
 	        }
@@ -833,7 +838,7 @@ namespace Environment::Field{
 				else
 					--W;
 				W = std::min(M / 2 - 1, std::max(W, 0));
-                		command[ind] = '+';
+                command[ind] = '+';
 				return;
 			}
 			if(command[ind] == 'R' || command[ind] == 'T'){
@@ -862,7 +867,7 @@ namespace Environment::Field{
 
 		void human_action(){
 			my_command();
-			if(mode == "AI")
+			if(agent[ind] != -1)
 				command[ind] = bot(hum[ind]);
 			if(online){
 				client.send_it();
@@ -1077,8 +1082,10 @@ namespace Environment::Field{
 				active[i] = mb[i] = false;
 			for(int i = 0; i < Z; ++i)
 				mz[i] = false;
-			for(int i = 0; i < H; ++i)
+			for(int i = 0; i < H; ++i){
 				mh[i] = remote[i] = false;
+				agent[i] = -1;
+            }
 			for(int k = 0; k < F; ++k){
 				std::ifstream f("./map/floor" + std::to_string(k + 1) + ".txt");
 				for(int i = 0; i < N; ++i)
@@ -1218,7 +1225,8 @@ namespace Environment::Field{
 			if(disconnect && online)
 				return;
 			start = std::chrono::steady_clock::now();
-			print_game();
+			view();
+			++frame, find_recom(), print_game();
 			while(true){
         		start = std::chrono::steady_clock::now();
 				if(frame % pc == 1)
@@ -1235,15 +1243,15 @@ namespace Environment::Field{
 				zombie_action();
 				portal_damage();
 				update_tmp();
-				hit_human();
-				hit_zombie();
-				print_game();
+				hit_human(), hit_zombie();
+				view();
+				++frame, find_recom(), print_game();
 				start = std::chrono::steady_clock::now();
 				update_bull();
 				update_tmp();
-				hit_human();
-				hit_zombie();
-				print_game();
+				hit_human(), hit_zombie();
+				view();
+				++frame, find_recom(), print_game();
 				update_bull();
 			}
 			if(!online)
@@ -1274,7 +1282,7 @@ namespace Environment::Field{
 				if(c == '6')
 					return;
 				if(c == '1'){
-					mode = "solo";
+					mode = "Solo";
 					while(true){
 						head();
 						std::cout << "Game Mode: Solo\nChoose the level which you want to play:\n";
@@ -1299,7 +1307,7 @@ namespace Environment::Field{
 					continue;
 				}
 				if(c == '2'){
-					mode = "timer";
+					mode = "Timer";
 					while(true){
 						head();
 						std::cout << "Game Mode: Timer\n(You have to stay alive in all of the time)\nChoose the level which you want to play:\n";
@@ -1324,7 +1332,7 @@ namespace Environment::Field{
 					continue;
 				}
 				if(c == '3'){
-					mode = "squad";
+					mode = "Squad";
 					while(true){
 						head();
 						std::cout << "Game Mode: Squad\nChoose the level which you want to play:\n";
@@ -1370,14 +1378,12 @@ namespace Environment::Field{
 		void update(){
 			if(online || mode == "AI")
 				return;
-			std::string tmp = mode;
-			mode[0] = toupper(mode[0]);
 			int r_changes = (kills * 100 * level) / (time(0) - tb + 1);
-			if(mode == "timer")
+			if(mode == "Timer")
 				Environment::Character::me.set_rate_timer(Environment::Character::me.get_rate_timer() + r_changes);
-			else if(mode == "solo")
+			else if(mode == "Solo")
 				Environment::Character::me.set_rate_solo(Environment::Character::me.get_rate_solo() + r_changes);
-			else
+			else if(mode == "Squad")
 				Environment::Character::me.set_rate_squad(Environment::Character::me.get_rate_squad() + r_changes);
 			std::string s = ctime(&tb), ln;
 			std::ifstream hs("./accounts/game/" + user + "/" + user + ".txt");
@@ -1409,6 +1415,7 @@ namespace Environment::Field{
 				rank << vec[i] << '\n';
 			rank.close();
 			vec.clear();
+			std::string tmp = mode;
 			mode[0] = tolower(mode[0]);
 			std::ifstream rnk1("./accounts/ranking" + mode + ".txt");
 			while(getline(rnk1, ln))
@@ -1430,11 +1437,9 @@ namespace Environment::Field{
 	} g;
 
 	void gameplay::print_game(){
-        ++frame;
-        find_recom();
-        if(mode == "AI" && silent)
-            return;
         if(silent){
+            if(agent[ind] != -1)
+                return;
             auto end_ = std::chrono::steady_clock::now();
             int k = (lim.count() - (end_ - start).count() + 999) / 1000;
             usleep(std::max(k, 0));
@@ -1443,10 +1448,10 @@ namespace Environment::Field{
         std::string res = "";
         if(!full){
             res += head(false) + "Mode: ";
-            char c1 = mode[0];
-            mode[0] = toupper(mode[0]);
-            res += mode + '\n' + "_____________________" + '\n';
-            mode[0] = c1;
+            res += mode;
+            if(online)
+                res += ", ind = " + std::to_string(ind);
+            res += '\n' + "_____________________" + '\n';
             res += c_col(33, 40, false);
             res += "Frame: " + std::to_string(frame) + "\n";
 			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
@@ -1455,11 +1460,11 @@ namespace Environment::Field{
 			if(!online)
 				res += ", level: " + std::to_string(level);
 			res += "\n";
-			if(mode == "timer")
+			if(mode == "Timer")
 				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_timer() == level) * 1000 * level) + "\n";
-			else if(mode == "solo")
+			else if(mode == "Solo")
 				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_solo() == level) * 1000 * level) + "\n";
-			else if(mode == "squad")
+			else if(mode == "Squad")
 				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_squad() == level) * 1000 * level) + "\n";
 			res += "\nYou:\n";
 			res += hum[ind].subtitle();
@@ -1475,7 +1480,7 @@ namespace Environment::Field{
 			else
 				res += "\n\n\n\n\n";
 			res += c_col(0, 0, false);
-            if(mode != "AI"){
+            if(agent[ind] != -1){
                 res += "to see the command list";
                 res += (!online ? " or pause the game" : "");
                 res += " press 0\n";

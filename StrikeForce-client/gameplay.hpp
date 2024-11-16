@@ -434,6 +434,8 @@ namespace Environment::Field{
 						}
 					}
 				}
+				if(mode == "AI")
+					agent[ind] = 0;
 				return;
 			}
 			if(mode == "Squad"){
@@ -817,7 +819,7 @@ namespace Environment::Field{
                         command[ind] = 'a';
                 }
                 #endif
-				if(mode == "AI"){
+				if(agent[ind] != -1){
 					if(command[ind] == ' ')
 						silent = !silent;
 					command[ind] = '+';

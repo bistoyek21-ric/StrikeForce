@@ -1128,8 +1128,8 @@ namespace Environment::Field{
 				mz[i] = false;
 			for(int i = 0; i < H; ++i){
 				mh[i] = remote[i] = false;
-				agent[i] = -1;
-   }
+				agent[i] = -1, command[i] = '+';
+            }
 			for(int k = 0; k < F; ++k){
 				std::ifstream f("./map/floor" + std::to_string(k + 1) + ".txt");
 				for(int i = 0; i < N; ++i)
@@ -1191,7 +1191,7 @@ namespace Environment::Field{
 					std::vector<int> v = hum[ind].get_cor();
 					int dist = abs(v[1] - v1[1]) + abs(v[2] - v1[2]);
 					dist += 60 * (v[0] != v1[0]) + 5 * abs(v[0] - v1[0]);
-					if(dist < mn){
+					if(dist < mn && hum[i].get_team() != hum[ind].get_team()){
 						mn = dist;
 						is_human = true;
 						recomH = &hum[i];
@@ -1203,7 +1203,7 @@ namespace Environment::Field{
 					std::vector<int> v = hum[ind].get_cor();
 					int dist = abs(v[1] - v1[1]) + abs(v[2] - v1[2]);
 					dist += 60 * (v[0] != v1[0]) + 5 * abs(v[0] - v1[0]);
-					if(dist < mn){
+					if(dist < mn && hum[i].get_team() != hum[ind].get_team()){
 						mn = dist;
 						is_human = true;
 						recomH = &hum[i];
@@ -1268,8 +1268,8 @@ namespace Environment::Field{
 			setup();
 			if(disconnect && online)
 				return;
-   if(online)
-    client.prepare();
+            if(online)
+                client.prepare();
 			start = std::chrono::steady_clock::now();
 			view();
 			++frame, find_recom(), print_game();
@@ -1486,16 +1486,24 @@ namespace Environment::Field{
 	} g;
 
 	void gameplay::print_game() const{
+		if(silent){
+            if(agent[ind] != -1)
+                return;
+            auto end_ = std::chrono::steady_clock::now();
+            int k = (lim.count() - (end_ - start).count() + 999) / 1000;
+            usleep(std::max(k, 0));
+            return;
+        }
 		std::string res = "";
 		if(!full){
-			res += head(false) + "Mode: " + mode;
-           if(online){
-               res += " | index: " + std::to_string(ind);
-               res += ", team: " + std::to_string(hum[ind].get_team());
+		    res += head(false) + "Mode: " + mode;
+            if(online){
+                res += " | index: " + std::to_string(ind);
+                res += ", team: " + std::to_string(hum[ind].get_team());
             }
-           res += "\n_____________________\n";
-           res += c_col(33, 40, false);
-           res += "Frame: " + std::to_string(frame) + "\n";
+            res += "\n_____________________\n";
+            res += c_col(33, 40, false);
+            res += "Frame: " + std::to_string(frame) + "\n";
 			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
 			res += c_col(34, 40, false);
 			res += "Your teams' kills: " + std::to_string(teams_kills) + " (yours': " + std::to_string(kills) + ")";
@@ -1532,22 +1540,17 @@ namespace Environment::Field{
             res += "____________________________________________________\n";
         }
         else{
-          cls();
-          res += "0: command list\n";
+            cls();
+            res += "0: command list\n";
         }
         std::vector<int> v = hum[ind].get_cor();
         v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
         v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
         for(int i = v[1] - _H; i <= v[1] + _H; ++i, res += '\n')
-         for(int j = v[2] - W; j <= v[2] + W; ++j)
-           res += themap[v[0]][i][j].showit_();
+            for(int j = v[2] - W; j <= v[2] + W; ++j)
+                res += themap[v[0]][i][j].showit_();
         res += c_col(0, 0, false);
-        if(silent){
-         if(agent[ind] != -1)
-          return;
-        }
-        else
-         puts(res.c_str());
+        puts(res.c_str());
         auto end_ = std::chrono::steady_clock::now();
         int k = (lim.count() - (end_ - start).count() + 999) / 1000;
         usleep(std::max(k, 0));

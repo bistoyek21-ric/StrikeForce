@@ -33,7 +33,7 @@ namespace Environment::Field{
 	int rand(){
 		return Environment::Random::_rand();
 	}
-    // if you changed the map you have to change F, N and M too
+	// if you changed the map you have to change F, N and M too
 	int constexpr F = 3, N = 29, M = 100, H = 9000, Z = 9000, B = 9000, C = 9000, lim_portal = 1000, lim_block = 1100;
 
 	int ind, countdown;
@@ -42,7 +42,7 @@ namespace Environment::Field{
 	// you can set symbol[0] = {'V', '>', 'A', '<'} if your terminal can't show unit separators
 	char command[H], symbol[8][4] = {{31, 16, 30, 17}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
 
-    int agent[H];
+	int agent[H];
 
 	const std::string valid_commands = "12upxawsdfghjkl;'cvbnm,./[]+";
 
@@ -240,18 +240,17 @@ namespace Environment::Field{
 		Environment::Item::Bullet* bullet = nullptr;
 		Environment::Item::ConsumableItem* cons = nullptr;
 
-		std::string showit_(){
+		std::string showit_() const{
 			std::string ans = "";
 			if(s[3]){
 				if(s[10]){
-                    if(s[9])
-						ans += c_col(35, 47, false) + "#";
-                    else
+					if(s[9])
+							ans += c_col(35, 47, false) + "#";
+					else
 						ans += c_col(35, 40, false) + "#";
 				}
 				else
 					ans += c_col(0, 0, false) + "#";
-				s[9] = 0;
 				return ans;
 			}
 			if(s[0]){
@@ -275,7 +274,6 @@ namespace Environment::Field{
 					ans += c_col(35, 47, false);
 				else
 					ans += c_col(34, 47, false);
-				s[9] = 0;
 				ans += symbol[0][human->get_way() - 1];
 				ans += c_col(0, 0, false);
 				return ans;
@@ -287,7 +285,6 @@ namespace Environment::Field{
 					return ans;
 				}
 				ans += c_col(31, 47, false);
-				s[9] = 0;
 				ans += symbol[1][zombie->is_super()];
 				ans += c_col(0, 0, false);
 				return ans;
@@ -301,20 +298,16 @@ namespace Environment::Field{
 				}
 				else
 					ans += c_col(0, 0, false) + "^";
-				s[9] = 0;
 				return ans;
 			}
-            		s[9] = 0;
 			if(s[6])
 				return c_col(0, 0, false) + "v";
 			if(s[2])
 				return c_col(35, 40, false) + "*";
 			if(s[4])
 				return c_col(33, 40, false) + "?";
-			if(s[8]){
-				s[8] = 0;
+			if(s[8])
 				return c_col(0, 0, false) + "X";
-			}
 			if(s[7]){
 				if(s[10])
 					return c_col(35, 40, false) + "O";
@@ -323,7 +316,7 @@ namespace Environment::Field{
 			return c_col(0, 0, false) + ".";
 		}
 
-		char showit(){
+		char showit() const{
 			if(s[3])
 				return '#';
 			if(s[0])
@@ -343,6 +336,11 @@ namespace Environment::Field{
 			if(s[7])
 				return 'O';
 			return '.';
+		}
+
+		void update(){
+			s[8] = s[9] = 0;
+			return;
 		}
 	};
 
@@ -366,15 +364,23 @@ namespace Environment::Field{
 
 		node themap[F][N][M], themap1[F][N][M];
 
-		void print_game();
+		void print_game() const;
 
 		void view() const;
 
 		char bot(Environment::Character::Human& player) const;
 
+		void updmap(){
+			for(int i = 0; i < F; ++i)
+					for(int j = 0; j < N; ++j)
+						for(int k = 0; k < M; ++k)
+								themap[i][j][k].update();
+				return;
+			}
+
 		char human_rnpc_bot(Environment::Character::Human& player) const{
 			if(frame % 50 == 1){
-                		char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
+				char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
 				return c[rand() % 8];
 			}
 			else if(rand() % 5 < 3)
@@ -397,8 +403,8 @@ namespace Environment::Field{
 				int server_port = 0;
 				std::cout << "Enter the server IP: ";
 				std::cout.flush();
-                getline(std::cin, server_ip);
-                std::cout << "Enter the server port: ";
+				getline(std::cin, server_ip);
+				std::cout << "Enter the server port: ";
 				std::cout.flush();
 				std::string server_port_s;
 				getline(std::cin, server_port_s);
@@ -407,7 +413,7 @@ namespace Environment::Field{
 				server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
 				client.start(server_ip, server_port);
 				if(disconnect){
-                    std::cout << "press space button to continue" << std::endl;
+					std::cout << "press space button to continue" << std::endl;
 					while(getch() != ' ');
 					return;
 				}
@@ -1105,7 +1111,7 @@ namespace Environment::Field{
 		}
 
 		void setup(){
-		    countdown = 1;
+			countdown = 1;
 			Environment::Character::me.backpack.vec = -1;
 			tb = time(nullptr);
 			loot = teams_kills = kills = frame = 0;
@@ -1121,7 +1127,7 @@ namespace Environment::Field{
 			for(int i = 0; i < H; ++i){
 				mh[i] = remote[i] = false;
 				agent[i] = -1;
-            }
+   }
 			for(int k = 0; k < F; ++k){
 				std::ifstream f("./map/floor" + std::to_string(k + 1) + ".txt");
 				for(int i = 0; i < N; ++i)
@@ -1260,13 +1266,14 @@ namespace Environment::Field{
 			setup();
 			if(disconnect && online)
 				return;
-            if(online)
-                client.prepare();
+   if(online)
+    client.prepare();
 			start = std::chrono::steady_clock::now();
 			view();
 			++frame, find_recom(), print_game();
+			updmap();
 			while(true){
-        		start = std::chrono::steady_clock::now();
+				start = std::chrono::steady_clock::now();
 				if(frame % pc == 1)
 					spawn_chest();
 				if(frame % pz == 1)
@@ -1284,12 +1291,14 @@ namespace Environment::Field{
 				hit_human(), hit_zombie();
 				view();
 				++frame, find_recom(), print_game();
+				updmap();
 				start = std::chrono::steady_clock::now();
 				update_bull();
 				update_tmp();
 				hit_human(), hit_zombie();
 				view();
 				++frame, find_recom(), print_game();
+				updmap();
 				update_bull();
 			}
 			if(!online)
@@ -1474,17 +1483,17 @@ namespace Environment::Field{
 		}
 	} g;
 
-	void gameplay::print_game(){
-        std::string res = "";
-        if(!full){
-            res += head(false) + "Mode: " + mode;
-            if(online){
-                res += " | index: " + std::to_string(ind);
-                res += ", team: " + std::to_string(hum[ind].get_team());
+	void gameplay::print_game() const{
+		std::string res = "";
+		if(!full){
+			res += head(false) + "Mode: " + mode;
+           if(online){
+               res += " | index: " + std::to_string(ind);
+               res += ", team: " + std::to_string(hum[ind].get_team());
             }
-            res += "\n_____________________\n";
-            res += c_col(33, 40, false);
-            res += "Frame: " + std::to_string(frame) + "\n";
+           res += "\n_____________________\n";
+           res += c_col(33, 40, false);
+           res += "Frame: " + std::to_string(frame) + "\n";
 			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
 			res += c_col(34, 40, false);
 			res += "Your teams' kills: " + std::to_string(teams_kills) + " (yours': " + std::to_string(kills) + ")";
@@ -1521,22 +1530,22 @@ namespace Environment::Field{
             res += "____________________________________________________\n";
         }
         else{
-            cls();
-            res += "0: command list\n";
+          cls();
+          res += "0: command list\n";
         }
         std::vector<int> v = hum[ind].get_cor();
         v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
         v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
         for(int i = v[1] - _H; i <= v[1] + _H; ++i, res += '\n')
-            for(int j = v[2] - W; j <= v[2] + W; ++j)
-                res += themap[v[0]][i][j].showit_();
+         for(int j = v[2] - W; j <= v[2] + W; ++j)
+           res += themap[v[0]][i][j].showit_();
         res += c_col(0, 0, false);
         if(silent){
-            if(agent[ind] != -1)
-                return;
+         if(agent[ind] != -1)
+          return;
         }
         else
-            puts(res.c_str());
+         puts(res.c_str());
         auto end_ = std::chrono::steady_clock::now();
         int k = (lim.count() - (end_ - start).count() + 999) / 1000;
         usleep(std::max(k, 0));

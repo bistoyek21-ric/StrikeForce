@@ -1,8 +1,11 @@
 # StrikeForce
 ## Created by 21
 
-## Phase 1 (Creating the environment)
-### Author: Kasra Fouladi
+## Phase 2 (Developing the structures)
+#### Project Manager: Kasra Fouladi
+#### Authors: Kasra Fouladi, Parham Beikmohammad, Omid Talebpour
+
+(under development...)
 
 **StrikeForce** is an open-source, simple online game with a 1970s style. Experience exciting shooter gameplay and enjoy battle royale matches, available on Windows, Unix-based operating systems, and Apple devices.
 
@@ -51,7 +54,7 @@ Since this project is open-source, you can make your desired changes and create 
 
 Thank you! 😊
 
-**All material and intellectual rights of this environment belong to [@kasrafouladi](https://github.com/kasrafouladi) and [@bistoyek-official](https://github.com/bistoyek-official). Any plagiarism will be prosecuted.**
+**All material and intellectual rights of this environment belong to authors ([@kasrafouladi](https://github.com/kasrafouladi), [@omidagha2](https://github.com/omidagha2) and [@ParhamBeik](https://github.com/ParhamBeik))  and [@bistoyek-official](https://github.com/bistoyek-official). Any plagiarism will be prosecuted.**
 
 ---
 

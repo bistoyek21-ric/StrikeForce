@@ -4,3 +4,5 @@
 
 /StrikeForce-client/accounts/game/*
 ! /StrikeForce-client/accounts/game/.gitkeep
+
+/StrikeForce-client/data/

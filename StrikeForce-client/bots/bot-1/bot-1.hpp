@@ -26,9 +26,9 @@ SOFTWARE.
 
 bool training_mode = true;
 
-std::string attempt = "human_simulator";
-
 namespace Environment::Field{
+
+    auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(40000000LL);
 
 	void gameplay::print_game() const{
 		if(silent){
@@ -89,40 +89,35 @@ namespace Environment::Field{
             res += "0: command list\n";
         }
         std::vector<int> v = hum[ind].get_cor();
+        std::string last = "", color, cell;
         v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
         v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-        for(int i = v[1] - _H; i <= v[1] + _H; ++i, res += '\n')
-            for(int j = v[2] - W; j <= v[2] + W; ++j)
-                res += themap[v[0]][i][j].showit_();
-        res += c_col(0, 0, false);
+        for(int i = v[1] - _H; i <= v[1] + _H; ++i, res.push_back('\n'))
+            for(int j = v[2] - W; j <= v[2] + W; ++j){
+                cell = themap[v[0]][i][j].showit_();
+                color = "";
+                int cnt = 0, k = 0;
+                for(; k < cell.size(); ++k){
+                    if(cnt < 2)
+                        color.push_back(cell[k]);
+                    else
+                        res.push_back(cell[k]);
+                    if(cell[k] == 'm')
+                        ++cnt;
+                    if(cnt == 2 && color != last){
+                        res += color;
+                        last = color;
+                    }
+                }
+            }
+        color = c_col(0, 0, false);
+        if(last != color)
+            res += color;
         puts(res.c_str());
-        auto end_ = std::chrono::steady_clock::now();
-        int k = (lim.count() - (end_ - start).count() + 999) / 1000;
-        usleep(std::max(k, 0));
         return;
     }
 
 	void gameplay::view() const{
-        if(!frame){
-                ;
-        }
-	    std::ofstream data("./data/" + attempt + "/data.txt", std::ios::app);
-	    std::string res = "";
-	    std::vector<int> v = hum[ind].get_cor();
-        v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
-        v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-        for(int i = v[1] - _H; i <= v[1] + _H; ++i, res += '\n')
-            for(int j = v[2] - W; j <= v[2] + W; ++j){
-                std::string str = themap[v[0]][i][j].showit_();
-                int cnt = 0;
-                for(int k = 0; k < str.size(); ++k)
-                    if(str[k] != '\033')
-                        res.push_back(str[k]);
-            }
-        data << res << command[ind] << '\n';
-        data << v[0] << ' ' << v[1] << ' ' << v[2] << '\n';
-        // 1 2 + a w s d x
-        data.close();
         return;
     }
 

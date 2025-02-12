@@ -384,73 +384,51 @@ namespace Environment::Character{
 			return rnpc;
 		}
 
+		void scroll(const char* &buffer){
+		    while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
+                ++buffer;
+            while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
+                ++buffer;
+		    return;
+		}
+
 		void scan(const char* buffer){
 			backpack.build();
 			rnpc = false;
 			char nm[100] = {};
-			sscanf(buffer, "%s", &nm);
-			while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-				++buffer;
-			while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-				++buffer;
+			sscanf(buffer, "%s", &nm[0]);
+			scroll(buffer);
 			name = (std::string)(nm);
 			sscanf(buffer, "%d %d %d", &def_Hp, &mindamage_def, &def_stamina);
-			for(int _ = 0; _ < 3; ++_){
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
-			}
+			for(int _ = 0; _ < 3; ++_)
+				scroll(buffer);
 			Hp = def_Hp, mindamage = mindamage_def, stamina = def_stamina;
 			sscanf(buffer, "%d %d %d", &level_solo, &level_timer, &level_squad);
-			for(int _ = 0; _ < 3; ++_){
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
-			}
+			for(int _ = 0; _ < 3; ++_)
+                scroll(buffer);
 			sscanf(buffer, "%d", &money);
-			while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-				++buffer;
-			while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-				++buffer;
+			scroll(buffer);
 			sscanf(buffer, "%d %d %d %d", &rate_solo, &rate_timer, &rate_squad, &rate);
-			for(int _ = 0; _ < 4; ++_){
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
-			}
+			for(int _ = 0; _ < 4; ++_)
+                scroll(buffer);
 			Hp = def_Hp, mindamage = mindamage_def, stamina = def_stamina;
 			for(int i = 0; i < 4; ++i){
 				sscanf(buffer, "%d", &backpack.list_cons[i].second);
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
+				scroll(buffer);
 				backpack.set_vol(backpack.get_vol() + backpack.list_cons[i].second * backpack.list_cons[i].first.get_vol());
 			}
 			for(int i = 0; i < 4; ++i){
 				sscanf(buffer, "%d", &backpack.list_throw[i].second.first);
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
+				scroll(buffer);
 				sscanf(buffer, "%d", &backpack.list_throw[i].second.second);
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
+				scroll(buffer);
 				for(int j = 0; j + 1 < backpack.list_throw[i].second.first; ++j)
 					backpack.list_throw[i].first.upgrade();
 				backpack.set_vol(backpack.get_vol() + backpack.list_throw[i].second.second * backpack.list_throw[i].first.get_vol());
 			}
 			for(int i = 0; i < 8; ++i){
 				sscanf(buffer, "%d", &backpack.list_w[i].second);
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
+				scroll(buffer);
 				for(int j = 0; j < backpack.list_w[i].second; ++j)
 					backpack.list_w[i].first.upgrade();
 				backpack.set_vol(backpack.get_vol() + backpack.list_w[i].second * backpack.list_w[i].first.get_vol());

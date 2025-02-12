@@ -58,8 +58,6 @@ namespace Environment::Field{
 
 	std::chrono::time_point<std::chrono::steady_clock> start;
 
-	auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(50000000LL);
-
 	class Client{
 
 	public:

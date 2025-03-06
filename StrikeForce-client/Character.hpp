@@ -330,6 +330,22 @@ namespace Environment::Character{
 			return true;
 		}
 
+		std::vector<int> get_damage_effect() const{
+		    int vec = backpack.vec;
+		    int dmg = std::max(damage(mindamage_def, 1), mindamage);
+            if(vec == 1){
+                auto b = &backpack.list_throw[backpack.ind].first;
+                if(0 <= stamina + b->get_stamina())
+                    return {std::max({b->get_damage(), b->get_damage() + mindamage, dmg}), b->get_effect()};
+            }
+            if(vec == 2){
+                auto w = &backpack.list_w[backpack.ind].first;
+                if(0 <= stamina + w->get_stamina())
+                    return {std::max({damage(w->get_damage(), w->get_range()), w->get_damage() + mindamage, dmg}), w->get_effect()};
+            }
+            return {dmg, 0};
+		}
+
 		void set_rate(int rate){
 			this->rate = rate;
 			return;
@@ -629,10 +645,12 @@ namespace Environment::Character{
 		}
 
 		virtual std::string subtitle() override{
+		    std::vector<int> v = get_damage_effect();
 			return "username: " + name + ", Hp: " + std::to_string(Hp) + "\n" +
 			"stamina: " + std::to_string(stamina) + ", money: " + std::to_string(money) + "\n" +
 			"selected item: " + backpack.get_select() + ", mindamage: " + std::to_string(mindamage) +"\n" +
-			"coordinate: " + std::to_string(cor[0]) + ", " + std::to_string(cor[1]) + ", " + std::to_string(cor[2]) + "\n";
+			"coordinate: " + std::to_string(cor[0]) + ", " + std::to_string(cor[1]) + ", " + std::to_string(cor[2]) +
+			", damage: " + std::to_string(v[0]) + ", effect: " + std::to_string(v[1]) + "\n";
 		}
 	};
 

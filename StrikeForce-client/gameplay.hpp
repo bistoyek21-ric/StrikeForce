@@ -368,28 +368,15 @@ namespace Environment::Field{
 
 		char bot(Environment::Character::Human& player) const;
 
+		char human_rnpc_bot(Environment::Character::Human& player) const;
+
 		void updmap(){
 			for(int i = 0; i < F; ++i)
-					for(int j = 0; j < N; ++j)
-						for(int k = 0; k < M; ++k)
-								themap[i][j][k].update();
-				return;
-			}
-
-		char human_rnpc_bot(Environment::Character::Human& player) const{
-			if(frame % 50 == 1){
-				char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
-				return c[rand() % 8];
-			}
-			else if(rand() % 5 < 3)
-				return 'x';
-			else if(rand() % 5 < 3){
-				char c[7] = {'1', '2', 'a', 'w', 's', 'd', 'p'};
-				return c[rand() % 7];
-			}
-			char c[8] = {'+', 'u', 'f', 'g', 'h', 'j', '[', ']'};
-			return c[rand() % 8];
-		}
+                for(int j = 0; j < N; ++j)
+                    for(int k = 0; k < M; ++k)
+                        themap[i][j][k].update();
+            return;
+        }
 
 		void load_data(){
 			srand(tb);
@@ -793,16 +780,21 @@ namespace Environment::Field{
 			if(kbhit()){
 				command[ind] = getch();
 				#if defined(__unix__) || defined(__APPLE__)
-				if(command[ind] == 27 && kbhit() && getch() == 91){
+				if(command[ind] == 27 && kbhit()){
                     command[ind] = getch();
-                    if(command[ind] == 'A')
-                        command[ind] = 'w';
-                    else if(command[ind] == 'C')
-                        command[ind] = 'd';
-                    else if(command[ind] == 'B')
-                        command[ind] = 's';
-                    else if(command[ind] == 'D')
-                        command[ind] = 'a';
+                    if(command[ind] == 91){
+                        command[ind] = getch();
+                        if(command[ind] == 'A')
+                            command[ind] = 'w';
+                        else if(command[ind] == 'C')
+                            command[ind] = 'd';
+                        else if(command[ind] == 'B')
+                            command[ind] = 's';
+                        else if(command[ind] == 'D')
+                            command[ind] = 'a';
+                    }
+                    else
+                        ungetc(command[ind], stdin), command[ind] = '+';
                 }
 				#else
 				if((command[ind] == 0 || command[ind] == 224) && kbhit()){
@@ -815,6 +807,8 @@ namespace Environment::Field{
                         command[ind] = 's';
                     else if(command[ind] == 75)
                         command[ind] = 'a';
+                    else
+                        ungetc(command[ind], stdin), command[ind] = '+';
                 }
                 #endif
 				if(agent[ind] != -1){

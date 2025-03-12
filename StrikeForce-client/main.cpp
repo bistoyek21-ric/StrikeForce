@@ -26,6 +26,13 @@ SOFTWARE.
 
 signed main(){
 	std::ios::sync_with_stdio(false), std::cin.tie(nullptr);
+	#if !defined(__unix__) && !defined(__APPLE__)
+    HANDLE hProcess = GetCurrentProcess();
+    if(!SetPriorityClass(hProcess, REALTIME_PRIORITY_CLASS)){
+        std::cout << "its not real time" << std::endl;
+        getch();
+    }
+	#endif
 	Environment::Item::download_items();
 	Environment::Random::make_p();
 	enter();

@@ -330,6 +330,22 @@ namespace Environment::Character{
 			return true;
 		}
 
+		std::vector<int> get_damage_effect() const{
+		    int vec = backpack.vec;
+		    int dmg = std::max(damage(mindamage_def, 1), mindamage);
+            if(vec == 1){
+                auto b = &backpack.list_throw[backpack.ind].first;
+                if(0 <= stamina + b->get_stamina())
+                    return {std::max({b->get_damage(), b->get_damage() + mindamage, dmg}), b->get_effect()};
+            }
+            if(vec == 2){
+                auto w = &backpack.list_w[backpack.ind].first;
+                if(0 <= stamina + w->get_stamina())
+                    return {std::max({damage(w->get_damage(), w->get_range()), w->get_damage() + mindamage, dmg}), w->get_effect()};
+            }
+            return {dmg, 0};
+		}
+
 		void set_rate(int rate){
 			this->rate = rate;
 			return;
@@ -384,73 +400,51 @@ namespace Environment::Character{
 			return rnpc;
 		}
 
+		void scroll(const char* &buffer){
+		    while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
+                ++buffer;
+            while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
+                ++buffer;
+		    return;
+		}
+
 		void scan(const char* buffer){
 			backpack.build();
 			rnpc = false;
 			char nm[100] = {};
-			sscanf(buffer, "%s", &nm);
-			while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-				++buffer;
-			while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-				++buffer;
+			sscanf(buffer, "%s", &nm[0]);
+			scroll(buffer);
 			name = (std::string)(nm);
 			sscanf(buffer, "%d %d %d", &def_Hp, &mindamage_def, &def_stamina);
-			for(int _ = 0; _ < 3; ++_){
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
-			}
+			for(int _ = 0; _ < 3; ++_)
+				scroll(buffer);
 			Hp = def_Hp, mindamage = mindamage_def, stamina = def_stamina;
 			sscanf(buffer, "%d %d %d", &level_solo, &level_timer, &level_squad);
-			for(int _ = 0; _ < 3; ++_){
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
-			}
+			for(int _ = 0; _ < 3; ++_)
+                scroll(buffer);
 			sscanf(buffer, "%d", &money);
-			while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-				++buffer;
-			while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-				++buffer;
+			scroll(buffer);
 			sscanf(buffer, "%d %d %d %d", &rate_solo, &rate_timer, &rate_squad, &rate);
-			for(int _ = 0; _ < 4; ++_){
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
-			}
+			for(int _ = 0; _ < 4; ++_)
+                scroll(buffer);
 			Hp = def_Hp, mindamage = mindamage_def, stamina = def_stamina;
 			for(int i = 0; i < 4; ++i){
 				sscanf(buffer, "%d", &backpack.list_cons[i].second);
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
+				scroll(buffer);
 				backpack.set_vol(backpack.get_vol() + backpack.list_cons[i].second * backpack.list_cons[i].first.get_vol());
 			}
 			for(int i = 0; i < 4; ++i){
 				sscanf(buffer, "%d", &backpack.list_throw[i].second.first);
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
+				scroll(buffer);
 				sscanf(buffer, "%d", &backpack.list_throw[i].second.second);
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
+				scroll(buffer);
 				for(int j = 0; j + 1 < backpack.list_throw[i].second.first; ++j)
 					backpack.list_throw[i].first.upgrade();
 				backpack.set_vol(backpack.get_vol() + backpack.list_throw[i].second.second * backpack.list_throw[i].first.get_vol());
 			}
 			for(int i = 0; i < 8; ++i){
 				sscanf(buffer, "%d", &backpack.list_w[i].second);
-				while(*buffer != '\t' && *buffer != '\n' && *buffer != ' ' && *buffer != '\0')
-					++buffer;
-				while(*buffer == '\t' || *buffer == '\n' || *buffer == ' ' || *buffer == '\0')
-					++buffer;
+				scroll(buffer);
 				for(int j = 0; j < backpack.list_w[i].second; ++j)
 					backpack.list_w[i].first.upgrade();
 				backpack.set_vol(backpack.get_vol() + backpack.list_w[i].second * backpack.list_w[i].first.get_vol());
@@ -651,10 +645,12 @@ namespace Environment::Character{
 		}
 
 		virtual std::string subtitle() override{
+		    std::vector<int> v = get_damage_effect();
 			return "username: " + name + ", Hp: " + std::to_string(Hp) + "\n" +
 			"stamina: " + std::to_string(stamina) + ", money: " + std::to_string(money) + "\n" +
 			"selected item: " + backpack.get_select() + ", mindamage: " + std::to_string(mindamage) +"\n" +
-			"coordinate: " + std::to_string(cor[0]) + ", " + std::to_string(cor[1]) + ", " + std::to_string(cor[2]) + "\n";
+			"coordinate: " + std::to_string(cor[0]) + ", " + std::to_string(cor[1]) + ", " + std::to_string(cor[2]) +
+			", damage: " + std::to_string(v[0]) + ", effect: " + std::to_string(v[1]) + "\n";
 		}
 	};
 

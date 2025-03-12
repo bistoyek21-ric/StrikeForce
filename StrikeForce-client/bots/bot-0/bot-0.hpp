@@ -96,12 +96,14 @@ namespace Environment::Field{
             for(int j = v[2] - W; j <= v[2] + W; ++j){
                 cell = themap[v[0]][i][j].showit_();
                 color = "";
-                int cnt = 0, k = 0;
+                int cnt = 2, k = 0;
                 for(; k < cell.size(); ++k){
                     if(cnt < 2)
                         color.push_back(cell[k]);
-                    else
+                    else if(cell[k] != '\033')
                         res.push_back(cell[k]);
+                    else
+                        color.push_back(cell[k]), cnt = 0;
                     if(cell[k] == 'm')
                         ++cnt;
                     if(cnt == 2 && color != last){
@@ -118,7 +120,65 @@ namespace Environment::Field{
     }
 
 	void gameplay::view() const{
+	    if(command[ind] == '+' || frame % 2)
+            return;
+	    std::vector<int> v = hum[ind].get_cor();
+	    int _H = 10, W = 10;
+	    std::ofstream file("./data/" + std::to_string(frame) + ".txt");
+	    file << _H << " " << W << '\n';
+        v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
+        v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
+        for(int i = v[1] - _H; i <= v[1] + _H; ++i, file << '\n')
+            for(int j = v[2] - W; j <= v[2] + W; ++j){
+                int num = 0;
+                for(int k = 0; k < 11; ++k){
+                    if(k != 6)
+                        num <<= 1;
+                    if(themap[v[0]][i][j].s[k])
+                        num ^= 1;
+                }
+                file << (char)('0' + num / 32) << (char)('0' + num % 32);
+            }
+        file << '\n';
+        for(int i = v[1] - _H; i <= v[1] + _H; ++i, file << '\n')
+            for(int j = v[2] - W; j <= v[2] + W; ++j){
+                auto pix = &themap[v[0]][i][j];
+                if(pix->s[0])
+                    file << pix->human->get_way();
+                else if(pix->s[2])
+                    file << pix->bullet->get_way();
+                else
+                    file << 0;
+            }
+        file << '\n';
+        for(int i = v[1] - _H; i <= v[1] + _H; ++i, file << '\n')
+            for(int j = v[2] - W; j <= v[2] + W; ++j){
+                auto pix = &themap[v[0]][i][j];
+                int Hp = 0, effect = 0, stamina = 0;
+                if(pix->s[2])
+                    Hp -= pix->bullet->get_damage(), effect += pix->bullet->get_effect();
+                if(pix->s[4])
+                    Hp += pix->cons->get_Hp(), effect += pix->cons->get_effect(), stamina += pix->cons->get_stamina();
+                file << Hp << " " << effect << " " << stamina << " " << pix->dmg << "    ";
+            }
+        file << '\n';
+        file.close();
         return;
+    }
+
+    char gameplay::human_rnpc_bot(Environment::Character::Human& player) const{
+        if(frame % 50 == 1){
+            char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
+            return c[rand() % 8];
+        }
+        else if(rand() % 5 < 3)
+            return 'x';
+        else if(rand() % 5 < 3){
+            char c[7] = {'1', '2', 'a', 'w', 's', 'd', 'p'};
+            return c[rand() % 7];
+        }
+        char c[8] = {'+', 'u', 'f', 'g', 'h', 'j', '[', ']'};
+        return c[rand() % 8];
     }
 
     char gameplay::bot(Environment::Character::Human& player) const{

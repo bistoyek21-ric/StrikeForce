@@ -29,7 +29,7 @@ signed main(){
 	#if !defined(__unix__) && !defined(__APPLE__)
     HANDLE hProcess = GetCurrentProcess();
     if(!SetPriorityClass(hProcess, REALTIME_PRIORITY_CLASS)){
-        std::cout << "fuck, press a key" << std::endl;
+        std::cout << "its not real time" << std::endl;
         getch();
     }
 	#endif

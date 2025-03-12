@@ -54,7 +54,7 @@ Since this project is open-source, you can make your desired changes and create 
 
 Thank you! 😊
 
-**All material and intellectual rights of this environment belong to authors ([@kasrafouladi](https://github.com/kasrafouladi), [@omidagha2](https://github.com/omidagha2) and [@ParhamBeik](https://github.com/ParhamBeik))  and [@bistoyek-official](https://github.com/bistoyek-official). Any plagiarism will be prosecuted.**
+**All material and intellectual rights of this environment belong to authors ([@kasrafouladi](https://github.com/kasrafouladi), [@omidagha2](https://github.com/omidagha2) and [@ParhamBeik](https://github.com/ParhamBeik))  and [@bistoyek21-ric](https://github.com/bistoyek21-ric). Any plagiarism will be prosecuted.**
 
 ---
 

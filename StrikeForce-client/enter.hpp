@@ -110,7 +110,7 @@ void sign_up(std::vector<std::pair<std::string, std::string>> &users){
 			std::cout << "username is taken" << std::endl;
 		if(b && s1 == "")
 			std::cout << "username can't be null" << std::endl;
-  if(b && s1 == "sign up")
+  		if(b && s1 == "sign up")
 			std::cout << "username can't be sign up or sign in" << std::endl;
 		std::cout << "username: ";
 		std::cout.flush();
@@ -155,7 +155,7 @@ void sign_up(std::vector<std::pair<std::string, std::string>> &users){
 	us.close();
 	ps.close();
 	#if defined(__unix__) || defined(__APPLE__)
- system(("mkdir ./accounts/game/" + user).c_str());
+	system(("mkdir ./accounts/game/" + user).c_str());
 	#else
 	system(("mkdir .\\accounts\\game\\" + user).c_str());
 	#endif

@@ -44,7 +44,7 @@ namespace Environment::Field{
 
 	int agent[H];
 
-	const std::string valid_commands = "12upxawsdfghjkl;'cvbnm,./[]+";
+	const std::string valid_commands = "`1upxawsdfghjkl;'cvbnm,./[]+";
 
 	Environment::Item::Bullet bull[B];
 	Environment::Character::Zombie zomb[Z];
@@ -691,7 +691,7 @@ namespace Environment::Field{
                 }
                 return;
 		    }
-			if(c == '1' || c == '2'){
+			if(c == '1' || c == '`'){
 				(c == '1' ? player.turn_l() : player.turn_r());
 				return;
 			}
@@ -779,38 +779,14 @@ namespace Environment::Field{
 		void my_command(){
 			if(kbhit()){
 				command[ind] = getch();
-				#if defined(__unix__) || defined(__APPLE__)
-				if(command[ind] == 27 && kbhit()){
-                    command[ind] = getch();
-                    if(command[ind] == 91){
-                        command[ind] = getch();
-                        if(command[ind] == 'A')
-                            command[ind] = 'w';
-                        else if(command[ind] == 'C')
-                            command[ind] = 'd';
-                        else if(command[ind] == 'B')
-                            command[ind] = 's';
-                        else if(command[ind] == 'D')
-                            command[ind] = 'a';
-                    }
-                    else
-                        ungetc(command[ind], stdin), command[ind] = '+';
-                }
-				#else
-				if((command[ind] == 0 || command[ind] == 224) && kbhit()){
-                    command[ind] = getch();
-                    if(command[ind] == 72)
-                        command[ind] = 'w';
-                    else if(command[ind] == 77)
-                        command[ind] = 'd';
-                    else if(command[ind] == 80)
-                        command[ind] = 's';
-                    else if(command[ind] == 75)
-                        command[ind] = 'a';
-                    else
-                        ungetc(command[ind], stdin), command[ind] = '+';
-                }
-                #endif
+				if(command[ind] == '8')
+					command[ind] = 'w';
+				else if(command[ind] == '4')
+					command[ind] = 'a';
+				else if(command[ind] == '6')
+					command[ind] = 'd';
+				else if(command[ind] == '2')
+					command[ind] = 's';
 				if(agent[ind] != -1){
 					if(command[ind] == ' ')
 						silent = !silent;
@@ -925,12 +901,12 @@ namespace Environment::Field{
 			std::cout << "Command list:" << '\n';
 			std::cout << " - : show backpack" << '\n';
 			std::cout << " 0 : command list" << '\n';
+			std::cout << " ` : turn to right [1]" << '\n';
 			std::cout << " 1 : turn to left" << '\n';
-			std::cout << " 2 : turn to right" << '\n';
-			std::cout << " a : move to left" << '\n';
-			std::cout << " d : move to right" << '\n';
-			std::cout << " w : move to up" << '\n';
-			std::cout << " s : move to down" << '\n';
+			std::cout << " a or 4 : move to left [2]" << '\n';
+			std::cout << " d or 6: move to right" << '\n';
+			std::cout << " w or 8: move to up" << '\n';
+			std::cout << " s or 2: move to down" << '\n';
 			std::cout << " p : punch" << '\n';
 			std::cout << " [ : add block" << '\n';
 			std::cout << " ] : add portal" << '\n';
@@ -950,6 +926,8 @@ namespace Environment::Field{
 			std::cout << " W : increase width, E : decrease width" << '\n';
 			std::cout << " R : increase hight, T : decrease hight" << '\n';
 			std::cout << "-------------------------------------" << '\n';
+			std::cout << "[1]: Its location on the keyboard is standardized, the key to the left of the key corresponding to 1.\n";
+			std::cout << "[2]: you can enable NumLock and then use the arrows!.\n";
 			std::cout << "note: if you do an invalid move nothing will happen" << '\n';
 			std::cout << "press any key to continue" << std::endl;
 			if(!b)
@@ -1105,6 +1083,12 @@ namespace Environment::Field{
 		}
 
 		void setup(){
+			#if defined(__unix__) || defined(__APPLE__)
+			symbol[0][0] = 'V';
+			symbol[0][1] = '>';
+			symbol[0][2] = 'A';
+			symbol[0][3] = '<';
+			#endif
 			countdown = 1;
 			Environment::Character::me.backpack.vec = -1;
 			tb = time(nullptr);

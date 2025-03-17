@@ -401,11 +401,10 @@ namespace Environment::Character{
                     continue;
                 #if defined(__unix__) || defined(__APPLE__)
 				system("rm -fr ./accounts/game/");
-				system("mkdir ./aacounts/game/");
 				#else
 				system("rmdir /s /q .\\accounts\\game\\ > nul");
-				system("mkdir .\\accounts\\game\\ > nul");
 				#endif
+				system("mkdir ./accounts/game/");
                 std::ofstream f("./accounts/game/.gitkeep");
                 f.close();
                 std::vector<std::string> mode = {"", "solo", "timer", "squad"};

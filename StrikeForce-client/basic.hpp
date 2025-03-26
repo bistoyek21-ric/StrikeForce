@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2024 bistoyek(21)
+Copyright (c) 2024 bistoyek21 R.I.C.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -42,30 +42,42 @@ SOFTWARE.
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <signal.h>
+#include <stdio.h>
+#include <unistd.h>
 
 int constexpr BK = 127, EN = 10;
 
-bool kbhit(){
-	struct termios oldt, newt;
-	int ch, oldf;
-	tcgetattr(STDIN_FILENO, &oldt);
-	newt = oldt;
-	newt.c_lflag &= ~(ICANON | ECHO);
-	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
-	oldf = fcntl(STDIN_FILENO, F_GETFL, 0);
-	fcntl(STDIN_FILENO, F_SETFL, oldf | O_NONBLOCK);
-	ch = getchar();
-	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
-	fcntl(STDIN_FILENO, F_SETFL, oldf);
-	if(ch != EOF){
-		ungetc(ch, stdin);
-		return true;
-	}
-	return false;
+void disable_input_buffering(){
+    struct termios t;
+    tcgetattr(STDIN_FILENO, &t);
+    t.c_lflag &= ~ICANON;
+    t.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &t);
+}
+
+void restore_input_buffering(){
+    struct termios t;
+    tcgetattr(STDIN_FILENO, &t);
+    t.c_lflag |= ICANON | ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &t);
+}
+
+int kbhit(){
+	disable_input_buffering();
+	struct timeval tv = {0, 0};
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    int res = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
+	restore_input_buffering();
+	return res;
 }
 
 int getch(){
-    return getchar();
+	disable_input_buffering();
+    int res = getchar();
+	restore_input_buffering();
+	return res;
 }
 
 #else

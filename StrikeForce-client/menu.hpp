@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2024 bistoyek(21)
+Copyright (c) 2024 bistoyek21 R.I.C.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -401,11 +401,10 @@ namespace Environment::Character{
                     continue;
                 #if defined(__unix__) || defined(__APPLE__)
 				system("rm -fr ./accounts/game/");
-				system("mkdir ./aacounts/game/");
 				#else
 				system("rmdir /s /q .\\accounts\\game\\ > nul");
-				system("mkdir .\\accounts\\game\\ > nul");
 				#endif
+				system("mkdir ./accounts/game/");
                 std::ofstream f("./accounts/game/.gitkeep");
                 f.close();
                 std::vector<std::string> mode = {"", "solo", "timer", "squad"};

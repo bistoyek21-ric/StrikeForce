@@ -1,8 +1,13 @@
 *.exe
 *.ghc
 *.out
+*.o
 
 /StrikeForce-client/accounts/game/*
 ! /StrikeForce-client/accounts/game/.gitkeep
 
-/StrikeForce-client/data/
+/StrikeForce-client/data
+
+*
+! *.*
+! /*/

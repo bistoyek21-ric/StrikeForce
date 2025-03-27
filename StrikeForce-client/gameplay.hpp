@@ -44,7 +44,7 @@ namespace Environment::Field{
 
 	int agent[H];
 
-	const std::string valid_commands = "`1upxawsdfghjkl;'cvbnm,./[]+";
+	const std::string valid_commands = "`13upxawsdfghjkl;'cvbnm,./[]+";
 
 	Environment::Item::Bullet bull[B];
 	Environment::Character::Zombie zomb[Z];
@@ -345,7 +345,7 @@ namespace Environment::Field{
 	const node nd;
 
 	struct gameplay{
-		bool is_human, online, silent, quit, full;
+		bool is_human, online, silent, quit, full, manual;
 		Environment::Character::Zombie* recomZ;
 		Environment::Character::Human* recomH;
 
@@ -379,6 +379,8 @@ namespace Environment::Field{
         }
 
 		void load_data(){
+			if(!manual)
+				agent[ind] = 0;
 			srand(tb);
 			serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
 			Environment::Random::_srand(tb, serial_number);
@@ -419,8 +421,6 @@ namespace Environment::Field{
 						}
 					}
 				}
-				if(mode == "AI")
-					agent[ind] = 0;
 				return;
 			}
 			if(mode == "Squad"){
@@ -692,7 +692,7 @@ namespace Environment::Field{
                 return;
 		    }
 			if(c == '1' || c == '`'){
-				(c == '1' ? player.turn_l() : player.turn_r());
+				(c == '1' ? player.turn_r() : player.turn_l());
 				return;
 			}
 			if(c == 'a' || c == 's' || c == 'd' || c == 'w'){
@@ -788,10 +788,14 @@ namespace Environment::Field{
 				else if(command[ind] == '2')
 					command[ind] = 's';
 				if(agent[ind] != -1){
-					if(command[ind] == ' ')
+					if(!manual && command[ind] == ' ')
 						silent = !silent;
-					command[ind] = '+';
-					return;
+					if(command[ind] == '3')
+						manual = !manual;
+					else if(!manual){
+						command[ind] = '+';
+						return;
+					}
 				}
 				silent = false;
 			}
@@ -865,8 +869,8 @@ namespace Environment::Field{
 
 		void human_action(){
 			my_command();
-			if(agent[ind] != -1)
-				command[ind] = bot(hum[ind]);
+			if(agent[ind] != -1 && !manual && command[ind] != '3')
+				command[ind] = bot(hum[ind]); 
 			if(online){
 				client.send_it();
 				client.recieve();
@@ -892,6 +896,7 @@ namespace Environment::Field{
 					obey(command[i], hum[i]);
 					teleport(hum[i]);
 					claim_chest(hum[i]);
+					command[i] = '+';
 				}
 			return;
 		}
@@ -901,8 +906,9 @@ namespace Environment::Field{
 			std::cout << "Command list:" << '\n';
 			std::cout << " - : show backpack" << '\n';
 			std::cout << " 0 : command list" << '\n';
-			std::cout << " ` : turn to right [1]" << '\n';
-			std::cout << " 1 : turn to left" << '\n';
+			std::cout << " ` : turn to left [1]" << '\n';
+			std::cout << " 1 : turn to right" << '\n';
+			std::cout << " 3 : switch bitween Manual and Automate" << '\n';
 			std::cout << " a or 4 : move to left [2]" << '\n';
 			std::cout << " d or 6: move to right" << '\n';
 			std::cout << " w or 8: move to up" << '\n';
@@ -1093,7 +1099,7 @@ namespace Environment::Field{
 			Environment::Character::me.backpack.vec = -1;
 			tb = time(nullptr);
 			loot = teams_kills = kills = frame = 0;
-			online = (mode == "AI" || mode == "Battle Royal");
+			online = (mode == "AI Battle Royal" || mode == "Battle Royal");
 			silent = quit = is_human = false;
 			recomZ = nullptr;
 			recomH = nullptr;
@@ -1328,6 +1334,8 @@ namespace Environment::Field{
 					}
 					if(level >= L || level <= 0)
 						continue;
+					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					manual = (getch() != 'y');
 					play();
 					continue;
 				}
@@ -1353,6 +1361,8 @@ namespace Environment::Field{
 					}
 					if(level >= L || level <= 0)
 						continue;
+					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					manual = (getch() != 'y');
 					play();
 					continue;
 				}
@@ -1378,19 +1388,24 @@ namespace Environment::Field{
 					}
 					if(level >= L || level <= 0)
 						continue;
+					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					manual = (getch() != 'y');
 					play();
 					continue;
 				}
 				if(c == '4'){
 					level = 1;
 					mode = "Battle Royal";
+					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					manual = (getch() != 'y');
 					play();
 					online = false;
 					continue;
                 }
                 if(c == '5'){
                 	level = 1;
-                    mode = "AI";
+                    mode = "AI Battle Royal";
+					manual = false;
                     play();
                     online = false;
                     continue;
@@ -1401,7 +1416,7 @@ namespace Environment::Field{
 		}
 
 		void update(){
-			if(online || mode == "AI")
+			if(online || agent[ind] != -1)
 				return;
 			int r_changes = (kills * 100 * level) / (time(0) - tb + 1);
 			if(mode == "Timer")

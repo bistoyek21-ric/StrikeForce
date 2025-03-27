@@ -32,7 +32,7 @@ namespace Environment::Field{
 
 	void gameplay::print_game() const{
 		if(silent){
-            if(agent[ind] != -1)
+            if(agent[ind] != -1 && !manual)
                 return;
             auto end_ = std::chrono::steady_clock::now();
             int k = (lim.count() - (end_ - start).count() + 999) / 1000;
@@ -42,6 +42,12 @@ namespace Environment::Field{
 		std::string res = "";
 		if(!full){
 		    res += head(false) + "Mode: " + mode;
+            if(agent[ind] != -1){
+                if(manual)
+                    res += " (Manual)";
+                else
+                    res += " (Automate)";
+            }
             if(online){
                 res += " | index: " + std::to_string(ind);
                 res += ", team: " + std::to_string(hum[ind].get_team());
@@ -116,10 +122,16 @@ namespace Environment::Field{
         if(last != color)
             res += color;
         puts(res.c_str());
+        #if defined(__unix__) || defined(__APPLE__)
+        auto end_ = std::chrono::steady_clock::now();
+        int k = (lim.count() - (end_ - start).count() + 999) / 1000;
+        usleep(std::max(k, 0));
+        #endif
         return;
     }
 
 	void gameplay::view() const{
+        return;
 	    if(command[ind] == '+' || frame % 2)
             return;
 	    std::vector<int> v = hum[ind].get_cor();

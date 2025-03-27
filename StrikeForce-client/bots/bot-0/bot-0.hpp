@@ -132,49 +132,51 @@ namespace Environment::Field{
 
 	void gameplay::view() const{
         return;
-	    if(command[ind] == '+' || frame % 2)
+        if(agent[ind] == -1 || manual || frame % 2 == 0)
             return;
 	    std::vector<int> v = hum[ind].get_cor();
-	    int _H = 10, W = 10;
-	    std::ofstream file("./data/" + std::to_string(frame) + ".txt");
-	    file << _H << " " << W << '\n';
-        v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
-        v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-        for(int i = v[1] - _H; i <= v[1] + _H; ++i, file << '\n')
-            for(int j = v[2] - W; j <= v[2] + W; ++j){
-                int num = 0;
-                for(int k = 0; k < 11; ++k){
-                    if(k != 6)
-                        num <<= 1;
-                    if(themap[v[0]][i][j].s[k])
-                        num ^= 1;
+        std::vector<int> v1 = hum[ind].get_damage_effect();
+        std::ofstream pov("./bots/bot-0/pov.txt");
+        pov << v[0] << ' ' << v[1] << ' ' << v[2] << ' ' << hum[ind].get_Hp() << ' ' << hum[ind].get_stamina() << ' ' << v1[0] << ' ' << v1[1] << ' ';
+        if(!is_human && recomZ != nullptr){
+            std::vector<int> v = recomH->get_cor();
+            std::vector<int> v1 = recomH->get_damage_effect();
+            pov << v[0] << ' ' << v[1] << ' ' << v[2] << ' ' << recomZ->get_Hp() << " 0 " << std::max(0, recomZ->get_mindamage()) << " 0 ";
+        }
+        else if(recomH != nullptr){
+            std::vector<int> v = recomH->get_cor();
+            std::vector<int> v1 = recomH->get_damage_effect();
+            pov << v[0] << ' ' << v[1] << ' ' << v[2] << ' ' << recomH->get_Hp() << ' ' << recomH->get_stamina() << ' ' << v1[0] << ' ' << v1[1] << ' ';
+        }
+	    for(int i = v[1] - 5; i < v[1] + 6; ++i)
+            for(int j = v[2] - 5; j < v[2] + 6; ++j){
+                if(std::min(i, j) < 0 || N <= i || M <= j)
+                    pov << 0 << ' ';
+                else{
+                    int num = 0;
+                    if(themap[v[0]][i][j].s[0]){
+                        int team = themap[v[0]][i][j].human->get_team();
+                        int way = themap[v[0]][i][j].human->get_way();
+                        if(team && team != hum[ind].get_team())
+                            num = 1;
+                        if(team == hum[ind].get_team())
+                            num = 2;
+                        num <<= 2;
+                        num += way - 1;
+                    }
+                    for(int k = 1; k < 11; ++k){
+                        if(k != 6)
+                            num <<= 1;
+                        if(themap[v[0]][i][j].s[k])
+                            num ^= 1;
+                    }
+                    pov << num << ' ';
                 }
-                file << (char)('0' + num / 32) << (char)('0' + num % 32);
             }
-        file << '\n';
-        for(int i = v[1] - _H; i <= v[1] + _H; ++i, file << '\n')
-            for(int j = v[2] - W; j <= v[2] + W; ++j){
-                auto pix = &themap[v[0]][i][j];
-                if(pix->s[0])
-                    file << pix->human->get_way();
-                else if(pix->s[2])
-                    file << pix->bullet->get_way();
-                else
-                    file << 0;
-            }
-        file << '\n';
-        for(int i = v[1] - _H; i <= v[1] + _H; ++i, file << '\n')
-            for(int j = v[2] - W; j <= v[2] + W; ++j){
-                auto pix = &themap[v[0]][i][j];
-                int Hp = 0, effect = 0, stamina = 0;
-                if(pix->s[2])
-                    Hp -= pix->bullet->get_damage(), effect += pix->bullet->get_effect();
-                if(pix->s[4])
-                    Hp += pix->cons->get_Hp(), effect += pix->cons->get_effect(), stamina += pix->cons->get_stamina();
-                file << Hp << " " << effect << " " << stamina << " " << pix->dmg << "    ";
-            }
-        file << '\n';
-        file.close();
+        pov.close();
+        std::ofstream checkout("./bots/bot-0/checkout.txt");
+        checkout << 1;
+        checkout.close();
         return;
     }
 
@@ -194,6 +196,17 @@ namespace Environment::Field{
     }
 
     char gameplay::bot(Environment::Character::Human& player) const{
+        char res;
+        while(true){
+            std::ifstream f("./bots/bot-0/checkout.txt");
+            f >> res;
+            if(res == '0'){
+                f >> res;
+                f.close();
+                break;
+            }
+            usleep(1000);
+        }
         return '+';
     }
 }

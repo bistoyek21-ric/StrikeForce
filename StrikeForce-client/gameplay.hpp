@@ -39,7 +39,7 @@ namespace Environment::Field{
 	int ind, countdown;
 
 	bool disconnect;
-	// you can set symbol[0] = {'V', '>', 'A', '<'} if your terminal can't show unit separators
+	
 	char command[H], symbol[8][4] = {{31, 16, 30, 17}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
 
 	int agent[H];
@@ -1253,11 +1253,9 @@ namespace Environment::Field{
             if(online)
                 client.prepare();
 			start = std::chrono::steady_clock::now();
-			view();
-			++frame, find_recom(), print_game();
-			updmap();
+			++frame, find_recom(), view(), print_game();
+			start = std::chrono::steady_clock::now();
 			while(true){
-				start = std::chrono::steady_clock::now();
 				if(frame % pc == 1)
 					spawn_chest();
 				if(frame % pz == 1)
@@ -1273,15 +1271,14 @@ namespace Environment::Field{
 				portal_damage();
 				update_tmp();
 				hit_human(), hit_zombie();
-				view();
-				++frame, find_recom(), print_game();
-				updmap();
+				++frame, find_recom(), view(), print_game();
 				start = std::chrono::steady_clock::now();
+				updmap();
 				update_bull();
 				update_tmp();
 				hit_human(), hit_zombie();
-				view();
-				++frame, find_recom(), print_game();
+				++frame, find_recom(), view(), print_game();
+				start = std::chrono::steady_clock::now();
 				updmap();
 				update_bull();
 			}

@@ -1,100 +1,250 @@
-import tensorflow as tf
-from tensorflow.keras import layers, Model, Sequential
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.distributions import Categorical
+from torch.utils.data import DataLoader, Dataset
 
-class EnemyAgentNet(Model):
-    def __init__(self, 
-                 num_cell_states=100, 
-                 embedding_dim=16, 
-                 grid_size=11, 
-                 num_actions=10, 
-                 num_state_factors=4):
-        """
-        Args:
-            num_cell_states: Total distinct cell states (0-99).
-            embedding_dim: Size of the embedding vector for each cell.
-            grid_size: The grid dimensions (11x11).
-            num_actions: Number of discrete actions (10).
-            num_state_factors: Number of scalar inputs (damage, HP, stamina, coordination).
-        """
-        super(EnemyAgentNet, self).__init__()
+class PPONet(nn.Module):
+    def __init__(self, n, m, k):
+        super().__init__()
+        self.n = n
+        self.m = m
+        self.k = k
+        
+        self.grid_encoder = nn.Sequential(
+            nn.Conv2d(1, 32, 3),
+            nn.InstanceNorm2d(32),
+            nn.GELU(),
+            nn.Conv2d(32, 64, 3),
+            nn.AdaptiveMaxPool2d(4),
+            nn.Flatten()
+        )
+        
+        self.self_attn = nn.MultiheadAttention(embed_dim=k, num_heads=4)
+        self.enemy_attn = nn.MultiheadAttention(embed_dim=k, num_heads=2)
+        
+        self.policy = nn.Sequential(
+            nn.Linear(64 + 2*k, 256),
+            nn.LayerNorm(256),
+            nn.SiLU(),
+            nn.Linear(256, m)
+        )
+        
+        self.value = nn.Sequential(
+            nn.Linear(64 + 2*k, 256),
+            nn.LayerNorm(256),
+            nn.SiLU(),
+            nn.Linear(256, 1)
+        )
+        
+    def forward(self, grid, self_vec, enemy_vec):
+        grid = grid.view(-1, 1, self.n, self.n)
+        grid_feat = self.grid_encoder(grid)
+        
+        self_vec = self_vec.unsqueeze(1)
+        self_attn, _ = self.self_attn(self_vec, self_vec, self_vec)
+        self_feat = self_attn.mean(dim=1)
+        
+        enemy_vec = enemy_vec.unsqueeze(1)
+        enemy_attn, _ = self.enemy_attn(enemy_vec, enemy_vec, enemy_vec)
+        enemy_feat = enemy_attn.mean(dim=1)
+        
+        combined = torch.cat([grid_feat, self_feat, enemy_feat], dim=1)
+        
+        logits = self.policy(combined)
+        value = self.value(combined)
+        
+        return logits, value
 
-        # --- Spatial Branch ---
-        # 1. Embed the grid cell IDs to a dense vector representation.
-        # Keras by default uses "channels_last" ordering.
-        self.embedding = layers.Embedding(input_dim=num_cell_states, output_dim=embedding_dim)
+class PPOBuffer:
+    def __init__(self, gamma=0.99, gae_lambda=0.95):
+        self.states = []
+        self.actions = []
+        self.rewards = []
+        self.values = []
+        self.log_probs = []
+        self.gamma = gamma
+        self.gae_lambda = gae_lambda
         
-        # 2. Convolution layers to extract spatial features.
-        self.conv1 = layers.Conv2D(filters=32, kernel_size=3, padding="same", activation="relu")
-        self.conv2 = layers.Conv2D(filters=64, kernel_size=3, padding="same", activation="relu")
-        self.pool = layers.MaxPool2D(pool_size=2)  # Downsamples spatial dimensions
+    def store(self, state, action, reward, value, log_prob):
+        self.states.append(state)
+        self.actions.append(action)
+        self.rewards.append(reward)
+        self.values.append(value)
+        self.log_probs.append(log_prob)
         
-        # --- Global Factors Branch ---
-        # Process the dynamic scalar inputs with two fully connected layers.
-        self.fc_factors = Sequential([
-            layers.Dense(32, activation="relu"),
-            layers.Dense(32, activation="relu")
-        ])
+    def compute_advantages(self, last_value):
+        rewards = np.array(self.rewards)
+        values = np.array(self.values + [last_value])
         
-        # --- Fusion & Decision ---
-        # After pooling, our grid branch produces an output of shape (batch, 5, 5, 64)
-        # This flattens to 5 * 5 * 64 = 1600.
-        self.flatten = layers.Flatten()
-        self.fc_combined = Sequential([
-            layers.Dense(128, activation="relu"),
-            layers.Dense(num_actions)  # Final output: raw scores (logits) for each action.
-        ])
+        deltas = rewards + self.gamma * values[1:] - values[:-1]
+        advantages = np.zeros_like(rewards)
+        advantage = 0
+        
+        for t in reversed(range(len(rewards))):
+            advantage = deltas[t] + self.gamma * self.gae_lambda * advantage
+            advantages[t] = advantage
+            
+        returns = advantages + values[:-1]
+        return advantages, returns
     
-    def call(self, grid, factors):
-        """
-        Args:
-            grid: Tensor of shape (batch, grid_size, grid_size) with integer cell IDs.
-            factors: Tensor of shape (batch, num_state_factors) with dynamic scalar values.
-        Returns:
-            Tensor of shape (batch, num_actions) containing the action scores.
-        """
-        # --- Spatial Branch Processing ---
-        # Embedding: (batch, 11, 11) --> (batch, 11, 11, embedding_dim)
-        x = self.embedding(grid)
-        # Convolutional layers (maintaining channels_last data format).
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.pool(x)  # Now shape becomes (batch, ~5, ~5, 64); for grid_size = 11, typically (batch, 5, 5, 64)
-        x = self.flatten(x)  # Flatten to shape (batch, 1600)
-        
-        # --- Global Factors Processing ---
-        # Process scalar inputs through dense layers.
-        f = self.fc_factors(factors)  # Shape: (batch, 32)
-        
-        # --- Fusion ---
-        # Merge spatial features and scalar factors along the feature dimension.
-        combined = tf.concat([x, f], axis=1)  # Resulting shape: (batch, 1600+32)
-        output = self.fc_combined(combined)    # Final output: (batch, num_actions)
-        return output
+    def clear(self):
+        self.states = []
+        self.actions = []
+        self.rewards = []
+        self.values = []
+        self.log_probs = []
 
-# --- Example Usage ---
-if __name__ == "__main__":
-    print("$#" * 21)
-    print(tf.__version__)
-    exit()
-    gpus = tf.config.list_physical_devices('GPU')
-    print("GPUs available:", gpus)
-    exit()
-    # Define parameters:
-    batch_size = 8
-    grid_size = 11
-    num_actions = 10         # 10 possible actions
-    num_state_factors = 4    # damage, HP, stamina, coordination
+class PPOAgent:
+    def __init__(self, n, m, k, device='cuda'):
+        self.n = n
+        self.m = m
+        self.k = k
+        self.device = device
+        
+        self.model = PPONet(n, m, k).to(device)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=3e-4)
+        self.buffer = PPOBuffer()
+        
+        self.clip_epsilon = 0.2
+        self.entropy_coef = 0.01
+        self.epochs = 4
+        self.batch_size = 64
+        
+    def _normalize(self, grid, self_vec, enemy_vec):
+        grid = torch.FloatTensor(grid / 255.0).to(self.device)
+        self_vec = torch.FloatTensor(self_vec).to(self.device)
+        enemy_vec = torch.FloatTensor(enemy_vec).to(self.device)
+        return grid, self_vec, enemy_vec
+        
+    def act(self, grid, self_vec, enemy_vec):
+        with torch.no_grad():
+            grid, self_vec, enemy_vec = self._normalize(grid, self_vec, enemy_vec)
+            logits, value = self.model(
+                grid.unsqueeze(0),
+                self_vec.unsqueeze(0),
+                enemy_vec.unsqueeze(0)
+            )
+            dist = Categorical(logits=logits)
+            action = dist.sample()
+            log_prob = dist.log_prob(action)
+            
+        return action.item(), value.item(), log_prob.item()
+    
+    def update(self):
+        if len(self.buffer.states) < self.batch_size:
+            return
+        
+        states = [self._normalize(*s) for s in self.buffer.states]
+        grid = torch.stack([s[0] for s in states])
+        self_vec = torch.stack([s[1] for s in states])
+        enemy_vec = torch.stack([s[2] for s in states])
+        
+        actions = torch.LongTensor(self.buffer.actions).to(self.device)
+        old_log_probs = torch.FloatTensor(self.buffer.log_probs).to(self.device)
+        
+        with torch.no_grad():
+            _, last_value = self.model(grid[-1], self_vec[-1], enemy_vec[-1])
+        
+        advantages, returns = self.buffer.compute_advantages(last_value.item())
+        advantages = torch.FloatTensor(advantages).to(self.device)
+        returns = torch.FloatTensor(returns).to(self.device)
+        
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        
+        for _ in range(self.epochs):
+            indices = np.arange(len(self.buffer.states))
+            np.random.shuffle(indices)
+            
+            for start in range(0, len(indices), self.batch_size):
+                batch_indices = indices[start:start+self.batch_size]
+                
+                b_grid = grid[batch_indices]
+                b_self = self_vec[batch_indices]
+                b_enemy = enemy_vec[batch_indices]
+                b_actions = actions[batch_indices]
+                b_old_log_probs = old_log_probs[batch_indices]
+                b_returns = returns[batch_indices]
+                b_advantages = advantages[batch_indices]
+                
+                logits, values = self.model(b_grid, b_self, b_enemy)
+                dist = Categorical(logits=logits)
+                new_log_probs = dist.log_prob(b_actions)
+                entropy = dist.entropy().mean()
+                
+                ratio = (new_log_probs - b_old_log_probs).exp()
+                surr1 = ratio * b_advantages
+                surr2 = torch.clamp(ratio, 1-self.clip_epsilon, 1+self.clip_epsilon) * b_advantages
+                policy_loss = -torch.min(surr1, surr2).mean()
+                
+                value_loss = F.mse_loss(values.squeeze(), b_returns)
+                
+                loss = policy_loss + 0.5 * value_loss - self.entropy_coef * entropy
+                
+                self.optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
+                self.optimizer.step()
+        
+        self.buffer.clear()
 
-    # Instantiate the model.
-    model = EnemyAgentNet(num_cell_states=100, embedding_dim=16, grid_size=grid_size,
-                           num_actions=num_actions, num_state_factors=num_state_factors)
+import time
+
+if __name__ == '__main__':
     
-    # Create dummy inputs:
-    # Grid: integers from 0 to 99; shape: (batch, 11, 11)
-    dummy_grid = tf.random.uniform((batch_size, grid_size, grid_size), minval=0, maxval=100, dtype=tf.int32)
-    # Factors: floating-point values for the 4 dynamic scalars; shape: (batch, 4)
-    dummy_factors = tf.random.uniform((batch_size, num_state_factors))
-    
-    # Perform a forward pass.
-    outputs = model(dummy_grid, dummy_factors)
-    print("Output shape:", outputs.shape)  # Expected output: (8, 10)
+    actions = "`1pxawsd[]+"
+
+    agent = PPOAgent(n=11, m=len(actions), k=7)
+
+    #initialize: self_vec, enemy_vec, grid, reward, isend
+
+    while True:
+        with open('./checkout.txt') as f:
+            if f.read().split()[0] == '1':
+                break
+        time.timer(0.001)
+
+    #get state from and reward form ./pov.txt file
+    #and find out is it done or not
+    #pov.txt format is like below:
+    #P/E (to find out is it done or not P:playing, E:end)
+    # a line containing k integers (self_vec elements)
+    # a line containing k integers (enemy_vec elements)
+    # n lines containging n integers (grid elements)
+
+    while True:
+
+        action, value, log_prob = agent.act(grid, self_vec, enemy_vec)
+
+        with open('./check.txt', 'r') as f:
+        f.write('0 +')
+
+        while True:
+            with open('./checkout.txt', 'r') as f:
+                if f.read().split()[0] == '1':
+                    break
+            time.timer(0.001)
+
+
+        pov = open('./pov.txt', 'w').read.split()
+
+        #get state from and reward form ./pov.txt file
+        #and find out is it done or not
+        #pov.txt format is like below:
+        #P/E (to find out is it done or not P:playing, E:end)
+        # a line containing k integers (self_vec elements)
+        # a line containing k integers (enemy_vec elements)
+        # n lines containging n integers (grid elements)
+
+        with open('./check.txt') as f:
+            f.write('0 ' + actions[action])
+
+        agent.buffer.store(
+            state=(grid, self_vec, enemy_vec),
+            action=action,
+            reward=reward,
+            value=value,
+            log_prob=log_prob
+        )
+        agent.update()

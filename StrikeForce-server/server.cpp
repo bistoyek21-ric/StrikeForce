@@ -121,10 +121,16 @@ int main(){
         return 1;
     }
     #endif
+	std::cout << "Server IP: ";
+	#ifdef LOCALIP
 	char host[256];
 	gethostname(host, sizeof(host));
-	std::cout << "Server IP: " << inet_ntoa(*((struct in_addr*)gethostbyname(host)->h_addr_list[0])) << '\n';
-	std::cout << "Running on port: " << PORT << '\n';
+	std::cout << inet_ntoa(*((struct in_addr*)gethostbyname(host)->h_addr_list[0]));
+	#else
+	std::cout.flush();
+	system("curl -s https://api.ipify.org");
+	#endif
+	std::cout << "\nRunning on port: " << PORT << '\n';
 	time_t tb = time(nullptr);
 	srand(tb);
 	long long serial_number = ((rand() & 1023) << 20) + ((rand() & 1023) << 10) + (rand() & 1023);

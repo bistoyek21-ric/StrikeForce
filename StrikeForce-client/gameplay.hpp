@@ -243,7 +243,7 @@ namespace Environment::Field{
 			if(s[3]){
 				if(s[10]){
 					if(s[9])
-							ans += c_col(35, 47, false) + "#";
+						ans += c_col(35, 47, false) + "#";
 					else
 						ans += c_col(35, 40, false) + "#";
 				}

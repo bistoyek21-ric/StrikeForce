@@ -5,7 +5,9 @@
 #### Project Manager: Kasra Fouladi
 #### Authors: Kasra Fouladi, Parham Beikmohammad, Omid Talebpour
 
-(under development...)
+(in progress...)
+
+##### Requirements: any c++ compiler and SMFL framework
 
 **StrikeForce** is an open-source, simple online game with a 1970s style. Experience exciting shooter gameplay and enjoy battle royale matches, available on Windows, Unix-based operating systems, and Apple devices.
 
@@ -29,14 +31,14 @@ To install and run this project, you need a C++ compiler. Follow these steps:
     ```
 3. Compile the project:
     ```sh
-    g++ main.cpp -o main -lws2_32
+    g++ main.cpp -o a -lsfml-graphics -lsfml-window -lsfml-system -lws2_32
     ```
 4. Run the executable:
     ```sh
     ./main
     ```
 
-You should do almost the same thing to run the server the only difference is between the name of folders and source files.
+You should do almost the same thing (but not linking sfml linkers) to run the server the only difference is between the name of folders and source files.
 
 Attention:\
     1. If you using windows you have to enter the linker -lws2_32 otherwise you shouldn't.\

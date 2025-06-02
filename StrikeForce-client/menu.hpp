@@ -232,7 +232,7 @@ namespace Environment::Character{
 					else
 						std::cout << "your money isn't enough" << std::endl;
 				}
-				std::cout << "pressany key to continue" << std::endl;
+				std::cout << "press any key to continue" << std::endl;
 				isdone = true;
 				getch();
 				continue;
@@ -255,7 +255,7 @@ namespace Environment::Character{
 						else
 							std::cout << "your money isn't enough or your backpack doesn't have free space :(" << std::endl;
 					}
-					std::cout << "pressany key to continue" << std::endl;
+					std::cout << "press any key to continue" << std::endl;
 					isdone = true;
 					getch();
 					break;
@@ -295,7 +295,7 @@ namespace Environment::Character{
 						else
 							std::cout << "your money isn't enough or your backpack doesn't have free space :(" << std::endl;
 					}
-					std::cout << "pressany key to continue" << std::endl;
+					std::cout << "press any key to continue" << std::endl;
 					isdone = true;
 					getch();
 					break;
@@ -341,7 +341,7 @@ namespace Environment::Character{
 						else
 							std::cout << "your money isn't enough :(" << std::endl;
 					}
-					std::cout << "pressany key to continue" << std::endl;
+					std::cout << "press any key to continue" << std::endl;
 					isdone = true;
 					getch();
 					break;

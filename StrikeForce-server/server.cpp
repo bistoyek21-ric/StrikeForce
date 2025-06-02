@@ -34,7 +34,7 @@ SOFTWARE.
 #include <netdb.h>
 
 #else
-#include "win_arpa_inet.hpp"
+#include "inet_for_windows.hpp"
 #endif
 
 int constexpr PORT = 10000, BUFFER_SIZE = 2048, BS = 2;

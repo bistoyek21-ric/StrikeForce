@@ -41,7 +41,7 @@ namespace Environment::Field{
 		}
 		std::string res = "";
 		if(!full){
-			res += head(false) + "Mode: " + mode;
+			res += head(true, true) + "Mode: " + mode;
 			if(agent[ind] != -1){
 				if(manual)
 					res += " (Manual)";
@@ -49,14 +49,14 @@ namespace Environment::Field{
 					res += " (Automate)";
 			}
 			if(online){
-                		res += " | index: " + std::to_string(ind);
-                		res += ", team: " + std::to_string(hum[ind].get_team());
-            		}
-            		res += "\n_____________________\n";
-            		res += c_col(33, 40, false);
-            		res += "Frame: " + std::to_string(frame) + "\n";
+                res += " | index: " + std::to_string(ind);
+                res += ", team: " + std::to_string(hum[ind].get_team());
+            }
+            res += "\n_____________________\n";
+    		res += c_col(33, 40);
+            res += "Frame: " + std::to_string(frame) + "\n";
 			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
-			res += c_col(34, 40, false);
+			res += c_col(34, 40);
 			res += "Your teams' kills: " + std::to_string(teams_kills) + " (yours': " + std::to_string(kills) + ")";
 			if(!online)
 				res += ", level: " + std::to_string(level);
@@ -69,7 +69,7 @@ namespace Environment::Field{
 				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_squad() == level) * 1000 * level) + "\n";
 			res += "\nYou:\n";
 			res += hum[ind].subtitle();
-			res += c_col(31, 40, false) + "\n";
+			res += c_col(31, 40) + "\n";
 			if(!is_human && recomZ != nullptr){
 				res += "Enemy:\n";
 				res += (*recomZ).subtitle() + '\n';
@@ -80,7 +80,7 @@ namespace Environment::Field{
 			}
 			else
 				res += "\n\n\n\n\n";
-			res += c_col(0, 0, false);
+			res += c_col(0, 0);
 			if(agent[ind] == -1){
 				res += "to see the command list";
 				res += (!online ? " or pause the game" : "");
@@ -90,10 +90,8 @@ namespace Environment::Field{
 				res += "to not show the situation please press space button\n";
 			res += "____________________________________________________\n";
 		}
-		else{
-			cls();
+		else
 			res += "0: command list\n";
-		}
 		std::vector<int> v = hum[ind].get_cor();
 		std::string last = "", color, cell;
 		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
@@ -118,10 +116,11 @@ namespace Environment::Field{
 					}
 				}
 			}
-		color = c_col(0, 0, false);
+		color = c_col(0, 0);
 		if(last != color)
 			res += color;
-		puts(res.c_str());
+		printer.cls();
+		printer.print(res.c_str());
 		#if defined(__unix__) || defined(__APPLE__)
 		auto end_ = std::chrono::steady_clock::now();
 		int k = (lim.count() - (end_ - start).count() + 999) / 1000;
@@ -130,11 +129,9 @@ namespace Environment::Field{
 		return;
 	}
 
-   	char final_desicion;
-
 	void gameplay::view() const{
 		return;
-    	}
+    }
 
    	char gameplay::human_rnpc_bot(Environment::Character::Human& player) const{
 		if(frame % 50 == 1){
@@ -152,6 +149,6 @@ namespace Environment::Field{
 	}
 
 	char gameplay::bot(Environment::Character::Human& player) const{
-		return final_desicion;
+		return '+';
 	}
 }

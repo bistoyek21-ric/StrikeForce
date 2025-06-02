@@ -27,39 +27,39 @@ SOFTWARE.
 void history(){
 	std::string s1;
 	std::ifstream games("./accounts/game/" + user + "/" + user + ".txt");
-	head();
+	std::cout << head();
 	std::vector<std::string> act;
 	while(getline(games, s1))
 		act.push_back(s1);
 	std::cout << "Your history:" << '\n';
 	std::cout << "________________________________________________________________" << '\n';
 	std::cout << "|";
-	c_col(34, 40);
+	std::cout << c_col(34, 40);
 	std::cout << "Time";
-	c_col(0, 0);
+	std::cout << c_col(0, 0);
 	std::cout << "                    |";
-	c_col(34, 40);
+	std::cout << c_col(34, 40);
 	std::cout << "Game's Mode";
-	c_col(0, 0);
+	std::cout << c_col(0, 0);
 	std::cout << "|";
-	c_col(34, 40);
+	std::cout << c_col(34, 40);
 	std::cout << "Kills     ";
-	c_col(0, 0);
+	std::cout << c_col(0, 0);
 	std::cout << "|";
-	c_col(34, 40);
+	std::cout << c_col(34, 40);
 	std::cout << "Rating Changes";
-	c_col(0, 0);
+	std::cout << c_col(0, 0);
 	std::cout << "|" << '\n';
 	for(int i = 0; true; ++i){
 		std::cout << "|________________________|___________|__________|______________|" << '\n';
 		if(i == act.size())
 			break;
 		std::cout << "|";
-		c_col(32, 40);
+		std::cout << c_col(32, 40);
 		std::cout << act[i];
-		c_col(0, 0);
+		std::cout << c_col(0, 0);
 		std::cout << "|";
-		c_col(32, 40);
+		std::cout << c_col(32, 40);
 		++i;
 		std::cout << (char)toupper(act[i][0]);
 		for(int j = 1; j < 11; ++j){
@@ -68,9 +68,9 @@ void history(){
 			else
 				std::cout << " ";
 		}
-		c_col(0, 0);
+		std::cout << c_col(0, 0);
 		std::cout << "|";
-		c_col(32, 40);
+		std::cout << c_col(32, 40);
 		++i;
 		for(int j = 0; j < 10; ++j){
 			if(j < act[i].size())
@@ -80,14 +80,14 @@ void history(){
 			else
 				std::cout << " ";
 		}
-		c_col(0, 0);
+		std::cout << c_col(0, 0);
 		std::cout << "|";
-		c_col(32, 40);
+		std::cout << c_col(32, 40);
 		++i;
 		std::cout << act[i];
 		for(int j = 0; j < 14 - (int)act[i].size(); ++j)
 			std::cout << " ";
-		c_col(0, 0);
+		std::cout << c_col(0, 0);
 		std::cout << "|" << '\n';
 	}
 	std::cout << "\nTo back into the menu press any key" << std::endl;
@@ -106,20 +106,20 @@ void leaderboard(std::string mode){
 		getline(ranking, s1);
 	}
 	sort(standing.begin(), standing.end(), [&](std::pair<std::string, int> e1, std::pair<std::string, int> e2){return e1.second > e2.second;});
-	head();
+	std::cout << head();
 	std::cout << "_______________________________________" << '\n';
 	std::cout << "|";
-	c_col(34, 40);
+	std::cout << c_col(34, 40);
 	std::cout << "Ranking";
-	c_col(0, 0);
+	std::cout << c_col(0, 0);
 	std::cout << "|";
-	c_col(34, 40);
+	std::cout << c_col(34, 40);
 	std::cout << "Handle                ";
-	c_col(0, 0);
+	std::cout << c_col(0, 0);
 	std::cout << "|";
-	c_col(34, 40);
+	std::cout << c_col(34, 40);
 	std::cout << "Rating";
-	c_col(0, 0);
+	std::cout << c_col(0, 0);
 	std::cout << "|" << '\n';
 	for(int i = 0; true; ++i){
 		std::cout << "|_______|______________________|______|" << '\n';
@@ -127,27 +127,27 @@ void leaderboard(std::string mode){
 			break;
 		int l;
 		std::cout << "|";
-		c_col(32, 40);
+		std::cout << c_col(32, 40);
 		std::cout << "#" << i + 1;
 		l = std::to_string(i + 1).size();
 		for(int j = 0; j < 6 - l; ++j)
 			std::cout << " ";
-		c_col(0, 0);
+		std::cout << c_col(0, 0);
 		std::cout << "|";
-		c_col(32, 40);
+		std::cout << c_col(32, 40);
 		for(int j = 0; j < 22; ++j)
 			if(j < standing[i].first.size())
 				std::cout << standing[i].first[j];
 			else
 				std::cout << " ";
-		c_col(0, 0);
+		std::cout << c_col(0, 0);
 		std::cout << "|";
-		c_col(32, 40);
+		std::cout << c_col(32, 40);
 		std::cout << standing[i].second;
 		l = std::to_string(standing[i].second).size();
 		for(int j = 0; j < 6 - l; ++j)
 			std::cout << " ";
-		c_col(0, 0);
+		std::cout << c_col(0, 0);
 		std::cout << "|" << '\n';
 	}
 	std::cout << "\n----------------------------------------\n";
@@ -175,7 +175,7 @@ namespace Environment::Character{
 	void shop(){
 		while(true){
 	        me.save_progress();
-			head();
+			std::cout << head();
 			std::cout << "Your money: " << me.get_money() << "$\n";
 			std::cout << "Accopied volume of your backpack: " << me.backpack.get_vol() << " / " << me.backpack.get_capacity() << "\n\n";
 			std::cout << "Backpack:" << '\n';
@@ -354,7 +354,7 @@ namespace Environment::Character{
 
     void menu(){
         while(true){
-            head();
+            std::cout << head();
             std::cout << "Main Menu:" << '\n';
             std::cout << "  1. Play" << '\n';
             std::cout << "  2. Shop" << '\n';
@@ -379,7 +379,7 @@ namespace Environment::Character{
             if(c == '5')
                 me.show_backpack();
             if(c == '6'){
-                head();
+                std::cout << head();
                 std::cout << "are you sure you want to sign out? (n: no / any other key: yes)" << std::endl;
                 if(getch() == 'n')
                     continue;
@@ -390,7 +390,7 @@ namespace Environment::Character{
                 return;
             }
             if(c == '7'){
-                head();
+				std::cout << head();
                 std::cout << "Are you sure you want to clear history and sign out?\n";
                 std::cout << "If you sure, please write \"I'm sure about what I'm doing\"\n";
                 std::cout << ">> ";

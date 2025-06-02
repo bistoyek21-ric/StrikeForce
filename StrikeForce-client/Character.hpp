@@ -147,39 +147,55 @@ namespace Environment::Character{
 		    return;
 		}
 
-		void show(int money, bool b = false) const{
-			head();
-			std::cout << "Your money: " << money << "$\n";
-			std::cout << "Accopied volume: " << vol << " / " << capacity << "\n\n";
-			std::cout << "Consumeables:\n";
-			std::cout << list_cons[0].first.get_name() << " : x" << list_cons[0].second << ",    ";
-			std::cout << list_cons[1].first.get_name() << " : x" << list_cons[1].second << '\n';
-			std::cout << list_cons[2].first.get_name() << " : x" << list_cons[2].second << ",    ";
-			std::cout << list_cons[3].first.get_name() << " : x" << list_cons[3].second << '\n';
-			std::cout << "------------------------------------------" << '\n';
-			std::cout << "Throwables:\n";
-			std::cout << list_throw[0].first.get_name() << " : lvl" << list_throw[0].second.first << ", x" << list_throw[0].second.second << ",    ";
-			std::cout << list_throw[1].first.get_name() << " : lvl" << list_throw[1].second.first << ", x" << list_throw[1].second.second << '\n';
-			std::cout << list_throw[2].first.get_name() << " : lvl" << list_throw[2].second.first << ", x" << list_throw[2].second.second << ",    ";
-			std::cout << list_throw[3].first.get_name() << " : lvl" << list_throw[3].second.first << ", x" << list_throw[3].second.second << '\n';
-			std::cout << "------------------------------------------" << '\n';
-			std::cout << "ColdWeapon:\n";
-			std::cout << list_w[0].first.get_name() << " : lvl" << list_w[0].second << ",    ";
-			std::cout << list_w[1].first.get_name() << " : lvl" << list_w[1].second << '\n';
-			std::cout << list_w[2].first.get_name() << " : lvl" << list_w[2].second << ",    ";
-			std::cout << list_w[3].first.get_name() << " : lvl" << list_w[3].second << '\n';
-			std::cout << "------------------------------------------" << '\n';
-			std::cout << "WarmWeapon:\n";
-			std::cout << list_w[4].first.get_name() << " : lvl" << list_w[4].second << ",    ";
-			std::cout << list_w[5].first.get_name() << " : lvl" << list_w[5].second << '\n';
-			std::cout << list_w[6].first.get_name() << " : lvl" << list_w[6].second << ",    ";
-			std::cout << list_w[7].first.get_name() << " : lvl" << list_w[7].second << '\n';
-			std::cout << "------------------------------------------" << '\n';
-			std::cout << "Available Blcocks: (" << blocks << "/" << def_blocks << ")" << '\n';
-			std::cout << "Available Portals: (" << portals << "/" << def_portals << ")" << '\n';
-			std::cout << "------------------------------------------" << '\n';
-			std::cout << "lvl0 means you don't have this item" << '\n';
-			std::cout << "press any key to continue" << std::endl;
+		void show(int money, bool b = false, bool ingame = false) const{
+			std::string s = head(ingame);
+			s += "Your money: ";
+			s += std::to_string(money);
+			s += "$\nAccopied volume: ";
+			s += std::to_string(vol);
+			s += " / ";
+			s += std::to_string(capacity);
+			s += "\n\nConsumeables:\n";
+			s += list_cons[0].first.get_name() + " : x" + std::to_string(list_cons[0].second) + ",    ";
+			s += list_cons[1].first.get_name() + " : x" + std::to_string(list_cons[1].second) + '\n';
+			s += list_cons[2].first.get_name() + " : x" + std::to_string(list_cons[2].second) + ",    ";
+			s += list_cons[3].first.get_name() + " : x" + std::to_string(list_cons[3].second) + '\n';
+			s += "------------------------------------------\n";
+			s += "Throwables:\n";
+			s += list_throw[0].first.get_name() + " : lvl" + std::to_string(list_throw[0].second.first) + ", x" + std::to_string(list_throw[0].second.second) + ",    ";
+			s += list_throw[1].first.get_name() + " : lvl" + std::to_string(list_throw[1].second.first) + ", x" + std::to_string(list_throw[1].second.second) + '\n';
+			s += list_throw[2].first.get_name() + " : lvl" + std::to_string(list_throw[2].second.first) + ", x" + std::to_string(list_throw[2].second.second) + ",    ";
+			s += list_throw[3].first.get_name() + " : lvl" + std::to_string(list_throw[3].second.first) + ", x" + std::to_string(list_throw[3].second.second) + '\n';
+			s += "------------------------------------------\n";
+			s += "ColdWeapon:\n";
+			s += list_w[0].first.get_name() + " : lvl" + std::to_string(list_w[0].second) + ",    ";
+			s += list_w[1].first.get_name() + " : lvl" + std::to_string(list_w[1].second) + '\n';
+			s += list_w[2].first.get_name() + " : lvl" + std::to_string(list_w[2].second) + ",    ";
+			s += list_w[3].first.get_name() + " : lvl" + std::to_string(list_w[3].second) + '\n';
+			s += "------------------------------------------\n";
+			s += "WarmWeapon:\n";
+			s += list_w[4].first.get_name() + " : lvl" + std::to_string(list_w[4].second) + ",    ";
+			s += list_w[5].first.get_name() + " : lvl" + std::to_string(list_w[5].second) + '\n';
+			s += list_w[6].first.get_name() + " : lvl" + std::to_string(list_w[6].second) + ",    ";
+			s += list_w[7].first.get_name() + " : lvl" + std::to_string(list_w[7].second) + '\n';
+			s += "------------------------------------------\n";
+			s += "Available Blcocks: (";
+			s += std::to_string(blocks);
+			s += "/";
+			s += std::to_string(def_blocks);
+			s += ")\nAvailable Portals: (";
+			s += std::to_string(portals);
+			s += "/";
+			s += std::to_string(def_portals);
+			s += ")\n------------------------------------------\n";
+			s += "lvl0 means you don't have this item\n";
+			s += "press any key to continue\n";
+			if(ingame)
+				printer.print(s);
+			else{
+				std::cout << s;
+				std::cout.flush();
+			}
 			if(!b)
 				getch();
 			return;
@@ -259,8 +275,8 @@ namespace Environment::Character{
 	public:
 		Backpack backpack;
 
-		void show_backpack(bool b = false) const{
-	        backpack.show(money, b);
+		void show_backpack(bool b = false, bool ingame = false) const{
+	        backpack.show(money, b, ingame);
 	        return;
 	    }
 

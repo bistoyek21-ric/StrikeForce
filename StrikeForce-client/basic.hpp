@@ -22,7 +22,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#pragma GCC optimize("Ofast")
+
+#pragma once
 
 #include <iostream>
 #include <vector>
@@ -34,6 +35,13 @@ SOFTWARE.
 #include <thread>
 #include <unistd.h>
 #include <bitset>
+
+#include "GraphicPrinter.hpp"
+
+void usleep(int x){
+	sf::sleep(sf::microseconds(x));
+	return;
+}
 
 #if defined(__unix__) || defined(__APPLE__)
 #include <sys/select.h>
@@ -70,6 +78,10 @@ int kbhit(){
 	FD_SET(STDIN_FILENO, &fds);
 	int res = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
 	restore_input_buffering();
+	if(res){
+		std::cout << "\b \b";
+		std::cout.flush();
+	}
 	return res;
 }
 
@@ -83,22 +95,19 @@ int getch(){
 #else
 #include <conio.h>
 
-#include "win_arpa_inet.hpp"
-
-void usleep(int x){
-	Sleep((x + 500) / 1000);
-	return;
-}
+#include "inet_for_windows.hpp"
 
 int constexpr BK = 8, EN = 13;
 #endif
 
 std::string user;
 
-std::string c_col(int c1, int c2, bool b = true){
+std::string c_col(int c1, int c2){
+	if(!c1)
+		c1 = 37;
+	if(!c2)
+		c2 = 40;
 	std::string res = "\033[" + std::to_string(c1) + "m\033[" + std::to_string(c2) + "m";
-	if(b)
-		std::cout << res;
 	return res;
 }
 
@@ -117,20 +126,23 @@ char* date(){
 	return dt;
 }
 
-std::string head(bool b = true){
-	cls();
-	std::string res = c_col(32, 40, false);
+std::string head(bool ingame = false, bool dont = false){
+	if(!dont){
+		if(!ingame)
+			cls();
+		else
+			printer.cls();
+	}
+	std::string res = c_col(32, 40);
 	res += "StrikeForce\n";
-	res += "Created by: 21\n" + c_col(37, 40, false);
+	res += "Created by: 21\n" + c_col(37, 40);
 	res += "____________________________________________________\n";
 	if(user.size()){
-		res += c_col(34, 40, false) + "~ " + user + "\n";
-		res += c_col(37, 40, false) + "____________________________________________________\n";
+		res += c_col(34, 40) + "~ " + user + "\n";
+		res += c_col(37, 40) + "____________________________________________________\n";
 	}
-	res += c_col(36, 40, false) + "Local time: " + date() + "\n";
-	res += c_col(37, 40, false);
-	if(b)
-		std::cout << res;
+	res += c_col(36, 40) + "Local time: " + date() + "\n";
+	res += c_col(37, 40);
 	return res;
 }
 

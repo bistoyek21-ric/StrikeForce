@@ -243,75 +243,75 @@ namespace Environment::Field{
 			if(s[3]){
 				if(s[10]){
 					if(s[9])
-						ans += c_col(35, 47, false) + "#";
+						ans += c_col(35, 47) + "#";
 					else
-						ans += c_col(35, 40, false) + "#";
+						ans += c_col(35, 40) + "#";
 				}
 				else
-					ans += c_col(0, 0, false) + "#";
+					ans += c_col(0, 0) + "#";
 				return ans;
 			}
 			if(s[0]){
 				if(!s[9]){
 					if(human == &hum[ind])
-						ans += c_col(32, 40, false);
+						ans += c_col(32, 40);
 					else if(human->is_rnpc())
-						ans += c_col(31, 40, false);
+						ans += c_col(31, 40);
 					else if(human->get_team() != hum[ind].get_team())
-						ans += c_col(35, 40, false);
+						ans += c_col(35, 40);
 					else
-						ans += c_col(34, 40, false);
+						ans += c_col(34, 40);
 					ans += symbol[0][human->get_way() - 1];
 					return ans;
 				}
 				if(human == &hum[ind])
-					ans += c_col(32, 47, false);
+					ans += c_col(32, 47);
 				else if(human->is_rnpc())
-					ans += c_col(31, 47, false);
+					ans += c_col(31, 47);
 				else if(human->get_team() != hum[ind].get_team())
-					ans += c_col(35, 47, false);
+					ans += c_col(35, 47);
 				else
-					ans += c_col(34, 47, false);
+					ans += c_col(34, 47);
 				ans += symbol[0][human->get_way() - 1];
-				ans += c_col(0, 0, false);
+				ans += c_col(0, 0);
 				return ans;
 			}
 			if(s[1]){
 				if(!s[9]){
-					ans += c_col(31, 40, false);
+					ans += c_col(31, 40);
 					ans += symbol[1][zombie->is_super()];
 					return ans;
 				}
-				ans += c_col(31, 47, false);
+				ans += c_col(31, 47);
 				ans += symbol[1][zombie->is_super()];
-				ans += c_col(0, 0, false);
+				ans += c_col(0, 0);
 				return ans;
 			}
 			if(s[5]){
 				if(s[10]){
 					if(s[9])
-						ans += c_col(35, 47, false) + "^";
+						ans += c_col(35, 47) + "^";
 					else
-						ans += c_col(35, 40, false) + "^";
+						ans += c_col(35, 40) + "^";
 				}
 				else
-					ans += c_col(0, 0, false) + "^";
+					ans += c_col(0, 0) + "^";
 				return ans;
 			}
 			if(s[6])
-				return c_col(0, 0, false) + "v";
+				return c_col(0, 0) + "v";
 			if(s[2])
-				return c_col(35, 40, false) + "*";
+				return c_col(35, 40) + "*";
 			if(s[4])
-				return c_col(33, 40, false) + "?";
+				return c_col(33, 40) + "?";
 			if(s[8])
-				return c_col(0, 0, false) + "X";
+				return c_col(0, 0) + "X";
 			if(s[7]){
 				if(s[10])
-					return c_col(35, 40, false) + "O";
-				return c_col(32, 40, false) + "O";
+					return c_col(35, 40) + "O";
+				return c_col(32, 40) + "O";
 			}
-			return c_col(0, 0, false) + ".";
+			return c_col(0, 0) + ".";
 		}
 
 		char showit() const{
@@ -820,7 +820,7 @@ namespace Environment::Field{
 			}
 	        if(command[ind] == '-'){
 				silent = online;
-				hum[ind].show_backpack(silent);
+				hum[ind].show_backpack(silent, true);
 				command[ind] = '+';
 				return;
 	        }
@@ -882,8 +882,7 @@ namespace Environment::Field{
 				if(mh[i] && !remote[i])
 					get_command(i);
 			if(quit){
-				std::cout << "You quitted, press space button to continue ";
-				std::cout.flush();
+				printer.print("You quitted, press space button to continue\n");
 				while(getch() != ' ');
 				return;
 			}
@@ -902,40 +901,40 @@ namespace Environment::Field{
 		}
 
 		void command_list(bool b = false){
-			head();
-			std::cout << "Command list:" << '\n';
-			std::cout << " - : show backpack" << '\n';
-			std::cout << " 0 : command list" << '\n';
-			std::cout << " ` : turn to left [1]" << '\n';
-			std::cout << " 1 : turn to right" << '\n';
-			std::cout << " 3 : switch bitween Manual and Automate" << '\n';
-			std::cout << " a or 4 : move to left [2]" << '\n';
-			std::cout << " d or 6: move to right" << '\n';
-			std::cout << " w or 8: move to up" << '\n';
-			std::cout << " s or 2: move to down" << '\n';
-			std::cout << " p : punch" << '\n';
-			std::cout << " [ : add block" << '\n';
-			std::cout << " ] : add portal" << '\n';
-			std::cout << " (Item's sign)* : change item" << '\n';
-			std::cout << " u : use item(for consumables)" << '\n';
-			std::cout << " x : attack" << '\n';
-			std::cout << " Q : quit" << '\n';
-			std::cout << "-------------------------------------" << '\n';
-			std::cout << "Item signes:\n";
-			std::cout << " energy_drink: <f>, first_aid_box: <g>, food_package: <h>, zombie_vaccine: <j>\n";
-			std::cout << " gas: <k>, flash_bang: <l>, acid_bomb: <;>, stinger: <'>\n";
-			std::cout << " push_dagger: <c>, wing_tactic: <v>, F_898: <b>, lochabrask: <n>\n";
-			std::cout << " AK_47: <m>, M416: <,>, MOSSBERG: <.>, AWM: </>\n";
-			std::cout << "-------------------------------------" << '\n';
-			std::cout << "How to turn on and off full mode and change width and hight:" << '\n';
-			std::cout << " F: on, O: off" << '\n';
-			std::cout << " W : increase width, E : decrease width" << '\n';
-			std::cout << " R : increase hight, T : decrease hight" << '\n';
-			std::cout << "-------------------------------------" << '\n';
-			std::cout << "[1]: Its location on the keyboard is standardized, the key to the left of the key corresponding to 1.\n";
-			std::cout << "[2]: you can enable NumLock and then use the arrows!.\n";
-			std::cout << "note: if you do an invalid move nothing will happen" << '\n';
-			std::cout << "press any key to continue" << std::endl;
+			printer.print(head(true));
+			printer.print("Command list:\n");
+			printer.print(" - : show backpack\n");
+			printer.print(" 0 : command list\n");
+			printer.print(" ` : turn to left [1]\n");
+			printer.print(" 1 : turn to right\n");
+			printer.print(" 3 : switch bitween Manual and Automate\n");
+			printer.print(" a or 4 : move to left [2]\n");
+			printer.print(" d or 6: move to right\n");
+			printer.print(" w or 8: move to up\n");
+			printer.print(" s or 2: move to down\n");
+			printer.print(" p : punch\n");
+			printer.print(" [ : add block\n");
+			printer.print(" ] : add portal\n");
+			printer.print(" (Item's sign)* : change item\n");
+			printer.print(" u : use item(for consumables)\n");
+			printer.print(" x : attack\n");
+			printer.print(" Q : quit\n");
+			printer.print("-------------------------------------\n");
+			printer.print("Item signes:\n");
+			printer.print(" energy_drink: <f>, first_aid_box: <g>, food_package: <h>, zombie_vaccine: <j>\n");
+			printer.print(" gas: <k>, flash_bang: <l>, acid_bomb: <;>, stinger: <'>\n");
+			printer.print(" push_dagger: <c>, wing_tactic: <v>, F_898: <b>, lochabrask: <n>\n");
+			printer.print(" AK_47: <m>, M416: <,>, MOSSBERG: <.>, AWM: </>\n");
+			printer.print("-------------------------------------\n");
+			printer.print("How to turn on and off full mode and change width and hight:\n");
+			printer.print(" F: on, O: off\n");
+			printer.print(" W : increase width, E : decrease width\n");
+			printer.print(" R : increase hight, T : decrease hight\n");
+			printer.print("-------------------------------------\n");
+			printer.print("[1]: its location on the standardized keyboards is the key below Esc.\n");
+			printer.print("[2]: you can enable NumLock and then use the arrows!.\n");
+			printer.print("note: if you do an invalid move nothing will happen\n");
+			printer.print("press any key to continue\n");
 			if(!b)
 				getch();
 			return;
@@ -986,8 +985,7 @@ namespace Environment::Field{
 
 		bool check_end(){
 		    if(command[ind] == '_'){
-                std::cout << "You're disconnected :(\n";
-                std::cout << "press space button to continue" << std::endl;
+                printer.print("You're disconnected :(\npress space button to continue\n");
 				hum[ind].back_Hp();
 				hum[ind].back_mindamage();
 				hum[ind].back_stamina();
@@ -1003,8 +1001,7 @@ namespace Environment::Field{
 					client.send_it();
 					client.end_it();
 				}
-                std::cout << "You Died :(\n";
-				std::cout << "press space button to continue" << std::endl;
+                printer.print("You Died :(\npress space button to continue\n");
 				hum[ind].back_Hp();
 				hum[ind].back_mindamage();
 				hum[ind].back_stamina();
@@ -1015,8 +1012,7 @@ namespace Environment::Field{
 			if(mode == "Timer"){
 				if(time(0) - tb >= level * 60 * 5){
 					if(kills < level * 5){
-						std::cout << "You Lost :(\n";
-						std::cout << "press space button to continue" << std::endl;
+						printer.print("You Lost :(\npress space button to continue\n");
 						hum[ind].back_Hp();
 						hum[ind].back_mindamage();
 						hum[ind].back_stamina();
@@ -1025,10 +1021,12 @@ namespace Environment::Field{
 						return true;
 					}
 					else{
-						std::cout << "You won :)\n";
-						std::cout << "reward: " << (int)(hum[ind].get_level_timer() == level) * level * 1000 + loot << "$\n";
-						std::cout << "level " << level << " has done successfully!\n";
-						std::cout << "press space button to continue" << std::endl;
+						std::string s = "You won :)\nreward: ";
+						s += std::to_string((int)(hum[ind].get_level_solo() == level) * level * 1000 + loot);
+						s += "$\nlevel ";
+						s += std::to_string(level);
+						s += " has done successfully!\npress space button to continue\n";
+						printer.print(s);
 						hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_timer() == level) * level * 1000);
 						if(hum[ind].get_level_timer() == level)
 							hum[ind].level_timer_up();
@@ -1043,10 +1041,12 @@ namespace Environment::Field{
 				return false;
 			}
 			if(level * 5 <= kills && mode == "Solo"){
-				std::cout << "You won :)\n";
-				std::cout << "reward: " << (int)(hum[ind].get_level_solo() == level) * level * 1000 + loot << "$\n";
-				std::cout << "level " << level << " has done successfully!\n";
-				std::cout << "press space button to continue" << std::endl;
+				std::string s = "You won :)\nreward: ";
+				s += std::to_string((int)(hum[ind].get_level_solo() == level) * level * 1000 + loot);
+				s += "$\nlevel ";
+				s += std::to_string(level);
+				s += " has done successfully!\npress space button to continue\n";
+				printer.print(s);
 				hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_solo() == level) * level * 1000);
 				if(hum[ind].get_level_solo() == level)
 					hum[ind].level_solo_up();
@@ -1058,10 +1058,12 @@ namespace Environment::Field{
 				return true;
 			}
 			if(level * 10 <= teams_kills && rivals_are_dead() && mode == "Squad"){
-				std::cout << "You won :)\n";
-				std::cout << "reward: " << (int)(hum[ind].get_level_squad() == level) * level * 1000 + loot << "$\n";
-				std::cout << "level " << level << " has done successfully!\n";
-				std::cout << "press space button to continue" << std::endl;
+				std::string s = "You won :)\nreward: ";
+				s += std::to_string((int)(hum[ind].get_level_squad() == level) * level * 1000 + loot);
+				s += "$\nlevel ";
+				s += std::to_string(level);
+				s += " has done successfully!\npress space button to continue\n";
+				printer.print(s);
 				if(hum[ind].get_level_squad() == level)
 					hum[ind].level_squad_up();
 				hum[ind].back_Hp();
@@ -1077,12 +1079,12 @@ namespace Environment::Field{
                     --countdown;
                     return false;
                 }
-				c_col(32, 40);
-				std::cout << "*** Congratulations! You won the match :) ***";
-				c_col(0, 0);
-				std::cout << "\npress space button to continue" << std::endl;
+				std::string s = c_col(32, 40);
+				s += "*** Congratulations! You won the match :) ***\n";
+				s += c_col(0, 0);
+				s += "press space button to continue\n";
+				printer.print(s);
 				while(getch() != ' ');
-				std::cout.flush();
 				return true;
 			}
 			return false;
@@ -1252,6 +1254,9 @@ namespace Environment::Field{
 				return;
             if(online)
                 client.prepare();
+			cls();
+			std::cout << "* Please keep this terminal\nwindow active while playing :)" << std::endl;
+			printer.start();
 			start = std::chrono::steady_clock::now();
 			++frame, find_recom(), view(), print_game();
 			start = std::chrono::steady_clock::now();
@@ -1265,23 +1270,28 @@ namespace Environment::Field{
 				if(check_end())
 					break;
 				human_action();
-				if(quit)
+				if(quit){
+					printer.stop();
 					return;
+				}
 				zombie_action();
 				portal_damage();
+				view();
 				update_tmp();
 				hit_human(), hit_zombie();
-				++frame, find_recom(), view(), print_game();
+				++frame, find_recom(), print_game();
 				start = std::chrono::steady_clock::now();
 				updmap();
 				update_bull();
+				view();
 				update_tmp();
 				hit_human(), hit_zombie();
-				++frame, find_recom(), view(), print_game();
+				++frame, find_recom(), print_game();
 				start = std::chrono::steady_clock::now();
 				updmap();
 				update_bull();
 			}
+			printer.stop();
 			if(!online)
 				Environment::Character::me = hum[ind];
 			update();
@@ -1292,7 +1302,7 @@ namespace Environment::Field{
 			full = false;
 			_H = 7, W = 24;
 			for(bool b = false; true;){
-				head();
+				std::cout << head();
 				std::cout << "Game Modes:" << '\n';
 				std::cout << "  1. Solo" << '\n';
 				std::cout << "  2. Timer" << '\n';
@@ -1312,7 +1322,7 @@ namespace Environment::Field{
 				if(c == '1'){
 					mode = "Solo";
 					while(true){
-						head();
+						std::cout << head();
 						std::cout << "Game Mode: Solo\nChoose the level which you want to play:\n";
 						for(int i = 0; i < L; ++i){
 							std::cout << "  " << i + 1 << ". level " << i + 1 << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills)";
@@ -1339,7 +1349,7 @@ namespace Environment::Field{
 				if(c == '2'){
 					mode = "Timer";
 					while(true){
-						head();
+						std::cout << head();
 						std::cout << "Game Mode: Timer\n(You have to stay alive in all of the time)\nChoose the level which you want to play:\n";
 						for(int i = 0; i < L; ++i){
 							std::cout << "- level " << i + 1 << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills, in " << (i ? "" : "0") << 5 * (i + 1) << " minutes)";
@@ -1366,7 +1376,7 @@ namespace Environment::Field{
 				if(c == '3'){
 					mode = "Squad";
 					while(true){
-						head();
+						std::cout << head();
 						std::cout << "Game Mode: Squad\nChoose the level which you want to play:\n";
 						for(int i = 0; i < L; ++i){
 							std::cout << "- level " << i + 1 << ", (" << 10 * (i + 1) << " kills and all of the rival's team death)";

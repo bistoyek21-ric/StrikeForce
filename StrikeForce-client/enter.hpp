@@ -103,7 +103,7 @@ void psw(std::string &s){
 void sign_up(std::vector<std::pair<std::string, std::string>> &users){
 	std::string s1, s2, s3;
 	for(bool b = false; true; b = true){
-		head();
+		std::cout << head();
 		std::cout << "If you have an account and want to sing in write \"sign in\" and press enter" << '\n';
 		std::cout << "-------------------" << std::endl;
 		if(b && s1 != "")
@@ -129,7 +129,7 @@ void sign_up(std::vector<std::pair<std::string, std::string>> &users){
 			break;
 	}
 	for(bool b = false; true; b = true){
-		head();
+		std::cout << head();
 		std::cout << "If you have an account and want to sing in write \"sing in\" and press enter" << '\n';
 		std::cout << "-------------------" << std::endl;
 		if(b){
@@ -180,7 +180,7 @@ void sign_up(std::vector<std::pair<std::string, std::string>> &users){
 void sign_in(std::vector<std::pair<std::string, std::string>> &users){
 	std::string s1, s2;
 	for(bool b = false; true; b = true){
-		head();
+		std::cout << head();
 		std::cout << "If want to create account write \"sign up\" and press enter" << '\n';
 		std::cout << "-------------------" << std::endl;
 		if(b)
@@ -234,7 +234,7 @@ void enter(){
 		us.close();
 		ps.close();
 		for(bool b = false; true; b = true){
-			head();
+			std::cout << head();
 			std::cout << "Have an account? (y/n)" << std::endl;
 			if(b)
 				std::cout << "invalid input, try again" << std::endl;

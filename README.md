@@ -35,7 +35,7 @@ To install and run this project, you need a C++ compiler. Follow these steps:
     ```
 4. Run the executable:
     ```sh
-    ./main
+    ./a
     ```
 
 You should do almost the same thing (but not linking sfml linkers) to run the server the only difference is between the name of folders and source files.

@@ -38,6 +38,8 @@ SOFTWARE.
 
 #include "GraphicPrinter.hpp"
 
+bool during_battle = false;
+
 void usleep(int x){
 	sf::sleep(sf::microseconds(x));
 	return;
@@ -71,24 +73,29 @@ void restore_input_buffering(){
 }
 
 int kbhit(){
-	disable_input_buffering();
+	if(!during_battle)
+		disable_input_buffering();
 	struct timeval tv = {0, 0};
 	fd_set fds;
 	FD_ZERO(&fds);
 	FD_SET(STDIN_FILENO, &fds);
 	int res = select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv);
-	restore_input_buffering();
-	if(res){
-		std::cout << "\b \b";
-		std::cout.flush();
-	}
+	if(!res)
+		tcflush(STDIN_FILENO, TCIFLUSH);
+	if(!during_battle)
+		restore_input_buffering();
 	return res;
 }
 
 int getch(){
-	disable_input_buffering();
+	if(!during_battle)
+		disable_input_buffering();
 	int res = getchar();
-	restore_input_buffering();
+	while(kbhit())
+		res = getchar();
+	tcflush(STDIN_FILENO, TCIFLUSH);
+	if(!during_battle)
+		restore_input_buffering();
 	return res;
 }
 

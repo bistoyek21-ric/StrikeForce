@@ -39,8 +39,8 @@ namespace Environment::Field{
 	int ind, countdown;
 
 	bool disconnect;
-	
-	char command[H], symbol[8][4] = {{31, 16, 30, 17}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
+
+	char command[H], symbol[8][4] = {{'V', '>', 'A', '<'}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
 
 	int agent[H];
 
@@ -67,7 +67,7 @@ namespace Environment::Field{
 		int n, team;
 		long long tb, serial_number;
 
-		void start(const std::string& server_ip, int server_port){
+		void start(const std::string& server_ip, int server_port, const std::string& server_password){
 			open = true;
 			#if !defined(__unix__) && !defined(__APLLE__)
 			WSADATA wsaData;
@@ -91,7 +91,15 @@ namespace Environment::Field{
 				disconnect = true;
 				return;
 			}
+			send(sock, server_password.c_str(), server_password.size() + 1, 0);
 			char buffer[BUFFER_SIZE];
+			memset(buffer, 0, BUFFER_SIZE);
+			my_recv(sock, buffer, BUFFER_SIZE, 0);
+			if(buffer[0] == 'R'){
+				std::cout << "Wrong password entered" << std::endl;
+				disconnect = true;
+				return;
+			}
 			memset(buffer, 0, BUFFER_SIZE);
 			my_recv(sock, buffer, BUFFER_SIZE, 0);
 			sscanf(buffer, "%lld %lld", &tb, &serial_number);
@@ -107,8 +115,8 @@ namespace Environment::Field{
 		}
 
 		void send_it(){
-			std::string msg = "";
-			msg += command[ind];
+			std::string msg;
+			msg.push_back(command[ind]);
 			send(sock, msg.c_str(), 2, 0);
 			return;
 		}
@@ -170,7 +178,7 @@ namespace Environment::Field{
 					continue;
 				memset(buffer, 0, BS);
 				if(my_recv(sock, buffer, BS, 0) < 0){
-                    command[ind] = '_';
+                    disconnect = true;
                     return;
                 }
 				sscanf(buffer, "%c", &command[i]);
@@ -180,7 +188,7 @@ namespace Environment::Field{
 					continue;
 				memset(buffer, 0, BS);
 				if(my_recv(sock, buffer, BS, 0) < 0){
-                    command[ind] = '_';
+                    disconnect = true;
                     return;
                 }
 				sscanf(buffer, "%c", &command[i]);
@@ -362,11 +370,11 @@ namespace Environment::Field{
 
 		node themap[F][N][M], themap1[F][N][M];
 
-		void print_game() const;
-
 		void view() const;
 
 		char bot(Environment::Character::Human& player) const;
+
+		void print_game() const;
 
 		char human_rnpc_bot(Environment::Character::Human& player) const;
 
@@ -395,10 +403,14 @@ namespace Environment::Field{
 				std::cout.flush();
 				std::string server_port_s;
 				getline(std::cin, server_port_s);
+				std::cout << "Enter the server's password: ";
+				std::cout.flush();
+				std::string server_password;
+				getline(std::cin, server_password);
 				for(auto e: server_port_s)
 					server_port = 10 * server_port + (e - '0');
 				server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
-				client.start(server_ip, server_port);
+				client.start(server_ip, server_port, server_password);
 				if(disconnect){
 					std::cout << "press space button to continue" << std::endl;
 					while(getch() != ' ');
@@ -587,7 +599,7 @@ namespace Environment::Field{
 			if(pix->human->get_Hp() <= 0 && pix->human != &hum[ind]){
 				mh[pix->human - hum] = false;
 				agent[pix->human - hum] = -1;
-				pix->s[8] = true;
+				pix->s[8] = 1;
 				pix->s[0] = 0;
 				if(owner && owner->get_team() == hum[ind].get_team() && pix->human->get_team() != hum[ind].get_team()){
 					++teams_kills, loot += 100;
@@ -603,7 +615,13 @@ namespace Environment::Field{
 		        if(mh[i]){
 	        		std::vector<int> v = hum[i].get_cor();
 	       			auto pix = &themap[v[0]][v[1]][v[2]];
-	       			if(pix->s[2])
+					if(hum[i].get_Hp() <= 0){
+						mh[i] = false;
+						agent[i] = -1;
+						pix->s[8] = 1;
+						pix->s[0] = 0;
+					}
+	       			else if(pix->s[2])
     	       			human_damage(pix);
 				}
         	return;
@@ -869,6 +887,11 @@ namespace Environment::Field{
 
 		void human_action(){
 			my_command();
+			if(quit){
+				printer.print("You quitted, press space button to continue\n");
+				while(getch() != ' ');
+				return;
+			}
 			if(agent[ind] != -1 && !manual && command[ind] != '3')
 				command[ind] = bot(hum[ind]); 
 			if(online){
@@ -881,11 +904,6 @@ namespace Environment::Field{
 			for(int i = ind + 1; i < H; ++i)
 				if(mh[i] && !remote[i])
 					get_command(i);
-			if(quit){
-				printer.print("You quitted, press space button to continue\n");
-				while(getch() != ' ');
-				return;
-			}
 			int r = rand() & 1, st = (1 - r) * (H - 1), dif = 2 * r - 1;
 			for(int i = st; i < H && (~i); i += dif)
 				if(mh[i]){
@@ -984,14 +1002,13 @@ namespace Environment::Field{
 		}
 
 		bool check_end(){
-		    if(command[ind] == '_'){
+		    if(online && disconnect){
                 printer.print("You're disconnected :(\npress space button to continue\n");
 				hum[ind].back_Hp();
 				hum[ind].back_mindamage();
 				hum[ind].back_stamina();
 				hum[ind].backpack.back_tmp();
-				if(online)
-					client.end_it();
+				client.end_it();
 				while(getch() != ' ');
 				return true;
 		    }
@@ -1091,12 +1108,6 @@ namespace Environment::Field{
 		}
 
 		void setup(){
-			#if defined(__unix__) || defined(__APPLE__)
-			symbol[0][0] = 'V';
-			symbol[0][1] = '>';
-			symbol[0][2] = 'A';
-			symbol[0][3] = '<';
-			#endif
 			countdown = 1;
 			Environment::Character::me.backpack.vec = -1;
 			tb = time(nullptr);
@@ -1256,6 +1267,10 @@ namespace Environment::Field{
                 client.prepare();
 			cls();
 			std::cout << "* Please keep this terminal\nwindow active while playing :)" << std::endl;
+			during_battle = true;
+			#if defined(__unix__) || defined(__APPLE__)
+			disable_input_buffering();
+			#endif
 			printer.start();
 			start = std::chrono::steady_clock::now();
 			++frame, find_recom(), view(), print_game();
@@ -1272,7 +1287,7 @@ namespace Environment::Field{
 				human_action();
 				if(quit){
 					printer.stop();
-					return;
+					break;
 				}
 				zombie_action();
 				portal_damage();
@@ -1292,9 +1307,14 @@ namespace Environment::Field{
 				update_bull();
 			}
 			printer.stop();
-			if(!online)
+			if(!online && !quit)
 				Environment::Character::me = hum[ind];
-			update();
+			if(!quit)
+				update();
+			during_battle = false;
+			#if defined(__unix__) || defined(__APPLE__)
+			restore_input_buffering();
+			#endif
 			return;
 		}
 
@@ -1482,4 +1502,120 @@ namespace Environment::Field{
 			return;
 		}
 	} g;
+
+	auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(40000000LL);
+
+	void gameplay::print_game() const{
+		if(silent){
+			if(agent[ind] != -1 && !manual)
+			       	return;
+			auto end_ = std::chrono::steady_clock::now();
+			int k = (lim.count() - (end_ - start).count()) / 1000;
+			usleep(std::max(k, 0));
+			return;
+		}
+		std::string res = "";
+		if(!full){
+			res += head(true, true) + "Mode: " + mode;
+			if(agent[ind] != -1){
+				if(manual)
+					res += " (Manual)";
+				else
+					res += " (Automate)";
+			}
+			if(online){
+                res += " | index: " + std::to_string(ind);
+                res += ", team: " + std::to_string(hum[ind].get_team());
+            }
+            res += "\n_____________________\n";
+    		res += c_col(33, 40);
+            res += "Frame: " + std::to_string(frame) + "\n";
+			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
+			res += c_col(34, 40);
+			res += "Your teams' kills: " + std::to_string(teams_kills) + " (yours': " + std::to_string(kills) + ")";
+			if(!online)
+				res += ", level: " + std::to_string(level);
+			res += "\n";
+			if(mode == "Timer")
+				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_timer() == level) * 1000 * level) + "\n";
+			else if(mode == "Solo")
+				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_solo() == level) * 1000 * level) + "\n";
+			else if(mode == "Squad")
+				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_squad() == level) * 1000 * level) + "\n";
+			res += "\nYou:\n";
+			res += hum[ind].subtitle();
+			res += c_col(31, 40) + "\n";
+			if(!is_human && recomZ != nullptr){
+				res += "Enemy:\n";
+				res += (*recomZ).subtitle() + '\n';
+			}
+			else if(recomH != nullptr){
+				res += "Enemy:\n";
+				res += (*recomH).subtitle();
+			}
+			else
+				res += "\n\n\n\n\n";
+			res += c_col(0, 0);
+			if(agent[ind] == -1){
+				res += "to see the command list";
+				res += (!online ? " or pause the game" : "");
+				res += " press 0\n";
+			}
+			else
+				res += "to not show the situation please press space button\n";
+			res += "____________________________________________________\n";
+		}
+		else
+			res += "0: command list\n";
+		std::vector<int> v = hum[ind].get_cor();
+		std::string last = "", color, cell;
+		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
+		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
+		for(int i = v[1] - _H; i <= v[1] + _H; ++i, res.push_back('\n'))
+			for(int j = v[2] - W; j <= v[2] + W; ++j){
+				cell = themap[v[0]][i][j].showit_();
+				color = "";
+				int cnt = 2;
+				for(int k = 0; k < cell.size(); ++k){
+					if(cnt < 2)
+						color.push_back(cell[k]);
+					else if(cell[k] != '\033')
+						res.push_back(cell[k]);
+					else
+						color.push_back(cell[k]), cnt = 0;
+					if(cell[k] == 'm')
+						++cnt;
+					if(cnt == 2 && color != last){
+						res += color;
+						last = color;
+					}
+				}
+			}
+		color = c_col(0, 0);
+		if(last != color)
+			res += color;
+		printer.cls();
+		printer.print(res.c_str());
+		#if defined(__unix__) || defined(__APPLE__)
+		auto end_ = std::chrono::steady_clock::now();
+		int k = (lim.count() - (end_ - start).count()) / 1000;
+		usleep(std::max(k, 0));
+		#endif
+		return;
+	}
+
+	char gameplay::human_rnpc_bot(Environment::Character::Human& player) const{
+		if(frame % 50 == 1){
+			char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
+			return c[rand() % 8];
+		}
+		else if(rand() % 5 < 3)
+			return 'x';
+		else if(rand() % 5 < 3){
+			char c[7] = {'1', '2', 'a', 'w', 's', 'd', 'p'};
+			return c[rand() % 7];
+		}
+		char c[8] = {'+', 'u', 'f', 'g', 'h', 'j', '[', ']'};
+		return c[rand() % 8];
+	}
 }

@@ -7,7 +7,7 @@
 
 (in progress...)
 
-##### Requirements: any c++ compiler and SMFL framework
+##### Requirements: any c++ compiler, curl and SMFL framework
 
 **StrikeForce** is an open-source, simple online game with a 1970s style. Experience exciting shooter gameplay and enjoy battle royale matches, available on Windows, Unix-based operating systems, and Apple devices.
 

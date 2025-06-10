@@ -173,7 +173,7 @@ int main(){
 		std::cerr << "Failed to bind socket" << std::endl;
 		return 1;
 	}
-	if(listen(server_socket, 128) == -1){
+	if(listen(server_socket, SOMAXCONN) == -1){
 		std::cerr << "Failed to listen on socket" << std::endl;
 		return 1;
 	}

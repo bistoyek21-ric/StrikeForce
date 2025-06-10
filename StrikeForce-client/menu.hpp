@@ -248,7 +248,6 @@ namespace Environment::Character{
 						if(me.get_money() >= me.backpack.get_price() && me.backpack.get_vol() + me.backpack.list_cons[i].first.get_vol() <= me.backpack.get_capacity()){
 							me.set_money(me.get_money() - me.backpack.list_cons[i].first.get_price());
 							++me.backpack.list_cons[i].second;
-							me.backpack.upgrade();
 							me.backpack.set_vol(me.backpack.get_vol() + me.backpack.list_cons[i].first.get_vol());
 							std::cout << "you bought " << me.backpack.list_cons[i].first.get_name() << " successfully!" << std::endl;
 						}

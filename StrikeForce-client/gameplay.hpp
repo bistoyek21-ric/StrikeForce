@@ -33,7 +33,7 @@ namespace Environment::Field{
 	int rand(){
 		return Environment::Random::_rand();
 	}
-	// if you changed the map you have to change F, N and M too
+
 	int constexpr F = 3, N = 29, M = 100, H = 9000, Z = 9000, B = 9000, C = 9000, lim_portal = 1000, lim_block = 1100;
 
 	int ind, countdown;
@@ -219,7 +219,7 @@ namespace Environment::Field{
 
 	int h_ind(){
 		for(int i = 0; i < H; ++i)
-			if(i != ind && !mh[i] && !remote[i])
+			if(i != ind && !mh[i] && !remote[i] && agent[ind] == -1)
 				return i;
 		return -1;
 	}
@@ -495,7 +495,7 @@ namespace Environment::Field{
 		void claim_chest(Environment::Character::Human& player){
 			std::vector<int> v = player.get_cor();
 			if(themap[v[0]][v[1]][v[2]].s[4]){
-        			player.claim_chest(*(themap[v[0]][v[1]][v[2]].cons));
+        		player.claim_chest(*(themap[v[0]][v[1]][v[2]].cons));
 				themap[v[0]][v[1]][v[2]].s[4] = 0;
 				--chest;
 			}
@@ -823,11 +823,6 @@ namespace Environment::Field{
 			}
 			if(command[ind] == 'Q'){
 				quit = true;
-				command[ind] = '_';
-				if(online){
-					client.send_it();
-					client.end_it();
-				}
 				return;
 			}
 	        if(command[ind] == '0'){
@@ -888,6 +883,11 @@ namespace Environment::Field{
 		void human_action(){
 			my_command();
 			if(quit){
+				command[ind] = '_';
+				if(online){
+					client.send_it();
+					client.end_it();
+				}
 				printer.print("You quitted, press space button to continue\n");
 				while(getch() != ' ');
 				return;
@@ -908,8 +908,6 @@ namespace Environment::Field{
 			for(int i = st; i < H && (~i); i += dif)
 				if(mh[i]){
 					std::vector<int> v = hum[i].get_cor();
-					if(themap[v[0]][v[1]][v[2]].s[2])
-						continue;
 					obey(command[i], hum[i]);
 					teleport(hum[i]);
 					claim_chest(hum[i]);
@@ -1014,7 +1012,7 @@ namespace Environment::Field{
 		    }
 			if(hum[ind].get_Hp() <= 0){
                 if(online){
-					command[ind] = '_';
+					command[ind] = '~';
 					client.send_it();
 					client.end_it();
 				}

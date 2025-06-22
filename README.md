@@ -7,7 +7,7 @@
 
 (in progress...)
 
-##### Requirements: any c++ compiler, curl and SMFL framework
+##### Requirements: C++ (17 at least), curl and SMFL framework
 
 **StrikeForce** is an open-source, simple online game with a 1970s style. Experience exciting shooter gameplay and enjoy battle royale matches, available on Windows, Unix-based operating systems, and Apple devices.
 
@@ -23,7 +23,7 @@ To install and run this project, you need a C++ compiler. Follow these steps:
 
 1. Clone the repository (Or you can download one of the versions):
     ```sh
-    git clone https://github.com/bistoyek-official/StrikeForce.git
+    git clone https://github.com/bistoyek21-ric/StrikeForce.git
     ```
 2. Navigate to the project directory:
     ```sh

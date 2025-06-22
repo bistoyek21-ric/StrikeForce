@@ -43,7 +43,7 @@ static int PORT;
 static std::string PASS;
 
 std::vector<int> clients, team, indices;
-std::vector<bool> alive, disconnect;
+std::vector<bool> alive, disconnect, announce;
 std::vector<char> command;
 
 int n, m, cnt;
@@ -68,11 +68,12 @@ void rcv_commands(){
 			char buffer[BS] = {}, c;
 			my_recv(clients[i], buffer, i);
 			sscanf(buffer, "%c", &command[i]);
-			if(command[i] == '_' || disconnect[i]){
-				disconnect[i] = true;
-				command[i] = '_';
+			if(command[i] == '_' || command[i] == '~' || disconnect[i]){
 				alive[i] = false, close(clients[i]);
-                std::cout << "player with index " << i << " from team " << team[i] << (disconnect[i] ? " disconnected\n" : " eleminated\n");
+                std::cout << "player with index " << i << " from team " << team[i] << " ";
+				std::cout << (command[i] == '_' ? (disconnect[i] ? "disconnected" : "quited") : "eleminated") << '\n';
+				if(command[i] == '_')
+					announce[i] = true;
 			}
 		}
 	});
@@ -83,7 +84,7 @@ void send_commands(){
 	std::for_each(std::execution::par, indices.begin(), indices.end(), [&](int i){
 		if(alive[i]){
 			for(int j = 0; j < n; ++j)
-				if((alive[j] || disconnect[j]) && i != j){
+				if((alive[j] || announce[j]) && i != j){
 					std::string msg;
 					msg.push_back(command[j]);
 					send(clients[i], msg.c_str(), 2, 0);
@@ -103,14 +104,14 @@ int result(){
 			++cnt;
 		}
 		else
-			disconnect[i] = false;
+			announce[i] = false;
     if(num == 1)
         return winner;
     return 0;
 }
 
 int main(){
-	std::cout << "StrikeForce\n";
+	std::cout << "StrikeForce-server\n";
 	std::cout << "Created by: 21\n";
 	std::cout << "____________________________________________________\n\n";
     #if !defined(__unix__) && !defined(__APLLE__)
@@ -158,6 +159,7 @@ int main(){
 	command.assign(n, '+');
 	alive.assign(n, true);
 	disconnect.assign(n, false);
+	announce.assign(n, false);
 	int server_socket, client_socket;
 	struct sockaddr_in server_addr, client_addr;
 	socklen_t addr_len = sizeof(client_addr);
@@ -238,6 +240,10 @@ int main(){
 		send_commands();
 		winner = result();
 	}
+	close(server_socket);
+	#if !defined(__unix__) && !defined(__APPLE__)
+    WSACleanup();
+    #endif
 	std::cout << "Final result" << '\n';
 	if(winner)
         std::cout << "Team " << winner << " won the match!!!\n";
@@ -248,9 +254,5 @@ int main(){
 	std::string str = "";
 	while(str != "done!")
         std::cin >> str;
-	close(server_socket);
-	#if !defined(__unix__) && !defined(__APPLE__)
-    WSACleanup();
-    #endif
 	return 0;
 }

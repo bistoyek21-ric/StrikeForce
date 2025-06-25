@@ -169,7 +169,6 @@ void leaderboard(std::string mode){
 	return;
 }
 
-
 namespace Environment::Character{
 
 	void shop(){
@@ -213,7 +212,7 @@ namespace Environment::Character{
 			if(code == "-1")
 				return;
 			if(code == "17"){
-				me.backpack.show(me.get_money());
+				me.show_backpack();
 				continue;
 			}
 			if(code == "0"){
@@ -241,6 +240,9 @@ namespace Environment::Character{
 				if(code == std::to_string(i + 1)){
 					std::cout << "Do you want to buy " << me.backpack.list_cons[i].first.get_name() << "(y:yes / any other key:no)?" << '\n';
 					std::cout << "volume : " << me.backpack.list_cons[i].first.get_vol() << '\n';
+					std::cout << "stamina : " << me.backpack.list_cons[i].first.get_stamina() << '\n';
+					std::cout << "effect : " << me.backpack.list_cons[i].first.get_effect() << '\n';
+					std::cout << "Hp : " << me.backpack.list_cons[i].first.get_Hp() << '\n';
 					std::cout << "---------------------------\n";
 					std::cout << " price: " << me.backpack.list_cons[i].first.get_price() << std::endl;
 					ans = getch();
@@ -248,7 +250,6 @@ namespace Environment::Character{
 						if(me.get_money() >= me.backpack.get_price() && me.backpack.get_vol() + me.backpack.list_cons[i].first.get_vol() <= me.backpack.get_capacity()){
 							me.set_money(me.get_money() - me.backpack.list_cons[i].first.get_price());
 							++me.backpack.list_cons[i].second;
-							me.backpack.upgrade();
 							me.backpack.set_vol(me.backpack.get_vol() + me.backpack.list_cons[i].first.get_vol());
 							std::cout << "you bought " << me.backpack.list_cons[i].first.get_name() << " successfully!" << std::endl;
 						}

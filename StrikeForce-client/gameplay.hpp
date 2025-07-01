@@ -34,15 +34,13 @@ namespace Environment::Field{
 		return Environment::Random::_rand();
 	}
 
-	int constexpr F = 3, N = 29, M = 100, H = 9000, Z = 9000, B = 9000, C = 9000, lim_portal = 1000, lim_block = 1100;
+	int constexpr F = 3, N = 30, M = 100, H = 9000, Z = 9000, B = 9000, C = 9000, lim_portal = 1000, lim_block = 1100;
 
 	int ind, countdown;
 
-	bool disconnect;
+	bool disconnect, using_an_agent;
 
 	char command[H], symbol[8][4] = {{'V', '>', 'A', '<'}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
-
-	int agent[H];
 
 	const std::string valid_commands = "`13upxawsdfghjkl;'cvbnm,./[]+";
 
@@ -219,7 +217,7 @@ namespace Environment::Field{
 
 	int h_ind(){
 		for(int i = 0; i < H; ++i)
-			if(i != ind && !mh[i] && !remote[i] && agent[ind] == -1)
+			if(i != ind && !mh[i] && !remote[i])
 				return i;
 		return -1;
 	}
@@ -357,7 +355,7 @@ namespace Environment::Field{
 		Environment::Character::Zombie* recomZ;
 		Environment::Character::Human* recomH;
 
-		const int L = 9, pc = 30, pz = 40, ph = 50, wdx[4] = {1, 0, -1, 0}, wdy[4] = {0, 1, 0, -1};
+		const int L = 10, pc = 30, pz = 40, ph = 50, wdx[4] = {1, 0, -1, 0}, wdy[4] = {0, 1, 0, -1};
 		long long loot, level, teams_kills, kills, chest, frame, serial_number;
 		int W, _H;
 
@@ -369,6 +367,8 @@ namespace Environment::Field{
 		time_t tb;
 
 		node themap[F][N][M], themap1[F][N][M];
+
+		void prepare();
 
 		void view() const;
 
@@ -387,25 +387,25 @@ namespace Environment::Field{
         }
 
 		void load_data(){
-			if(!manual)
-				agent[ind] = 0;
+			using_an_agent = !manual;
+			if(using_an_agent)
+				Environment::Character::me->agent = new Agent(online, true, 121 * 22, 10, 128, 0.99, 1e-3, std::vector<double>(10, 0));
 			srand(tb);
 			serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
 			Environment::Random::_srand(tb, serial_number);
 			if(online){
 				disconnect = false;
-				std::string server_ip;
+				std::string server_ip, server_port_s, server_password;
 				int server_port = 0;
+				std::cout << "JOINIGN INTO MATCH SERVER:" << std::endl;
 				std::cout << "Enter the server IP: ";
 				std::cout.flush();
 				getline(std::cin, server_ip);
 				std::cout << "Enter the server port: ";
 				std::cout.flush();
-				std::string server_port_s;
 				getline(std::cin, server_port_s);
 				std::cout << "Enter the server's password: ";
 				std::cout.flush();
-				std::string server_password;
 				getline(std::cin, server_password);
 				for(auto e: server_port_s)
 					server_port = 10 * server_port + (e - '0');
@@ -598,9 +598,9 @@ namespace Environment::Field{
 			mb[pix->bullet - bull] = false;
 			if(pix->human->get_Hp() <= 0 && pix->human != &hum[ind]){
 				mh[pix->human - hum] = false;
-				agent[pix->human - hum] = -1;
 				pix->s[8] = 1;
 				pix->s[0] = 0;
+				delete pix->human->agent;
 				if(owner && owner->get_team() == hum[ind].get_team() && pix->human->get_team() != hum[ind].get_team()){
 					++teams_kills, loot += 100;
 					if(owner == &hum[ind])
@@ -617,9 +617,9 @@ namespace Environment::Field{
 	       			auto pix = &themap[v[0]][v[1]][v[2]];
 					if(hum[i].get_Hp() <= 0){
 						mh[i] = false;
-						agent[i] = -1;
 						pix->s[8] = 1;
 						pix->s[0] = 0;
+						delete pix->human->agent;
 					}
 	       			else if(pix->s[2])
     	       			human_damage(pix);
@@ -805,7 +805,7 @@ namespace Environment::Field{
 					command[ind] = 'd';
 				else if(command[ind] == '2')
 					command[ind] = 's';
-				if(agent[ind] != -1){
+				if(using_an_agent){
 					if(!manual && command[ind] == ' ')
 						silent = !silent;
 					if(command[ind] == '3')
@@ -892,7 +892,7 @@ namespace Environment::Field{
 				while(getch() != ' ');
 				return;
 			}
-			if(agent[ind] != -1 && !manual && command[ind] != '3')
+			if(using_an_agent && !manual && command[ind] != '3')
 				command[ind] = bot(hum[ind]); 
 			if(online){
 				client.send_it();
@@ -1121,7 +1121,7 @@ namespace Environment::Field{
 				mz[i] = false;
 			for(int i = 0; i < H; ++i){
 				mh[i] = remote[i] = false;
-				agent[i] = -1, command[i] = '+';
+				command[i] = '+';
             }
 			for(int k = 0; k < F; ++k){
 				std::ifstream f("./map/floor" + std::to_string(k + 1) + ".txt");
@@ -1248,7 +1248,7 @@ namespace Environment::Field{
                     e->dmg = 0;
                 }
             }
-            for(int i = 0; i < (int)temp.size(); ++i)
+            for(int i = 0; i < temp.size(); ++i)
                 if(!(temp[i]->s[10])){
                     std::swap(temp[i], temp.back());
                     temp.pop_back();
@@ -1271,7 +1271,8 @@ namespace Environment::Field{
 			#endif
 			printer.start();
 			start = std::chrono::steady_clock::now();
-			++frame, find_recom(), view(), print_game();
+			view();
+			++frame, find_recom(), print_game();
 			start = std::chrono::steady_clock::now();
 			while(true){
 				if(frame % pc == 1)
@@ -1283,10 +1284,8 @@ namespace Environment::Field{
 				if(check_end())
 					break;
 				human_action();
-				if(quit){
-					printer.stop();
+				if(quit)
 					break;
-				}
 				zombie_action();
 				portal_damage();
 				view();
@@ -1304,7 +1303,10 @@ namespace Environment::Field{
 				updmap();
 				update_bull();
 			}
+			during_battle = false;
+			view();
 			printer.stop();
+			delete hum[ind]->agent;
 			if(!online && !quit)
 				Environment::Character::me = hum[ind];
 			if(!quit)
@@ -1441,7 +1443,7 @@ namespace Environment::Field{
 		}
 
 		void update(){
-			if(online || agent[ind] != -1)
+			if(online || using_an_agent)
 				return;
 			int r_changes = (kills * 100 * level) / (time(0) - tb + 1);
 			if(mode == "Timer")
@@ -1505,8 +1507,8 @@ namespace Environment::Field{
 
 	void gameplay::print_game() const{
 		if(silent){
-			if(agent[ind] != -1 && !manual)
-			       	return;
+			if(using_an_agent && !manual)
+			    return;
 			auto end_ = std::chrono::steady_clock::now();
 			int k = (lim.count() - (end_ - start).count()) / 1000;
 			usleep(std::max(k, 0));
@@ -1515,7 +1517,7 @@ namespace Environment::Field{
 		std::string res = "";
 		if(!full){
 			res += head(true, true) + "Mode: " + mode;
-			if(agent[ind] != -1){
+			if(using_an_agent){
 				if(manual)
 					res += " (Manual)";
 				else
@@ -1554,7 +1556,7 @@ namespace Environment::Field{
 			else
 				res += "\n\n\n\n\n";
 			res += c_col(0, 0);
-			if(agent[ind] == -1){
+			if(using_an_agent){
 				res += "to see the command list";
 				res += (!online ? " or pause the game" : "");
 				res += " press 0\n";
@@ -1616,4 +1618,125 @@ namespace Environment::Field{
 		char c[8] = {'+', 'u', 'f', 'g', 'h', 'j', '[', ']'};
 		return c[rand() % 8];
 	}
+
+	std::string action = "`1awsdxpm";
+
+	std::vector<double> describe(const node &cell, const Environment::Character::Human* player){
+		std::vector<double> res;
+		if(cell.s[2] || cell.s[4]){
+			double hp = 0, effect = 0, stamina = 0, dir[4] = {};
+			if(cell.s[2]){
+				hp -= cell.bullet->get_damage();
+				effect += cell.bullet->get_damage();
+				auto dcor = cell.bullet->get_dcor();
+				auto cor = cell.bullet->get_cor();
+				int dist = cell.bullet->get_range() - abs(cor[0] - dcor[0]) - abs(cor[1] - dcor[1]) - abs(cor[2] - dcor[2]);
+				dir[cell.bullet->get_way() - 1] = dist / 100.0;
+			}
+			if(cell.s[4]){
+				hp += cell.cons->get_Hp();
+				effect += cell.cons->get_effect();
+				stamina += cell.cons->get_stamina();
+			}
+			res.push_back(hp / 1000.0);
+			res.push_back(effect / 1000.0);
+			res.push_back(stamina / 1000.0);
+			for(int i = 0; i < 4; ++i)
+				res.push_back(dir[i]);
+		}
+		else
+			for(int i = 0; i < 7; ++i)
+				res.push_back(0);
+		if(cell.s[0] || cell.s[1] || cell.s[3] || cell.s[5] || cell.s[6]){
+			if(cell.s[3]){
+				if(cell.s[10]){
+					res.push_back(1);
+					res.push_back(lim_block - cell.dmg);
+				}
+				else{
+					res.push_back(0);
+					res.push_back(0);
+				}
+				for(int i = 0; i < 11; ++i)
+					res.push_back(0);
+				res.push_back(cell.s[5] || cell.s[6]);
+			}
+			else if(cell.s[0]){
+				res.push_back(1);
+				res.push_back(cell.human->get_Hp() / 1000.0);
+				res.push_back(cell.human->get_stamina() / 1000.0);
+				std::vector<int> v = cell.human->get_damage_effect();
+				for(int i = 0; i < 2; ++i)
+					res.push_back(v[i] / 1000.0);
+				double dir[4] = {};
+				dir[cell.human->get_way() - 1] = 1;
+				for(int i = 0; i < 4; ++i)
+					res.push_back(dir[i]);
+				int team[2] = {player->get_team(), cell.human->get_team()};
+				res.push_back(team[0] == team[1]);
+				res.push_back(team[0] != team[1] && team[1]);
+				res.push_back(!team[1]);
+				res.push_back(0);
+				res.push_back(cell.s[5] || cell.s[6]);
+			}
+			else if(cell.s[1]){
+				res.push_back(1);
+				res.push_back(cell.zombie->get_Hp() / 1000.0);
+				res.push_back(0);
+				res.push_back(cell.zombie->get_mindamage() / 1000.0);
+				res.push_back(0);
+				for(int i = 0; i < 4; ++i)
+					res.push_back(0.01);
+				for(int i = 0; i < 3; ++i)
+					res.push_back(0);
+				res.push_back(1);
+				res.push_back(cell.s[5] || cell.s[6]);
+			}
+			else if(cell.s[5]){
+				if(cell.s[10]){
+					res.push_back(1);
+					res.push_back(lim_portal - cell.dmg);
+				}
+				else{
+					res.push_back(0);
+					res.push_back(0);
+				}
+				for(int i = 0; i < 11; ++i)
+					res.push_back(0);
+				res.push_back(1);
+			}
+			else if(cell.s[6]){
+				for(int i = 0; i < 13; ++i)
+					res.push_back(0);
+				res.push_back(1);
+			}
+		}
+		else
+			for(int i = 0; i < 14; ++i)
+				res.push_back(0);
+		res.push_back(cell.s[7]);
+		return res;
+	}
+
+	void gameplay::view() const {
+        return;
+    }
+
+    char gameplay::bot(Environment::Character::Human& player) const {
+		if(&player != &hum[ind])
+			return '+';
+		std::vector<int> v = player.get_cor();
+		std::vector<double> obs;
+		for(int i = v[1] - 5; i <= v[1] + 5; ++i)
+			for(int j = v[2] - 5; j <= v[2] + 5; ++j){
+				std::vector<double> vec;
+				if(std::min(i, j) < 0 || N <= i || M <= j)
+					vec = describe(themap[0][0][0], &player);
+				else
+					vec = describe(themap[v[0]][i][j], &player);
+				for(auto &e: vec)
+					obs.push_back(e);
+			}
+		return action[player.agent->predict(obs)];
+    }
 }

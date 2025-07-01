@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include"Item.hpp"
+#include "selected.hpp"
 
 namespace Environment::Character{
 
@@ -273,6 +273,8 @@ namespace Environment::Character{
 		int level_solo, level_timer, level_squad, money, stamina, def_stamina, rate_solo, rate_timer, rate_squad, rate, way, team;
 
 	public:
+		Agent* agent;
+
 		Backpack backpack;
 
 		void show_backpack(bool b = false, bool ingame = false) const{

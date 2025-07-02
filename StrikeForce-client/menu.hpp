@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include "gameplay.hpp"
+#include "custom.hpp"
 
 void history(){
 	std::string s1;

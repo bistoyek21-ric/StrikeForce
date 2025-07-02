@@ -146,7 +146,7 @@ int main(){
 		}
 		std::cout << "Connection from " << inet_ntoa(client_addr.sin_addr) << std::endl;
 		char password[32] = {};
-		my_recv(client_socket, password, 0);
+		recv(client_socket, password, 32, 0);
 		disconnect[0] = false;
 		if(std::string(password) == PASS){
 			send(client_socket, "A", 2, 0);

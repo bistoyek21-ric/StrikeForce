@@ -28,7 +28,6 @@ SOFTWARE.
 class Network{
 
 public:
-
     bool disconnected;
 
     int BUFFER_SIZE;
@@ -37,7 +36,7 @@ public:
 		disconnected = false;
 		std::string server_ip, server_port_s, server_password;
 		int server_port = 0;
-		#if !defined(__unix__) && !defined(__APLLE__)
+		#if !defined(__unix__) && !defined(__APPLE__)
 		WSADATA wsaData;
 		if(WSAStartup(MAKEWORD(2, 2), &wsaData) != 0){
 			std::cout << "WSAStartup failed" << std::endl;
@@ -123,7 +122,7 @@ public:
 		#endif
     }
 
-    private:
+private:
     int sock;
     struct sockaddr_in server_addr;
 };

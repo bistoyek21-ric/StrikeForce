@@ -67,7 +67,7 @@ namespace Environment::Field{
 
 		void start(const std::string& server_ip, int server_port, const std::string& server_password){
 			open = true;
-			#if !defined(__unix__) && !defined(__APLLE__)
+			#if !defined(__unix__) && !defined(__APPLE__)
 			WSADATA wsaData;
 			if(WSAStartup(MAKEWORD(2, 2), &wsaData) != 0){
 				std::cout << "WSAStartup failed" << std::endl;

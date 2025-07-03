@@ -69,8 +69,8 @@ void send_c(){
             c[i].assign(BUFFER_SIZE / sizeof(double), 0);
             for(int j = 0; j < n; ++j)
                 if(i != j && !disconnect[j])
-                    for(int k = 0; k < c[j].size(); ++j)
-                        c[i][k] += c[j][k];
+                    for(int k = 0; k < c[j].size(); ++k)
+                        c[i][k] += h[j][k];
             for(int j = 0; j < c[i].size(); ++j)
                 c[i][j] /= std::max(n - 1, 1);
         }
@@ -84,7 +84,7 @@ int main(){
 	std::cout << "StrikeForce-CommNet-server\n";
 	std::cout << "Created by: 21\n";
 	std::cout << "____________________________________________________\n\n";
-    #if !defined(__unix__) && !defined(__APLLE__)
+    #if !defined(__unix__) && !defined(__APPLE__)
     WSADATA wsaData;
     if(WSAStartup(MAKEWORD(2, 2), &wsaData) != 0){
         std::cerr << "WSAStartup failed" << std::endl;

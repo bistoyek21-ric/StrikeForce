@@ -117,7 +117,7 @@ int main(){
 	std::cout << "StrikeForce-server\n";
 	std::cout << "Created by: 21\n";
 	std::cout << "____________________________________________________\n\n";
-    #if !defined(__unix__) && !defined(__APLLE__)
+    #if !defined(__unix__) && !defined(__APPLE__)
     WSADATA wsaData;
     if(WSAStartup(MAKEWORD(2, 2), &wsaData) != 0){
         std::cerr << "WSAStartup failed" << std::endl;

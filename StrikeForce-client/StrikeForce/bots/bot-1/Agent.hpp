@@ -70,8 +70,8 @@ private:
 
 public:
     Agent(bool online, bool training, int T, double gamma, 
-        double learning_rate, const std::string& backup_dir = "bots/bot-1/agent_backup",
-        int hidden_size = 1, int num_actions = 1)
+        double learning_rate, int hidden_size = 1, int num_actions = 1,
+        const std::string& backup_dir = "bots/bot-1/agent_backup")
             : training(training), T(T),
             gamma(gamma), learning_rate(learning_rate),
             backup_dir(backup_dir),

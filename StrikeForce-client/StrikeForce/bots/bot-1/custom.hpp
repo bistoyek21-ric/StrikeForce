@@ -203,7 +203,7 @@ namespace Environment::Field{
 
 	void gameplay::prepare(){
 		action = "+`1awsdxpm";
-		Environment::Character::me.agent = new Agent(online, true, 128, 0.99, 1e-3, 121 * 20, action.size(), "bots/bot-1/agent_backup");
+		Environment::Character::me.agent = new Agent(online, true, 128, 0.99, 1e-3, 121 * 22, action.size());
 	}
 
 	void gameplay::view() const {
@@ -215,8 +215,10 @@ namespace Environment::Field{
 			return '+';
 		std::vector<int> v = player.get_cor();
 		std::vector<double> obs;
-		for(int i = v[1] - 5; i <= v[1] + 5; ++i)
-			for(int j = v[2] - 5; j <= v[2] + 5; ++j){
+		for(int i = v[1] - 10; i <= v[1] + 10; ++i)
+			for(int j = v[2] - 10; j <= v[2] + 10; ++j){
+				if(10 < abs(v[1] - i) + abs(v[2] - j))
+					continue;
 				std::vector<double> vec;
 				if(std::min(i, j) < 0 || N <= i || M <= j)
 					vec = describe(themap[0][0][0], player);

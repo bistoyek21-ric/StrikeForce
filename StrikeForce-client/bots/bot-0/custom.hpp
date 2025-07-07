@@ -79,7 +79,7 @@ namespace Environment::Field{
 			else
 				res += "\n\n\n\n\n";
 			res += c_col(0, 0);
-			if(using_an_agent){
+			if(!using_an_agent){
 				res += "to see the command list";
 				res += (!online ? " or pause the game" : "");
 				res += " press 0\n";
@@ -102,8 +102,18 @@ namespace Environment::Field{
 				for(int k = 0; k < cell.size(); ++k){
 					if(cnt < 2)
 						color.push_back(cell[k]);
-					else if(cell[k] != '\033')
-						res.push_back(cell[k]);
+					else if(cell[k] != '\033'){
+						if(cell[k] == 'V')
+							res.push_back((char)1);
+						else if(cell[k] == '>')
+							res.push_back((char)2);
+						else if(cell[k] == 'A')
+							res.push_back((char)3);
+						else if(cell[k] == '<')
+							res.push_back((char)4);
+						else
+							res.push_back(cell[k]);
+					}
 					else
 						color.push_back(cell[k]), cnt = 0;
 					if(cell[k] == 'm')

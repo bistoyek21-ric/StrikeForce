@@ -153,57 +153,97 @@ namespace Environment::Field{
 
 	std::vector<double> describe(const node &cell, const Environment::Character::Human &player){
 		std::vector<double> res;
+		// object type |Char bullet wall chest portal-in portal-out tmp| {0, 1}^7      | 7
+		res.push_back(cell.s[0] || cell.s[1]);
+		res.push_back(cell.s[2]); res.push_back(cell.s[3]); res.push_back(cell.s[4]);
+		res.push_back(cell.s[5] || cell.s[6]);
+		res.push_back(cell.s[7]); res.push_back(cell.s[10]);
+		// character situation |khoodie, doshmane, npc, zombie| {0, 1}^4               | 4
+		std::vector<double> sit = {0, 0, 0, 0};
 		if(cell.s[0]){
-			double team[3] = {};
-			team[0] = (player.get_team() == cell.human->get_team());
-			team[1] = (player.get_team() != cell.human->get_team() && cell.human->get_team());
-			team[2] = (!cell.human->get_team());
-			for(int i = 0; i < 3; ++i)
-				res.push_back(team[i]);
-			double dir[4] = {};
-			dir[cell.human->get_way() - 1] += 1;
-			for(int i = 0; i < 4; ++i)
-				res.push_back(dir[i]);
+			int t = cell.human->get_team();
+			if(!t)
+				sit[2] = 1;
+			else if(t == player.get_team())
+				sit[0] = 1;
+			else
+				sit[1] = 1;
 		}
-		else{
-			for(int i = 0; i < 7; ++i)
-				res.push_back(0);
-		}
-		if(cell.s[1]){
-			res.push_back(cell.zombie->is_super());
-			res.push_back(1 - res.back());
-		}
-		else{
-			for(int i = 0; i < 2; ++i)
-				res.push_back(0);
-		}
-		if(cell.s[2]){
-			double dir[4] = {};
-			auto dc = cell.bullet->get_dcor();
-			auto c =  cell.bullet->get_cor();
-			dir[cell.bullet->get_way() - 1] += (cell.bullet->get_range() - abs(c[1] - dc[1]) - abs(c[2] - dc[2])) / 100.0;
-			for(int i = 0; i < 4; ++i)
-				res.push_back(dir[i]);
-		}
-		else{
-			for(int i = 0; i < 4; ++i)
-				res.push_back(0);
-		}
-		for(int i = 3; i < 11; ++i){
-			if(i == 6)
-				continue;
-			if(i == 5){
-				res.push_back(cell.s[5] || cell.s[6]);
-				continue;
+		if(cell.s[1])
+			sit[3] = 1;
+		for(int i = 0; i < 4; ++i)
+			res.push_back(sit[i]);
+		// it can't be passed through by human, bullet; can it destroyed by shooting, Hp {0, 1}^3 [0, inf)| 4
+		char obj = cell.showit();
+		sit = {0, 0, 0};
+		double hp = 0;
+		if(cell.s[3] || cell.s[5] || cell.s[6] || cell.s[0] || cell.s[1]){
+			sit[0] = sit[1] = 1;
+			sit[2] = cell.s[10] || cell.s[0] || cell.s[1];
+			if(cell.s[0])
+				hp = cell.human->get_Hp() / 1000.0;
+			else if(cell.s[1])
+				hp = cell.zombie->get_Hp() / 1000.0;
+			else if(cell.s[10]){
+				if(cell.s[3])
+					hp = (lim_block - cell.dmg) / 1000.0;
+				else
+					hp = (lim_portal - cell.dmg) / 1000.0;
 			}
-			res.push_back(cell.s[i]);
 		}
+		else if(cell.s[7]){
+			sit[0] = 1;
+			sit[1] = sit[2] = 0;
+		}
+		for(int i = 0; i < 3; ++i)
+			res.push_back(sit[i]);
+		res.push_back(hp);
+		// is it a bullet, attack vector, damage effect stamina {0, 1} [0, 1]^4 (-inf, inf)^3    | 8
+		sit = {0, 0, 0, 0};
+		double damage = 0, effect = 0, is_bull = 0, estamina = 0;
+		if(cell.s[0]){
+			sit[cell.human->get_way() - 1] = 1;
+			auto v = cell.human->get_damage_effect();
+			damage = v[0] / 1000.0;
+			effect = v[1] / 1000.0;
+			estamina = cell.human->get_stamina() / 1000.0;
+		}
+		else if(cell.s[1]){
+			sit = {0.01, 0.01, 0.01, 0.01};
+			damage = cell.zombie->get_mindamage() / 1000.0;
+		}
+		else if(cell.s[2]){
+			is_bull = 1;
+			auto dc = cell.bullet->get_dcor();
+        	auto c = cell.bullet->get_cor();
+			int dist_traveled = abs(c[1] - dc[1]) + abs(c[2] - dc[2]);
+			sit[cell.bullet->get_way() - 1] = (cell.bullet->get_range() - dist_traveled) / 100.0;
+			damage = cell.bullet->get_damage() / 1000.0;
+			effect = cell.bullet->get_effect() / 1000.0;
+		}
+		else if(cell.s[7]){
+			damage = 20 / 1000.0;
+			effect = -10 / 1000.0;
+		}
+		res.push_back(is_bull);
+		for(int i = 0; i < 4; ++i)
+			res.push_back(sit[i]);
+		res.push_back(damage), res.push_back(effect), res.push_back(estamina);
+		// Consumable items (-inf, inf)^3                                                     | 3
+		sit = {0, 0, 0};
+		if(cell.s[4]){
+			sit[0] = cell.cons->get_stamina() / 1000.0;
+			sit[1] = cell.cons->get_effect() / 1000.0;
+			sit[2] = cell.cons->get_Hp() / 1000.0;
+		}
+		for(int i = 0; i < 3; ++i)
+			res.push_back(sit[i]);
 		return res;
 	}
 
 	void gameplay::prepare(){
 		action = "+`1awsdxpm";
-		Environment::Character::me.agent = new Agent(online, true, 128, 0.99, 1e-3, 121 * 20, action.size(), "bots/bot-1/agent_backup");
+		Environment::Character::me.agent = new Agent(true, 128, 0.99, 1e-3, 121 * 20, action.size(), "bots/bot-1/agent_backup");
 	}
 
 	void gameplay::view() const {
@@ -215,8 +255,8 @@ namespace Environment::Field{
 			return '+';
 		std::vector<int> v = player.get_cor();
 		std::vector<double> obs;
-		for(int i = v[1] - 5; i <= v[1] + 5; ++i)
-			for(int j = v[2] - 5; j <= v[2] + 5; ++j){
+		for(int i = v[1] - 7; i <= v[1] + 7; ++i)
+			for(int j = v[2] - 7; j <= v[2] + 7; ++j){
 				std::vector<double> vec;
 				if(std::min(i, j) < 0 || N <= i || M <= j)
 					vec = describe(themap[0][0][0], player);

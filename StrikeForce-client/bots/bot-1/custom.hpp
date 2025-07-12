@@ -243,7 +243,9 @@ namespace Environment::Field{
 
 	void gameplay::prepare(){
 		action = "+`1awsdxpm";
-		Environment::Character::me.agent = new Agent(true, 128, 0.99, 1e-3, 121 * 20, action.size(), "bots/bot-1/agent_backup");
+		Environment::Character::me.agent = new Agent(true, 128, 4, 0.99, 1e-3, 0.2,
+			"bots/bot-1/agent_backup", 26, 15, action.size(),
+			std::vector<int>{1, 26, 15, 15});
 	}
 
 	void gameplay::view() const {

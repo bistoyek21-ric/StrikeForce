@@ -900,7 +900,7 @@ namespace Environment::Field{
 				for(int i = 0; i < action.size(); ++i)
 					if(action[i] == command[ind])
 						a_t = i;
-				hum[ind].agent->update(a_t);
+				hum[ind].agent->update(a_t, manual || command[ind] == '3');
 			}
 			if(online){
 				client.send_it();

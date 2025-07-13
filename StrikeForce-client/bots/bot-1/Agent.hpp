@@ -27,6 +27,7 @@ SOFTWARE.
 #include <torch/torch.h>
 #include <random>
 #include <filesystem>
+#include <format>
 
 class Agent {
 private:
@@ -37,83 +38,51 @@ private:
     double gamma, learning_rate, ppo_clip;
     std::string backup_dir;
     std::vector<int> actions;
-    std::vector<double> rewards;
+    std::vector<float> rewards;
     std::vector<torch::Tensor> log_probs, gru_outputs;
 
     torch::nn::GRU gru{nullptr};
     torch::nn::Linear policy_head{nullptr}, value_head{nullptr};
     torch::nn::Sequential cnn{nullptr};
-    std::vector<int> input_shape;
-    torch::optim::AdamW optimizer;
+    torch::optim::AdamW* optimizer;
+
+    std::ofstream log_file;
+
+    void log(const std::string& message) {
+        log_file << message << std::endl;
+        log_file.flush();
+    }
 
     void saveProgress() {
-        if(backup_dir.empty())
+        if (backup_dir.empty())
             return;
         if (!std::filesystem::exists(backup_dir))
             std::filesystem::create_directories(backup_dir);
         std::ofstream dim(backup_dir + "/dim.txt");
         dim << num_channels << " " << grid_size << " " << num_actions << " ";
-        dim << input_shape.size() << " ";
-        for(int i = 0; i < input_shape.size(); ++i)
-            dim << input_shape[i] << " ";
         dim.close();
         torch::save(gru, backup_dir + "/gru.pt");
         torch::save(policy_head, backup_dir + "/policy_head.pt");
         torch::save(value_head, backup_dir + "/value_head.pt");
         torch::save(cnn, backup_dir + "/cnn.pt");
+        log("Progress saved to " + backup_dir);
     }
 
-    void initializeNetwork() {
-        gru = torch::nn::GRU(hidden_size, hidden_size, /*layers=*/2);
-        policy_head = torch::nn::Linear(hidden_size, num_actions);
-        value_head = torch::nn::Linear(hidden_size, 1);
-        gru->to(device);
-        policy_head->to(device);
-        value_head->to(device);
-    }
-
-    torch::Tensor computeReturns(const std::vector<double>& rewards) {
-        torch::Tensor returns = torch::zeros({T}).to(device);
-        double running = 0;
-        for (int i = T - 1; ~i; --i) {
-            running = rewards[i] + gamma * running;
-            returns[i] = running;
+    void load_progress() {
+        std::ifstream dim(backup_dir + "/dim.txt");
+        if (!dim.is_open()) {
+            log("Failed to open dim.txt");
+            throw std::runtime_error("Failed to open dim.txt");
         }
-        return returns;
-    }
-
-public:
-    Agent(bool _training, int _T, int _num_epochs, double _gamma, double _learning_rate, double _ppo_clip,
-          const std::string& _backup_dir = "bots/bot-1/progress", int _num_channels = 1,
-          int _grid_size = 1, int _num_actions = 1, std::vector<int> _input_shape = {})
-        : training(_training), T(_T), num_epochs(_num_epochs), gamma(_gamma), learning_rate(_learning_rate),
-          ppo_clip(_ppo_clip), backup_dir(_backup_dir),
-          device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
-          num_channels(_num_channels), grid_size(_grid_size),
-          num_actions(_num_actions), input_shape(_input_shape) {
-        torch::set_default_dtype(caffe2::TypeMeta::Make<float>());
-
-        if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
-            try {
-                std::ifstream dim(backup_dir + "/dim.txt");
-                dim >> num_channels >> grid_size >> num_actions;
-                int sz, num;
-                dim >> sz;
-                for(int i = 0; i < sz; ++i){
-                    dim >> num;
-                    input_shape.push_back(num);
-                }
-                dim.close();
-                torch::load(gru, backup_dir + "/gru.pt");
-                torch::load(policy_head, backup_dir + "/policy_head.pt");
-                torch::load(value_head, backup_dir + "/value_head.pt");
-                torch::load(cnn, backup_dir + "/cnn.pt");
-            } catch (const std::exception& e) {
-                initializeNetwork();
-            }
-        }
-        else
-            initializeNetwork();
+        dim >> num_channels >> grid_size >> num_actions;
+        log("Loaded dimensions: num_channels=" + std::to_string(num_channels) +
+            ", grid_size=" + std::to_string(grid_size) +
+            ", num_actions=" + std::to_string(num_actions));
+        dim.close();
+        torch::load(gru, backup_dir + "/gru.pt");
+        torch::load(policy_head, backup_dir + "/policy_head.pt");
+        torch::load(value_head, backup_dir + "/value_head.pt");
+        torch::load(cnn, backup_dir + "/cnn.pt");
 
         cnn = torch::nn::Sequential(
             torch::nn::Conv2d(torch::nn::Conv2dOptions(num_channels, 32, 3).stride(1).padding(1)),
@@ -128,26 +97,188 @@ public:
 
         torch::Tensor dummy = torch::randn({1, num_channels, grid_size, grid_size}).to(device);
         hidden_size = cnn->forward(dummy).size(1);
+        log("hidden_size set to " + std::to_string(hidden_size));
+    }
 
-        optimizer = torch::optim::AdamW(
-            torch::nn::Module::parameters({cnn, gru, policy_head, value_head}),
-            torch::optim::AdamWOptions().lr(learning_rate).weight_decay(1e-4)
+    void initializeNetwork() {
+        cnn = torch::nn::Sequential(
+            torch::nn::Conv2d(torch::nn::Conv2dOptions(num_channels, 32, 3).stride(1).padding(1)),
+            torch::nn::BatchNorm2d(32), torch::nn::ReLU(),
+            torch::nn::Conv2d(torch::nn::Conv2dOptions(32, 64, 3).stride(1).padding(1)),
+            torch::nn::BatchNorm2d(64), torch::nn::ReLU(),
+            torch::nn::Conv2d(torch::nn::Conv2dOptions(64, 128, 3).stride(1).padding(1)),
+            torch::nn::BatchNorm2d(128), torch::nn::ReLU(),
+            torch::nn::AdaptiveAvgPool2d(1), torch::nn::Flatten()
         );
+        cnn->to(device);
+
+        torch::Tensor dummy = torch::randn({1, num_channels, grid_size, grid_size}).to(device);
+        hidden_size = cnn->forward(dummy).size(1);
+        log("hidden_size set to " + std::to_string(hidden_size));
+
+        gru = torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2));
+        policy_head = torch::nn::Linear(hidden_size, num_actions);
+        value_head = torch::nn::Linear(hidden_size, 1);
+        gru->to(device);
+        policy_head->to(device);
+        value_head->to(device);
+        log("Network initialized with num_actions=" + std::to_string(num_actions));
+    }
+
+    torch::Tensor computeReturns() {
+        torch::Tensor returns = torch::zeros({(int)rewards.size()}, torch::dtype(torch::kFloat32)).to(device);
+        double running = 0;
+        for (int i = rewards.size() - 1; i >= 0; --i) {
+            running = rewards[i] + gamma * running;
+            returns[i] = running;
+        }
+        log("Computed returns: " + std::to_string(returns.size(0)) + " elements");
+        return returns;
+    }
+
+    void train() {
+        log("step 0");
+        auto returns = computeReturns();
+        log("step 1");
+        if (!torch::isfinite(returns).all().item<bool>()) {
+            log("Invalid values in returns tensor");
+            throw std::runtime_error("Invalid values in returns tensor");
+        }
+        log("step 2");
+        std::vector<torch::Tensor> advantages;
+        for (int i = 0; i < T; ++i) {
+            auto value = value_head->forward(gru_outputs[i]).squeeze();
+            advantages.push_back(returns[i] - value);
+        }
+        log("step 3");
+        torch::Tensor adv_tensor = torch::stack(advantages);
+        torch::Tensor adv_mean = adv_tensor.mean();
+        torch::Tensor adv_std = adv_tensor.std();
+        if (adv_std.item<float>() < 1e-8)
+            adv_tensor = adv_tensor - adv_mean;
+        else 
+            adv_tensor = (adv_tensor - adv_mean) / (adv_std + 1e-5);
+        log("step 4");
+        for (int epoch = 0; epoch < num_epochs; ++epoch) {
+            torch::Tensor p_loss = torch::zeros({}).to(device);
+            torch::Tensor v_loss = torch::zeros({}).to(device);
+            log("step 4.1");
+            for (int i = 0; i < T; ++i) {
+                auto old_lp = log_probs[i][actions[i]];
+                log("step 4.1.1");
+                auto current_logits = policy_head->forward(gru_outputs[i]);
+                log("step 4.2");
+                auto current_logp = torch::log_softmax(current_logits, -1)[actions[i]];
+                log("step 4.3");
+                auto diff = current_logp - old_lp;
+                if (diff.item<float>() > 10.0f) {
+                    diff = torch::tensor(10.0f).to(device);
+                }
+                auto ratio = torch::exp(diff);
+                if (!torch::isfinite(ratio).all().item<bool>()) {
+                    log("Invalid ratio value at i=" + std::to_string(i));
+                    throw std::runtime_error("Invalid ratio value");
+                }
+                auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
+                auto adv = adv_tensor[i];
+                log("step 4.4");
+                p_loss -= torch::min(ratio * adv, clipped * adv);
+                auto current_value = value_head->forward(gru_outputs[i]).squeeze();
+                v_loss += torch::mse_loss(current_value, returns[i]);
+                log("step 4.5");
+            }
+
+            auto loss = p_loss + 0.5 * v_loss;
+            log("Epoch " + std::to_string(epoch) + ": loss=" + std::to_string(loss.item<float>()));
+            if (!torch::isfinite(loss).all().item<bool>()) {
+                log("Invalid loss value (NaN or Inf)");
+                throw std::runtime_error("Invalid loss value");
+            }
+            optimizer->zero_grad();
+            loss.backward({}, /*retain_graph=*/true);
+            for (const auto& param : optimizer->param_groups()[0].params()) {
+                if (param.grad().defined() && !torch::isfinite(param.grad()).all().item<bool>()) {
+                    log("Invalid gradients in parameter");
+                    throw std::runtime_error("Invalid gradients");
+                }
+            }
+            optimizer->step();
+        }
+        log("step 5");
+        actions.clear();
+        rewards.clear();
+        log_probs.clear();
+        gru_outputs.clear();
+        log("Training completed");
+    }
+
+public:
+    Agent(bool _training, int _T, int _num_epochs, double _gamma, double _learning_rate, double _ppo_clip,
+          const std::string& _backup_dir = "bots/bot-1/progress", int _num_channels = 1,
+          int _grid_size = 1, int _num_actions = 1)
+        : training(_training), T(_T), num_epochs(_num_epochs), gamma(_gamma), learning_rate(_learning_rate),
+          ppo_clip(_ppo_clip), backup_dir(_backup_dir),
+          device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
+          num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions),
+          optimizer(nullptr) {
+
+        log_file.open("bots/bot-1/agent_log.txt");
+        if (!log_file.is_open()) {
+            throw std::runtime_error("Failed to open log file");
+        }
+
+        if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
+            try {
+                load_progress();
+            } catch (const std::exception& e) {
+                log("Failed to load progress: " + std::string(e.what()));
+                initializeNetwork();
+            }
+        }
+        else
+            initializeNetwork();
+
+        std::vector<torch::Tensor> params;
+        auto cnn_params = cnn->parameters();
+        auto gru_params = gru->parameters();
+        auto policy_params = policy_head->parameters();
+        auto value_params = value_head->parameters();
+        params.insert(params.end(), cnn_params.begin(), cnn_params.end());
+        params.insert(params.end(), gru_params.begin(), gru_params.end());
+        params.insert(params.end(), policy_params.begin(), policy_params.end());
+        params.insert(params.end(), value_params.begin(), value_params.end());
+
+        optimizer = new torch::optim::AdamW(params, torch::optim::AdamWOptions().lr(learning_rate).weight_decay(1e-4));
+        log("Agent initialized with T=" + std::to_string(T) + ", num_epochs=" + std::to_string(num_epochs) +
+            ", gamma=" + std::to_string(gamma) + ", learning_rate=" + std::to_string(learning_rate) +
+            ", ppo_clip=" + std::to_string(ppo_clip));
     }
 
     ~Agent() {
         saveProgress();
+        delete optimizer;
+        log_file.close();
     }
 
-    int predict(const std::vector<double>& obs) {
-        torch::NoGradGuard g;
-        auto state = torch::tensor(obs, device).view(input_shape);
+    int predict(const std::vector<float>& obs) {
+        if (obs.size() != num_channels * grid_size * grid_size) {
+            log("Observation size mismatch: expected " + std::to_string(num_channels * grid_size * grid_size) +
+                ", got " + std::to_string(obs.size()));
+            throw std::runtime_error("Observation size mismatch");
+        }
+        auto state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_size, grid_size});
         auto feat = cnn->forward(state);
         auto gru_in = feat.view({1, 1, -1});
         auto [gru_out, _] = gru->forward(gru_in);
+        gru_out = gru_out.squeeze(0).squeeze(0);
         gru_outputs.push_back(gru_out.detach());
 
         auto logits = policy_head->forward(gru_out.squeeze(0));
+        if (logits.size(-1) != num_actions) {
+            log("Logits size mismatch: expected " + std::to_string(num_actions) +
+                ", got " + std::to_string(logits.size(-1)));
+            throw std::runtime_error("Logits size mismatch");
+        }
         auto probs = torch::softmax(logits, -1);
         auto logp = torch::log(probs + 1e-10);
         log_probs.push_back(logp.detach());
@@ -155,57 +286,16 @@ public:
         std::vector<float> v(probs.data_ptr<float>(), probs.data_ptr<float>() + probs.numel());
         std::mt19937 gen(std::random_device{}());
         std::discrete_distribution<> dist(v.begin(), v.end());
-        return dist(gen);
+        int action = dist(gen);
+        log("Predicted action: " + std::to_string(action));
+        return action;
     }
 
     void update(int action, bool imitate) {
         actions.push_back(action);
         rewards.push_back(imitate ? 0.75 : 0);
+        log("Updated with action=" + std::to_string(action) + ", imitate=" + std::to_string(imitate));
         if (training && actions.size() == T)
             train();
-    }
-
-    void train() {
-        auto returns = computeReturns(rewards);
-        std::vector<torch::Tensor> advantages;
-
-        for (int i = 0; i < T; ++i) {
-            auto value = value_head->forward(gru_outputs[i].squeeze(0)).squeeze();
-            advantages.push_back(returns[i] - value);
-        }
-
-        torch::Tensor adv_tensor = torch::stack(advantages);
-        torch::Tensor adv_mean = adv_tensor.mean();
-        torch::Tensor adv_std = adv_tensor.std();
-        adv_tensor = (adv_tensor - adv_mean) / (adv_std + 1e-5);
-
-        for (int epoch = 0; epoch < num_epochs; ++epoch) {
-            torch::Tensor p_loss = torch::zeros({}).to(device);
-            torch::Tensor v_loss = torch::zeros({}).to(device);
-
-            for (int i = 0; i < T; ++i) {
-                auto old_lp = log_probs[i][actions[i]];
-                auto current_logits = policy_head->forward(gru_outputs[i].squeeze(0));
-                auto current_logp = torch::log_softmax(current_logits, -1)[actions[i]];
-
-                auto ratio = torch::exp(current_logp - old_lp);
-                auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
-                auto adv = adv_tensor[i];
-
-                p_loss -= torch::min(ratio * adv, clipped * adv);
-                auto current_value = value_head->forward(gru_outputs[i].squeeze(0)).squeeze();
-                v_loss += torch::mse_loss(current_value, returns[i]);
-            }
-
-            auto loss = p_loss + 0.5 * v_loss;
-            optimizer.zero_grad();
-            loss.backward();
-            optimizer.step();
-        }
-
-        actions.clear();
-        rewards.clear();
-        log_probs.clear();
-        gru_outputs.clear();
     }
 };

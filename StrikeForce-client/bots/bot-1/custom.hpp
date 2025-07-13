@@ -151,15 +151,15 @@ namespace Environment::Field{
 		return c[rand() % 6];
 	}
 
-	std::vector<double> describe(const node &cell, const Environment::Character::Human &player){
-		std::vector<double> res;
+	std::vector<float> describe(const node &cell, const Environment::Character::Human &player){
+		std::vector<float> res;
 		// object type |Char bullet wall chest portal-in portal-out tmp| {0, 1}^7      | 7
 		res.push_back(cell.s[0] || cell.s[1]);
 		res.push_back(cell.s[2]); res.push_back(cell.s[3]); res.push_back(cell.s[4]);
 		res.push_back(cell.s[5] || cell.s[6]);
 		res.push_back(cell.s[7]); res.push_back(cell.s[10]);
 		// character situation |khoodie, doshmane, npc, zombie| {0, 1}^4               | 4
-		std::vector<double> sit = {0, 0, 0, 0};
+		std::vector<float> sit = {0, 0, 0, 0};
 		if(cell.s[0]){
 			int t = cell.human->get_team();
 			if(!t)
@@ -176,7 +176,7 @@ namespace Environment::Field{
 		// it can't be passed through by human, bullet; can it destroyed by shooting, Hp {0, 1}^3 [0, inf)| 4
 		char obj = cell.showit();
 		sit = {0, 0, 0};
-		double hp = 0;
+		float hp = 0;
 		if(cell.s[3] || cell.s[5] || cell.s[6] || cell.s[0] || cell.s[1]){
 			sit[0] = sit[1] = 1;
 			sit[2] = cell.s[10] || cell.s[0] || cell.s[1];
@@ -200,7 +200,7 @@ namespace Environment::Field{
 		res.push_back(hp);
 		// is it a bullet, attack vector, damage effect stamina {0, 1} [0, 1]^4 (-inf, inf)^3    | 8
 		sit = {0, 0, 0, 0};
-		double damage = 0, effect = 0, is_bull = 0, estamina = 0;
+		float damage = 0, effect = 0, is_bull = 0, estamina = 0;
 		if(cell.s[0]){
 			sit[cell.human->get_way() - 1] = 1;
 			auto v = cell.human->get_damage_effect();
@@ -243,9 +243,7 @@ namespace Environment::Field{
 
 	void gameplay::prepare(){
 		action = "+`1awsdxpm";
-		Environment::Character::me.agent = new Agent(true, 128, 4, 0.99, 1e-3, 0.2,
-			"bots/bot-1/agent_backup", 26, 15, action.size(),
-			std::vector<int>{1, 26, 15, 15});
+		Environment::Character::me.agent = new Agent(true, 128, 4, 0.99, 1e-3, 0.2, "bots/bot-1/agent_backup", 26, 15, action.size());
 	}
 
 	void gameplay::view() const {
@@ -256,10 +254,10 @@ namespace Environment::Field{
 		if(&player != &hum[ind])
 			return '+';
 		std::vector<int> v = player.get_cor();
-		std::vector<double> obs;
+		std::vector<float> obs;
 		for(int i = v[1] - 7; i <= v[1] + 7; ++i)
 			for(int j = v[2] - 7; j <= v[2] + 7; ++j){
-				std::vector<double> vec;
+				std::vector<float> vec;
 				if(std::min(i, j) < 0 || N <= i || M <= j)
 					vec = describe(themap[0][0][0], player);
 				else

@@ -83,7 +83,6 @@ private:
         torch::load(policy_head, backup_dir + "/policy_head.pt");
         torch::load(value_head, backup_dir + "/value_head.pt");
         torch::load(cnn, backup_dir + "/cnn.pt");
-
         cnn = torch::nn::Sequential(
             torch::nn::Conv2d(torch::nn::Conv2dOptions(num_channels, 32, 3).stride(1).padding(1)),
             torch::nn::BatchNorm2d(32), torch::nn::ReLU(),
@@ -94,7 +93,6 @@ private:
             torch::nn::AdaptiveAvgPool2d(1), torch::nn::Flatten()
         );
         cnn->to(device);
-
         torch::Tensor dummy = torch::randn({1, num_channels, grid_size, grid_size}).to(device);
         hidden_size = cnn->forward(dummy).size(1);
         log("hidden_size set to " + std::to_string(hidden_size));
@@ -111,46 +109,34 @@ private:
             torch::nn::AdaptiveAvgPool2d(1), torch::nn::Flatten()
         );
         cnn->to(device);
-
         torch::Tensor dummy = torch::randn({1, num_channels, grid_size, grid_size}).to(device);
         hidden_size = cnn->forward(dummy).size(1);
         log("hidden_size set to " + std::to_string(hidden_size));
-
         gru = torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2));
         policy_head = torch::nn::Linear(hidden_size, num_actions);
         value_head = torch::nn::Linear(hidden_size, 1);
         gru->to(device);
         policy_head->to(device);
         value_head->to(device);
-        log("Network initialized with num_actions=" + std::to_string(num_actions));
     }
 
     torch::Tensor computeReturns() {
         torch::Tensor returns = torch::zeros({(int)rewards.size()}, torch::dtype(torch::kFloat32)).to(device);
         double running = 0;
-        for (int i = rewards.size() - 1; i >= 0; --i) {
+        for (int i = T - 1; i >= 0; --i) {
             running = rewards[i] + gamma * running;
             returns[i] = running;
         }
-        log("Computed returns: " + std::to_string(returns.size(0)) + " elements");
         return returns;
     }
 
     void train() {
-        log("step 0");
         auto returns = computeReturns();
-        log("step 1");
-        if (!torch::isfinite(returns).all().item<bool>()) {
-            log("Invalid values in returns tensor");
-            throw std::runtime_error("Invalid values in returns tensor");
-        }
-        log("step 2");
         std::vector<torch::Tensor> advantages;
         for (int i = 0; i < T; ++i) {
             auto value = value_head->forward(gru_outputs[i]).squeeze();
             advantages.push_back(returns[i] - value);
         }
-        log("step 3");
         torch::Tensor adv_tensor = torch::stack(advantages);
         torch::Tensor adv_mean = adv_tensor.mean();
         torch::Tensor adv_std = adv_tensor.std();
@@ -158,53 +144,31 @@ private:
             adv_tensor = adv_tensor - adv_mean;
         else 
             adv_tensor = (adv_tensor - adv_mean) / (adv_std + 1e-5);
-        log("step 4");
         for (int epoch = 0; epoch < num_epochs; ++epoch) {
             torch::Tensor p_loss = torch::zeros({}).to(device);
             torch::Tensor v_loss = torch::zeros({}).to(device);
-            log("step 4.1");
             for (int i = 0; i < T; ++i) {
                 auto old_lp = log_probs[i][actions[i]];
-                log("step 4.1.1");
                 auto current_logits = policy_head->forward(gru_outputs[i]);
-                log("step 4.2");
                 auto current_logp = torch::log_softmax(current_logits, -1)[actions[i]];
-                log("step 4.3");
                 auto diff = current_logp - old_lp;
                 if (diff.item<float>() > 10.0f) {
                     diff = torch::tensor(10.0f).to(device);
                 }
                 auto ratio = torch::exp(diff);
-                if (!torch::isfinite(ratio).all().item<bool>()) {
-                    log("Invalid ratio value at i=" + std::to_string(i));
-                    throw std::runtime_error("Invalid ratio value");
-                }
                 auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
                 auto adv = adv_tensor[i];
-                log("step 4.4");
                 p_loss -= torch::min(ratio * adv, clipped * adv);
                 auto current_value = value_head->forward(gru_outputs[i]).squeeze();
                 v_loss += torch::mse_loss(current_value, returns[i]);
-                log("step 4.5");
             }
 
             auto loss = p_loss + 0.5 * v_loss;
             log("Epoch " + std::to_string(epoch) + ": loss=" + std::to_string(loss.item<float>()));
-            if (!torch::isfinite(loss).all().item<bool>()) {
-                log("Invalid loss value (NaN or Inf)");
-                throw std::runtime_error("Invalid loss value");
-            }
             optimizer->zero_grad();
             loss.backward({}, /*retain_graph=*/true);
-            for (const auto& param : optimizer->param_groups()[0].params()) {
-                if (param.grad().defined() && !torch::isfinite(param.grad()).all().item<bool>()) {
-                    log("Invalid gradients in parameter");
-                    throw std::runtime_error("Invalid gradients");
-                }
-            }
             optimizer->step();
         }
-        log("step 5");
         actions.clear();
         rewards.clear();
         log_probs.clear();
@@ -222,7 +186,7 @@ public:
           num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions),
           optimizer(nullptr) {
 
-        log_file.open("bots/bot-1/agent_log.txt");
+        log_file.open("bots/bot-1/agent_log.log");
         if (!log_file.is_open()) {
             throw std::runtime_error("Failed to open log file");
         }
@@ -249,6 +213,10 @@ public:
         params.insert(params.end(), value_params.begin(), value_params.end());
 
         optimizer = new torch::optim::AdamW(params, torch::optim::AdamWOptions().lr(learning_rate).weight_decay(1e-4));
+        log("--------------------------------------------------------");
+        auto t = time(nullptr);
+        log(std::string(ctime(&t)));
+        log("--------------------------------------------------------");
         log("Agent initialized with T=" + std::to_string(T) + ", num_epochs=" + std::to_string(num_epochs) +
             ", gamma=" + std::to_string(gamma) + ", learning_rate=" + std::to_string(learning_rate) +
             ", ppo_clip=" + std::to_string(ppo_clip));
@@ -261,28 +229,16 @@ public:
     }
 
     int predict(const std::vector<float>& obs) {
-        if (obs.size() != num_channels * grid_size * grid_size) {
-            log("Observation size mismatch: expected " + std::to_string(num_channels * grid_size * grid_size) +
-                ", got " + std::to_string(obs.size()));
-            throw std::runtime_error("Observation size mismatch");
-        }
         auto state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_size, grid_size});
         auto feat = cnn->forward(state);
         auto gru_in = feat.view({1, 1, -1});
         auto [gru_out, _] = gru->forward(gru_in);
         gru_out = gru_out.squeeze(0).squeeze(0);
         gru_outputs.push_back(gru_out.detach());
-
         auto logits = policy_head->forward(gru_out.squeeze(0));
-        if (logits.size(-1) != num_actions) {
-            log("Logits size mismatch: expected " + std::to_string(num_actions) +
-                ", got " + std::to_string(logits.size(-1)));
-            throw std::runtime_error("Logits size mismatch");
-        }
         auto probs = torch::softmax(logits, -1);
         auto logp = torch::log(probs + 1e-10);
         log_probs.push_back(logp.detach());
-
         std::vector<float> v(probs.data_ptr<float>(), probs.data_ptr<float>() + probs.numel());
         std::mt19937 gen(std::random_device{}());
         std::discrete_distribution<> dist(v.begin(), v.end());

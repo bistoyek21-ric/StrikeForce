@@ -3,6 +3,8 @@
 *.out
 *.o
 
+*.log
+
 /StrikeForce-client/accounts/game/*
 ! /StrikeForce-client/accounts/game/.gitkeep
 

@@ -619,7 +619,8 @@ namespace Environment::Field{
 						mh[i] = false;
 						pix->s[8] = 1;
 						pix->s[0] = 0;
-						delete pix->human->agent;
+						if(pix->human != &hum[ind])
+							delete pix->human->agent;
 					}
 	       			else if(pix->s[2])
     	       			human_damage(pix);

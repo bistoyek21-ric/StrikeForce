@@ -254,7 +254,7 @@ namespace Environment::Field{
 		if(&player != &hum[ind])
 			return '+';
 		std::vector<int> v = player.get_cor();
-		std::vector<float> obs;
+		std::vector<float> obs, ch[26];
 		for(int i = v[1] - 7; i <= v[1] + 7; ++i)
 			for(int j = v[2] - 7; j <= v[2] + 7; ++j){
 				std::vector<float> vec;
@@ -262,9 +262,12 @@ namespace Environment::Field{
 					vec = describe(themap[0][0][0], player);
 				else
 					vec = describe(themap[v[0]][i][j], player);
-				for(auto &e: vec)
-					obs.push_back(e);
+				for(int k = 0; k < vec.size(); ++k)
+					ch[k].push_back(vec[k]);
 			}
+		for(int i = 0; i < 26; ++i)
+			for(int j = 0; j < 15 * 15; ++j)
+				obs.push_back(ch[i][j]);
 		return action[player.agent->predict(obs)];
     }
 }

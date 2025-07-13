@@ -27,13 +27,12 @@ SOFTWARE.
 #include <torch/torch.h>
 #include <random>
 #include <filesystem>
-#include <format>
 
 class Agent {
 private:
     torch::Device device;
 
-    bool training;
+    bool training, logging = true;
     int hidden_size, num_actions, T, num_epochs, num_channels, grid_size;
     double gamma, learning_rate, ppo_clip;
     std::string backup_dir;
@@ -41,14 +40,34 @@ private:
     std::vector<float> rewards;
     std::vector<torch::Tensor> log_probs, gru_outputs;
 
+    torch::Tensor state;
+
     torch::nn::GRU gru{nullptr};
     torch::nn::Linear policy_head{nullptr}, value_head{nullptr};
     torch::nn::Sequential cnn{nullptr};
     torch::optim::AdamW* optimizer;
 
+    class RewardNet {
+    public:
+        int num_actions, num_channels, grid_size;
+
+        void build(int _num_action, int _num_channels, int _grid_size){
+            num_actions = _num_actions;
+            num_channels = _num_channels;
+            grid_size = _grid_size;
+        }
+
+        float get_reward(int action, bool imitate, torch::Tensor &state){
+            return imitate;
+        }
+    
+    } reward_net;
+
     std::ofstream log_file;
 
     void log(const std::string& message) {
+        if (!logging)
+            return;
         log_file << message << std::endl;
         log_file.flush();
     }
@@ -220,6 +239,8 @@ public:
         log("Agent initialized with T=" + std::to_string(T) + ", num_epochs=" + std::to_string(num_epochs) +
             ", gamma=" + std::to_string(gamma) + ", learning_rate=" + std::to_string(learning_rate) +
             ", ppo_clip=" + std::to_string(ppo_clip));
+
+        reward_net.build(num_actions, num_channels, grid_size);
     }
 
     ~Agent() {
@@ -229,7 +250,7 @@ public:
     }
 
     int predict(const std::vector<float>& obs) {
-        auto state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_size, grid_size});
+        state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_size, grid_size});
         auto feat = cnn->forward(state);
         auto gru_in = feat.view({1, 1, -1});
         auto [gru_out, _] = gru->forward(gru_in);
@@ -249,7 +270,7 @@ public:
 
     void update(int action, bool imitate) {
         actions.push_back(action);
-        rewards.push_back(imitate ? 0.75 : 0);
+        rewards.push_back(reward_net.get_reward(action, imitate, state));
         log("Updated with action=" + std::to_string(action) + ", imitate=" + std::to_string(imitate));
         if (training && actions.size() == T)
             train();

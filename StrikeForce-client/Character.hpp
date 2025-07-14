@@ -267,13 +267,32 @@ namespace Environment::Character{
 	};
 
 	class Human: public Character{
-
 	protected:
-		bool rnpc;
-		int level_solo, level_timer, level_squad, money, stamina, def_stamina, rate_solo, rate_timer, rate_squad, rate, way, team;
 
+		bool rnpc, active_agent = false;
+		int level_solo, level_timer, level_squad, money, stamina, def_stamina, rate_solo, rate_timer, rate_squad, rate, way, team;
+	
 	public:
 		Agent* agent;
+		
+		void set_agent_active(){
+			active_agent = true;
+		}
+
+		void reset_agent_active(){
+			active_agent = false;
+		}
+
+		void deleteAgent(){
+			if(!active_agent)
+				return;
+			delete agent;
+			active_agent = false;
+		}
+
+		bool get_active_agent() const{
+			return active_agent;
+		}
 
 		Backpack backpack;
 

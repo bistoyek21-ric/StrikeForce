@@ -132,7 +132,8 @@ namespace Environment::Field{
 		#if defined(__unix__) || defined(__APPLE__)
 		auto end_ = std::chrono::steady_clock::now();
 		int k = (lim.count() - (end_ - start).count()) / 1000;
-		usleep(std::max(k, 0));
+		if(!manual)
+			usleep(std::max(k, 0));
 		#endif
 		return;
 	}
@@ -152,8 +153,9 @@ namespace Environment::Field{
 		return c[rand() % 8];
 	}
 
-	void gameplay::prepare(){
-		Environment::Character::me.agent = new Agent();
+	void gameplay::prepare(Environment::Character::Human& player){
+		player.agent = new Agent();
+		player.set_agent_active();
 	}
 
 	void gameplay::view() const {

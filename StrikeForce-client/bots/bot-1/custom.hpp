@@ -131,7 +131,7 @@ namespace Environment::Field{
 		printer.print(res.c_str());
 		auto end_ = std::chrono::steady_clock::now();
 		int k = (lim.count() - (end_ - start).count()) / 1000;
-		if(!using_an_agent)
+		if(!manual)
 			usleep(std::max(k, 0));
 		return;
 	}
@@ -241,9 +241,10 @@ namespace Environment::Field{
 		return res;
 	}
 
-	void gameplay::prepare(){
+	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+`1awsdxpm";
-		Environment::Character::me.agent = new Agent(true, 128, 4, 0.99, 1e-3, 0.2, "bots/bot-1/agent_backup", 26, 15, action.size());
+		player.agent = new Agent(true, 128, 4, 0.99, 1e-3, 0.2, "bots/bot-1/agent_backup", 26, 15, action.size());
+		player.set_agent_active();
 	}
 
 	void gameplay::view() const {

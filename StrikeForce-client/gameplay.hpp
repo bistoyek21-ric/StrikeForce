@@ -369,15 +369,17 @@ namespace Environment::Field{
 
 		node themap[F][N][M], themap1[F][N][M];
 
-		void view() const;
-
 		char bot(Environment::Character::Human& player) const;
-
-		void print_game() const;
 
 		char human_rnpc_bot(Environment::Character::Human& player) const;
 
-		void prepare();
+		void prepare(Environment::Character::Human& player);
+
+		void print_game() const;
+
+		void view() const;
+
+		void load_data();
 
 		void updmap(){
 			for(int i = 0; i < F; ++i)
@@ -386,102 +388,6 @@ namespace Environment::Field{
                         themap[i][j][k].update();
             return;
         }
-
-		void load_data(){
-			using_an_agent = !manual;
-			if(using_an_agent)
-				prepare();
-			srand(tb);
-			serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
-			Environment::Random::_srand(tb, serial_number);
-			if(online){
-				disconnect = false;
-				std::string server_ip, server_port_s, server_password;
-				int server_port = 0;
-				std::cout << "JOINIGN INTO MATCH SERVER:" << std::endl;
-				std::cout << "Enter the server IP: ";
-				std::cout.flush();
-				getline(std::cin, server_ip);
-				std::cout << "Enter the server port: ";
-				std::cout.flush();
-				getline(std::cin, server_port_s);
-				std::cout << "Enter the server's password: ";
-				std::cout.flush();
-				getline(std::cin, server_password);
-				for(auto e: server_port_s)
-					server_port = 10 * server_port + (e - '0');
-				server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
-				client.start(server_ip, server_port, server_password);
-				if(disconnect){
-					std::cout << "press space button to continue" << std::endl;
-					while(getch() != ' ');
-					return;
-				}
-				client.give_info();
-				client.get_info();
-				serial_number = client.serial_number;
-				tb = time(nullptr);
-				Environment::Random::_srand(client.tb, serial_number);
-				for(int i = 0; i < client.n; ++i){
-					hum[i].set_way(rand() % 4 + 1);
-					while(true){
-						std::vector<int> v = {rand() % F, rand() % N, rand() % M};
-						if(themap[v[0]][v[1]][v[2]].showit() == '.'){
-							themap[v[0]][v[1]][v[2]].human = &hum[i];
-							themap[v[0]][v[1]][v[2]].s[0] = 1;
-							hum[i].set_cor(v);
-							break;
-						}
-					}
-				}
-				return;
-			}
-			if(mode == "Squad"){
-				ind = 0;
-				mh[ind] = true;
-				hum[ind] = Environment::Character::me;
-				remote[ind] = false;
-				themap[0][3][1].human = &hum[ind];
-				themap[0][3][1].s[0] = 1;
-				hum[ind].set_way(1);
-				hum[ind].set_cor(std::vector<int>{0, 3, 1});
-				hum[ind].set_team(1);
-				for(int i = 1; i < 5; ++i){
-					mh[i] = true;
-					remote[i] = false;
-					std::string s = "team mate ";
-					s += (char)('0' + i);
-					gen_human(false, hum[i], level, std::vector<int>{0, 1, i + 1}, s);
-					themap[0][1][i + 1].human = &hum[i];
-					themap[0][1][i + 1].s[0] = 1;
-					hum[i].set_team(1);
-				}
-				for(int i = 5; i < 10; ++i){
-					mh[i] = true;
-					remote[i] = false;
-					std::string s = "opponent ";
-					s += (char)('0' + i - 4);
-					gen_human(false, hum[i], level, std::vector<int>{2, 1, i + 1}, s);
-					themap[2][1][i + 1].human = &hum[i];
-					themap[2][1][i + 1].s[0] = 1;
-					hum[i].set_team(2);
-				}
-				return;
-			}
-			if(mode == "Solo" || mode == "Timer"){
-				ind = 0;
-				mh[ind] = true;
-				remote[ind] = false;
-				hum[ind] = Environment::Character::me;
-				themap[0][1][1].human = &hum[ind];
-				themap[0][1][1].s[0] = 1;
-				hum[ind].set_way(1);
-				hum[ind].set_cor(std::vector<int>{0, 1, 1});
-				hum[ind].set_team(1);
-				return;
-			}
-			return;
-		}
 
 		bool rivals_are_dead(){
 			for(int i = 0; i < H; ++i)
@@ -619,11 +525,11 @@ namespace Environment::Field{
 						mh[i] = false;
 						pix->s[8] = 1;
 						pix->s[0] = 0;
-						if(pix->human != &hum[ind])
-							delete pix->human->agent;
 					}
 	       			else if(pix->s[2])
     	       			human_damage(pix);
+					if(hum[i].get_Hp() <= 0)
+						hum[i].deleteAgent();
 				}
         	return;
 		}
@@ -794,7 +700,7 @@ namespace Environment::Field{
 			}
 			return;
 		}
-
+	
 		void my_command(){
 			if(kbhit()){
 				command[ind] = getch();
@@ -1009,6 +915,19 @@ namespace Environment::Field{
 		}
 
 		bool check_end(){
+			if(online && rivals_are_dead()){
+                if(countdown > 0){
+                    --countdown;
+                    return false;
+                }
+				std::string s = c_col(32, 40);
+				s += "*** Congratulations! You won the match :) ***\n";
+				s += c_col(0, 0);
+				s += "press space button to continue\n";
+				printer.print(s);
+				while(getch() != ' ');
+				return true;
+			}
 		    if(online && disconnect){
                 printer.print("You're disconnected :(\npress space button to continue\n");
 				hum[ind].back_Hp();
@@ -1098,19 +1017,6 @@ namespace Environment::Field{
 				while(getch() != ' ');
 				return true;
 			}
-			if(online && rivals_are_dead()){
-                if(countdown > 0){
-                    --countdown;
-                    return false;
-                }
-				std::string s = c_col(32, 40);
-				s += "*** Congratulations! You won the match :) ***\n";
-				s += c_col(0, 0);
-				s += "press space button to continue\n";
-				printer.print(s);
-				while(getch() != ' ');
-				return true;
-			}
 			return false;
 		}
 
@@ -1131,6 +1037,7 @@ namespace Environment::Field{
 			for(int i = 0; i < H; ++i){
 				mh[i] = remote[i] = false;
 				command[i] = '+';
+				hum[i].deleteAgent();
             }
 			for(int k = 0; k < F; ++k){
 				std::ifstream f("./map/floor" + std::to_string(k + 1) + ".txt");
@@ -1318,10 +1225,10 @@ namespace Environment::Field{
 			#endif
 			view();
 			printer.stop();
-			if(using_an_agent)
-				delete hum[ind].agent;
+			hum[ind].deleteAgent();
 			if(!online && !quit)
 				Environment::Character::me = hum[ind];
+			Environment::Character::me.reset_agent_active();
 			if(!quit)
 				update();
 			return;
@@ -1511,4 +1418,100 @@ namespace Environment::Field{
 			return;
 		}
 	} g;
+
+	void gameplay::load_data(){
+		using_an_agent = !manual;
+		if(using_an_agent)
+			prepare(Environment::Character::me);
+		srand(tb);
+		serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
+		Environment::Random::_srand(tb, serial_number);
+		if(online){
+			disconnect = false;
+			std::string server_ip, server_port_s, server_password;
+			int server_port = 0;
+			std::cout << "JOINIGN INTO MATCH SERVER:" << std::endl;
+			std::cout << "Enter the server IP: ";
+			std::cout.flush();
+			getline(std::cin, server_ip);
+			std::cout << "Enter the server port: ";
+			std::cout.flush();
+			getline(std::cin, server_port_s);
+			std::cout << "Enter the server's password: ";
+			std::cout.flush();
+			getline(std::cin, server_password);
+			for(auto e: server_port_s)
+				server_port = 10 * server_port + (e - '0');
+			server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
+			client.start(server_ip, server_port, server_password);
+			if(disconnect){
+				std::cout << "press space button to continue" << std::endl;
+				while(getch() != ' ');
+				return;
+			}
+			client.give_info();
+			client.get_info();
+			serial_number = client.serial_number;
+			tb = time(nullptr);
+			Environment::Random::_srand(client.tb, serial_number);
+			for(int i = 0; i < client.n; ++i){
+				hum[i].set_way(rand() % 4 + 1);
+				while(true){
+					std::vector<int> v = {rand() % F, rand() % N, rand() % M};
+					if(themap[v[0]][v[1]][v[2]].showit() == '.'){
+						themap[v[0]][v[1]][v[2]].human = &hum[i];
+						themap[v[0]][v[1]][v[2]].s[0] = 1;
+						hum[i].set_cor(v);
+						break;
+					}
+				}
+			}
+			return;
+		}
+		if(mode == "Squad"){
+			ind = 0;
+			mh[ind] = true;
+			hum[ind] = Environment::Character::me;
+			remote[ind] = false;
+			themap[0][3][1].human = &hum[ind];
+			themap[0][3][1].s[0] = 1;
+			hum[ind].set_way(1);
+			hum[ind].set_cor(std::vector<int>{0, 3, 1});
+			hum[ind].set_team(1);
+			for(int i = 1; i < 5; ++i){
+				mh[i] = true;
+				remote[i] = false;
+				std::string s = "team mate ";
+				s += (char)('0' + i);
+				gen_human(false, hum[i], level, std::vector<int>{0, 1, i + 1}, s);
+				themap[0][1][i + 1].human = &hum[i];
+				themap[0][1][i + 1].s[0] = 1;
+				hum[i].set_team(1);
+			}
+			for(int i = 5; i < 10; ++i){
+				mh[i] = true;
+				remote[i] = false;
+				std::string s = "opponent ";
+				s += (char)('0' + i - 4);
+				gen_human(false, hum[i], level, std::vector<int>{2, 1, i + 1}, s);
+				themap[2][1][i + 1].human = &hum[i];
+				themap[2][1][i + 1].s[0] = 1;
+				hum[i].set_team(2);
+			}
+			return;
+		}
+		if(mode == "Solo" || mode == "Timer"){
+			ind = 0;
+			mh[ind] = true;
+			remote[ind] = false;
+			hum[ind] = Environment::Character::me;
+			themap[0][1][1].human = &hum[ind];
+			themap[0][1][1].s[0] = 1;
+			hum[ind].set_way(1);
+			hum[ind].set_cor(std::vector<int>{0, 1, 1});
+			hum[ind].set_team(1);
+			return;
+		}
+		return;
+	}
 }

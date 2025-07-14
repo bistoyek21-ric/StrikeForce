@@ -23,47 +23,31 @@ SOFTWARE.
 
 */
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -lc10 -lsfml-graphics -lsfml-window -lsfml-system
-#include "Item.hpp"
-#include <torch/torch.h>
-#include <random>
-#include <filesystem>
+#include "RewardNet.hpp"
 
 class Agent {
 private:
-    torch::Device device;
 
     bool training, logging = true;
     int hidden_size, num_actions, T, num_epochs, num_channels, grid_size;
-    double gamma, learning_rate, ppo_clip;
+    float gamma, learning_rate, ppo_clip;
     std::string backup_dir;
     std::vector<int> actions;
     std::vector<float> rewards;
     std::vector<torch::Tensor> log_probs, gru_outputs;
 
     torch::Tensor state;
+    
+    torch::Device device;
 
     torch::nn::GRU gru{nullptr};
     torch::nn::Linear policy_head{nullptr}, value_head{nullptr};
     torch::nn::Sequential cnn{nullptr};
-    torch::optim::AdamW* optimizer;
-
-    class RewardNet {
-    public:
-        int num_actions, num_channels, grid_size;
-
-        void build(int _num_action, int _num_channels, int _grid_size){
-            num_actions = _num_actions;
-            num_channels = _num_channels;
-            grid_size = _grid_size;
-        }
-
-        float get_reward(int action, bool imitate, torch::Tensor &state){
-            return imitate;
-        }
-    
-    } reward_net;
+    torch::optim::AdamW* optimizer{nullptr};
 
     std::ofstream log_file;
+
+    RewardNet* reward_net;
 
     void log(const std::string& message) {
         if (!logging)
@@ -80,6 +64,10 @@ private:
         std::ofstream dim(backup_dir + "/dim.txt");
         dim << num_channels << " " << grid_size << " " << num_actions << " ";
         dim.close();
+        gru->to(torch::kCPU);
+        policy_head->to(torch::kCPU);
+        value_head->to(torch::kCPU);
+        cnn->to(torch::kCPU);
         torch::save(gru, backup_dir + "/gru.pt");
         torch::save(policy_head, backup_dir + "/policy_head.pt");
         torch::save(value_head, backup_dir + "/value_head.pt");
@@ -98,26 +86,16 @@ private:
             ", grid_size=" + std::to_string(grid_size) +
             ", num_actions=" + std::to_string(num_actions));
         dim.close();
+        initializeNetwork();
+        torch::load(cnn, backup_dir + "/cnn.pt");
         torch::load(gru, backup_dir + "/gru.pt");
         torch::load(policy_head, backup_dir + "/policy_head.pt");
         torch::load(value_head, backup_dir + "/value_head.pt");
-        torch::load(cnn, backup_dir + "/cnn.pt");
-        cnn = torch::nn::Sequential(
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(num_channels, 32, 3).stride(1).padding(1)),
-            torch::nn::BatchNorm2d(32), torch::nn::ReLU(),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(32, 64, 3).stride(1).padding(1)),
-            torch::nn::BatchNorm2d(64), torch::nn::ReLU(),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(64, 128, 3).stride(1).padding(1)),
-            torch::nn::BatchNorm2d(128), torch::nn::ReLU(),
-            torch::nn::AdaptiveAvgPool2d(1), torch::nn::Flatten()
-        );
-        cnn->to(device);
-        torch::Tensor dummy = torch::randn({1, num_channels, grid_size, grid_size}).to(device);
-        hidden_size = cnn->forward(dummy).size(1);
-        log("hidden_size set to " + std::to_string(hidden_size));
+        log("Progress loaded successfully");
     }
 
     void initializeNetwork() {
+        log("Start:");
         cnn = torch::nn::Sequential(
             torch::nn::Conv2d(torch::nn::Conv2dOptions(num_channels, 32, 3).stride(1).padding(1)),
             torch::nn::BatchNorm2d(32), torch::nn::ReLU(),
@@ -127,16 +105,12 @@ private:
             torch::nn::BatchNorm2d(128), torch::nn::ReLU(),
             torch::nn::AdaptiveAvgPool2d(1), torch::nn::Flatten()
         );
-        cnn->to(device);
-        torch::Tensor dummy = torch::randn({1, num_channels, grid_size, grid_size}).to(device);
+        torch::Tensor dummy = torch::randn({1, num_channels, grid_size, grid_size});
         hidden_size = cnn->forward(dummy).size(1);
         log("hidden_size set to " + std::to_string(hidden_size));
         gru = torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2));
         policy_head = torch::nn::Linear(hidden_size, num_actions);
         value_head = torch::nn::Linear(hidden_size, 1);
-        gru->to(device);
-        policy_head->to(device);
-        value_head->to(device);
     }
 
     torch::Tensor computeReturns() {
@@ -171,9 +145,8 @@ private:
                 auto current_logits = policy_head->forward(gru_outputs[i]);
                 auto current_logp = torch::log_softmax(current_logits, -1)[actions[i]];
                 auto diff = current_logp - old_lp;
-                if (diff.item<float>() > 10.0f) {
+                if (diff.item<float>() > 10.0f)
                     diff = torch::tensor(10.0f).to(device);
-                }
                 auto ratio = torch::exp(diff);
                 auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
                 auto adv = adv_tensor[i];
@@ -181,7 +154,6 @@ private:
                 auto current_value = value_head->forward(gru_outputs[i]).squeeze();
                 v_loss += torch::mse_loss(current_value, returns[i]);
             }
-
             auto loss = p_loss + 0.5 * v_loss;
             log("Epoch " + std::to_string(epoch) + ": loss=" + std::to_string(loss.item<float>()));
             optimizer->zero_grad();
@@ -196,19 +168,17 @@ private:
     }
 
 public:
-    Agent(bool _training, int _T, int _num_epochs, double _gamma, double _learning_rate, double _ppo_clip,
+    Agent(bool _training, int _T, int _num_epochs, float _gamma, float _learning_rate, float _ppo_clip,
           const std::string& _backup_dir = "bots/bot-1/progress", int _num_channels = 1,
           int _grid_size = 1, int _num_actions = 1)
         : training(_training), T(_T), num_epochs(_num_epochs), gamma(_gamma), learning_rate(_learning_rate),
           ppo_clip(_ppo_clip), backup_dir(_backup_dir),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
-          num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions),
-          optimizer(nullptr) {
+          num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
 
         log_file.open("bots/bot-1/agent_log.log");
-        if (!log_file.is_open()) {
-            throw std::runtime_error("Failed to open log file");
-        }
+        
+        log(std::to_string(torch::cuda::is_available()));
 
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
@@ -220,6 +190,10 @@ public:
         }
         else
             initializeNetwork();
+        cnn->to(device);
+        gru->to(device);
+        policy_head->to(device);
+        value_head->to(device);
 
         std::vector<torch::Tensor> params;
         auto cnn_params = cnn->parameters();
@@ -232,6 +206,9 @@ public:
         params.insert(params.end(), value_params.begin(), value_params.end());
 
         optimizer = new torch::optim::AdamW(params, torch::optim::AdamWOptions().lr(learning_rate).weight_decay(1e-4));
+
+        reward_net = new RewardNet(learning_rate, backup_dir + "/reward", num_actions, num_channels, grid_size);
+
         log("--------------------------------------------------------");
         auto t = time(nullptr);
         log(std::string(ctime(&t)));
@@ -239,13 +216,12 @@ public:
         log("Agent initialized with T=" + std::to_string(T) + ", num_epochs=" + std::to_string(num_epochs) +
             ", gamma=" + std::to_string(gamma) + ", learning_rate=" + std::to_string(learning_rate) +
             ", ppo_clip=" + std::to_string(ppo_clip));
-
-        reward_net.build(num_actions, num_channels, grid_size);
     }
 
     ~Agent() {
         saveProgress();
         delete optimizer;
+        delete reward_net;
         log_file.close();
     }
 
@@ -264,14 +240,14 @@ public:
         std::mt19937 gen(std::random_device{}());
         std::discrete_distribution<> dist(v.begin(), v.end());
         int action = dist(gen);
-        log("Predicted action: " + std::to_string(action));
+        //log("Predicted action: " + std::to_string(action));
         return action;
     }
 
     void update(int action, bool imitate) {
         actions.push_back(action);
-        rewards.push_back(reward_net.get_reward(action, imitate, state));
-        log("Updated with action=" + std::to_string(action) + ", imitate=" + std::to_string(imitate));
+        rewards.push_back(reward_net->forward(action, imitate, state));
+        //log("Updated with action=" + std::to_string(action) + ", imitate=" + std::to_string(imitate));
         if (training && actions.size() == T)
             train();
     }

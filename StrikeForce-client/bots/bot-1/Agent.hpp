@@ -160,10 +160,6 @@ private:
             loss.backward({}, /*retain_graph=*/true);
             optimizer->step();
         }
-        actions.clear();
-        rewards.clear();
-        log_probs.clear();
-        gru_outputs.clear();
         log("Training completed");
     }
 
@@ -175,11 +171,8 @@ public:
           ppo_clip(_ppo_clip), backup_dir(_backup_dir),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
           num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
-
         log_file.open("bots/bot-1/agent_log.log");
-        
         log(std::to_string(torch::cuda::is_available()));
-
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
                 load_progress();
@@ -194,7 +187,6 @@ public:
         gru->to(device);
         policy_head->to(device);
         value_head->to(device);
-
         std::vector<torch::Tensor> params;
         auto cnn_params = cnn->parameters();
         auto gru_params = gru->parameters();
@@ -204,11 +196,8 @@ public:
         params.insert(params.end(), gru_params.begin(), gru_params.end());
         params.insert(params.end(), policy_params.begin(), policy_params.end());
         params.insert(params.end(), value_params.begin(), value_params.end());
-
         optimizer = new torch::optim::AdamW(params, torch::optim::AdamWOptions().lr(learning_rate).weight_decay(1e-4));
-
-        reward_net = new RewardNet(learning_rate, backup_dir + "/reward", num_actions, num_channels, grid_size);
-
+        reward_net = new RewardNet(true, learning_rate, backup_dir + "/reward", num_actions, num_channels, grid_size);
         log("--------------------------------------------------------");
         auto t = time(nullptr);
         log(std::string(ctime(&t)));
@@ -246,9 +235,15 @@ public:
 
     void update(int action, bool imitate) {
         actions.push_back(action);
-        rewards.push_back(reward_net->forward(action, imitate, state));
+        rewards.push_back(reward_net->get_reward(action, imitate, state));
         //log("Updated with action=" + std::to_string(action) + ", imitate=" + std::to_string(imitate));
-        if (training && actions.size() == T)
-            train();
+        if (actions.size() == T) {
+            if (training)
+                train();
+            actions.clear();
+            rewards.clear();
+            log_probs.clear();
+            gru_outputs.clear();
+        }
     }
 };

@@ -22,4 +22,4 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include "bots/bot-1/custom.hpp"
+#include "bots/bot-1/Custom.hpp"

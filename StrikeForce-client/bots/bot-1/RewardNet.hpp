@@ -31,7 +31,7 @@ class RewardNet {
 private:
     bool training, logging = true;
     float learning_rate;
-    int num_actions, num_channels, grid_size;
+    int T, num_actions, num_channels, grid_size;
 
     std::string backup_dir;
 
@@ -43,6 +43,8 @@ private:
     torch::nn::Sequential action_processor{nullptr};
     torch::nn::Sequential combined_processor{nullptr};
     torch::optim::Adam* optimizer{nullptr};
+
+    std::vector<torch::Tensor> outputs, targets;
 
     std::ofstream log_file;
 
@@ -110,11 +112,19 @@ private:
         log("Progress loaded successfully");
     }
 
-    void update_parameters(torch::Tensor &output, torch::Tensor &target) {
-        auto loss = torch::mse_loss(output, target);
+    void update(torch::Tensor &output, torch::Tensor &target) {
+        outputs.push_back(output);
+        targets.push_back(target);
+        if (outputs.size() < T)
+            return;
+        auto loss = torch::zeros({}).to(device);
+        for (int i = 0; i < T; ++i)
+            loss += torch::mse_loss(outputs[i], targets[i]);
+        loss /= T;
         optimizer->zero_grad();
         loss.backward();
         optimizer->step();
+        outputs.clear(), targets.clear();
     }
 
     void punish_random(torch::Tensor &state) {
@@ -122,7 +132,7 @@ private:
         std::discrete_distribution<> dist(probs.begin(), probs.end());
         auto target = torch::tensor(-1.0f).to(device);
         auto output = forward(dist(gen), state);
-        update_parameters(output, target);
+        update(output, target);
     }
 
     torch::Tensor forward(int action, torch::Tensor &state) {
@@ -135,12 +145,12 @@ private:
     }
 
 public:
-    RewardNet(bool _training, float _learning_rate, const std::string &_backup_dir = "bots/bot-1/agent_backup/reward",
+    RewardNet(bool _training, int _T, float _learning_rate, const std::string &_backup_dir = "bots/bot-1/reward_backup",
           int _num_actions = 1, int _num_channels = 1, int _grid_size = 1)
-          : training(_training), learning_rate(_learning_rate), backup_dir(_backup_dir),
+          : training(_training), T(_T), learning_rate(_learning_rate), backup_dir(_backup_dir),
           num_actions(_num_actions), num_channels(_num_channels), grid_size(_grid_size),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU){
-        log_file.open("bots/bot-1/reward_log.log");
+        log_file.open(backup_dir + "/reward_log.log");
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
                 load_progress();
@@ -177,7 +187,7 @@ public:
         auto output = forward(action, state);
         if (training && imitate) {
             auto target = torch::tensor(1.0f).to(device);
-            update_parameters(output, target);
+            update(output, target);
             output = target;
         }
         return output.item<float>();

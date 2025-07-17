@@ -132,25 +132,10 @@ namespace Environment::Field{
 		#if defined(__unix__) || defined(__APPLE__)
 		auto end_ = std::chrono::steady_clock::now();
 		int k = (lim.count() - (end_ - start).count()) / 1000;
-		if(!manual)
+		if(manual)
 			usleep(std::max(k, 0));
 		#endif
 		return;
-	}
-
-	char gameplay::human_rnpc_bot(Environment::Character::Human& player) const{
-		if(frame % 50 == 1){
-			char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
-			return c[rand() % 8];
-		}
-		else if(rand() % 5 < 3)
-			return 'x';
-		else if(rand() % 5 < 3){
-			char c[7] = {'1', '2', 'a', 'w', 's', 'd', 'p'};
-			return c[rand() % 7];
-		}
-		char c[8] = {'+', 'u', 'f', 'g', 'h', 'j', '[', ']'};
-		return c[rand() % 8];
 	}
 
 	void gameplay::prepare(Environment::Character::Human& player){

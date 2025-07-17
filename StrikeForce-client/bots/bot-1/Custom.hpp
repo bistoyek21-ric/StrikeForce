@@ -131,24 +131,9 @@ namespace Environment::Field{
 		printer.print(res.c_str());
 		auto end_ = std::chrono::steady_clock::now();
 		int k = (lim.count() - (end_ - start).count()) / 1000;
-		if(!manual)
+		if(manual)
 			usleep(std::max(k, 0));
 		return;
-	}
-
-	char gameplay::human_rnpc_bot(Environment::Character::Human& player) const{
-		if(frame % 50 == 1){
-			char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
-			return c[rand() % 8];
-		}
-		else if(rand() % 5 < 3){
-			char c[7] = {'1', '2', 'a', 'w', 's', 'd', 'p'};
-			return c[rand() % 7];
-		}
-		else if(rand() % 5 < 3)
-			return 'x';
-		char c[8] = {'+', 'u', 'f', 'g', 'h', 'j', '[', ']'};
-		return c[rand() % 6];
 	}
 
 	std::vector<float> describe(const node &cell, const Environment::Character::Human &player){
@@ -242,8 +227,8 @@ namespace Environment::Field{
 	}
 
 	void gameplay::prepare(Environment::Character::Human& player){
-		action = "+`1awsdxpm";
-		player.agent = new Agent(false, 128, 4, 0.99, 1e-3, 0.2, "bots/bot-1/agent_backup", 26, 15, action.size());
+		action = "+`1upxawsdfghjkl;'cvbnm,./[]";
+		player.agent = new Agent(true, 128, 4, 0.99, 1e-3, 0.2, "bots/bot-1/agent_backup", 26, 15, action.size());
 		player.set_agent_active();
 	}
 

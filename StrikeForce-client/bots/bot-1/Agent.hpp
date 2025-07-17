@@ -171,7 +171,7 @@ public:
           ppo_clip(_ppo_clip), backup_dir(_backup_dir),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
           num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
-        log_file.open("bots/bot-1/agent_log.log");
+        log_file.open(backup_dir + "/agent_log.log");
         log(std::to_string(torch::cuda::is_available()));
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
@@ -197,7 +197,7 @@ public:
         params.insert(params.end(), policy_params.begin(), policy_params.end());
         params.insert(params.end(), value_params.begin(), value_params.end());
         optimizer = new torch::optim::AdamW(params, torch::optim::AdamWOptions().lr(learning_rate).weight_decay(1e-4));
-        reward_net = new RewardNet(true, learning_rate, backup_dir + "/reward", num_actions, num_channels, grid_size);
+        reward_net = new RewardNet(true, (T << 1), learning_rate, backup_dir + "/../reward_backup", num_actions, num_channels, grid_size);
         log("--------------------------------------------------------");
         auto t = time(nullptr);
         log(std::string(ctime(&t)));

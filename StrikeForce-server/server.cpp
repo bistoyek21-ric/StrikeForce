@@ -82,7 +82,7 @@ void rcv_commands(){
 					announce[i] = true;
 			}
 			#ifdef LOGGING
-			std::ofstream file("./" + std::to_string(i) + ".act");
+			std::ofstream file("./" + std::to_string(i) + ".act", ios::app);
 			file << command[i];
 			file.close();
 			#endif

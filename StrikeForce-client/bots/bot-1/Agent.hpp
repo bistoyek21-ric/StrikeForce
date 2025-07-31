@@ -22,34 +22,34 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-//g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -lc10 -lsfml-graphics -lsfml-window -lsfml-system
+//g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
 #include "RewardNet.hpp"
 
 class Agent {
 private:
-
     bool training, logging = true;
     int hidden_size, num_actions, T, num_epochs, num_channels, grid_size;
-    float gamma, learning_rate, ppo_clip;
+    float gamma, learning_rate, ppo_clip, alpha;
     std::string backup_dir;
     std::vector<int> actions;
     std::vector<float> rewards;
-    std::vector<torch::Tensor> log_probs, gru_outputs;
+    std::vector<torch::Tensor> log_probs, gated_outputs;
 
-    torch::Tensor state;
-    
+    torch::Tensor state, action_input;
+
     torch::Device device;
 
     torch::nn::GRU gru{nullptr};
     torch::nn::Linear policy_head{nullptr}, value_head{nullptr};
-    torch::nn::Sequential cnn{nullptr};
+    torch::nn::Sequential cnn{nullptr}, gate_layer{nullptr};
     torch::optim::AdamW* optimizer{nullptr};
 
     std::ofstream log_file;
 
     RewardNet* reward_net;
 
-    void log(const std::string& message) {
+    template<typename T>
+    void log(const T& message) {
         if (!logging)
             return;
         log_file << message << std::endl;
@@ -68,10 +68,12 @@ private:
         policy_head->to(torch::kCPU);
         value_head->to(torch::kCPU);
         cnn->to(torch::kCPU);
+        gate_layer->to(torch::kCPU);
         torch::save(gru, backup_dir + "/gru.pt");
         torch::save(policy_head, backup_dir + "/policy_head.pt");
         torch::save(value_head, backup_dir + "/value_head.pt");
         torch::save(cnn, backup_dir + "/cnn.pt");
+        torch::save(gate_layer, backup_dir + "/gate_layer.pt");
         log("Progress saved to " + backup_dir);
     }
 
@@ -91,6 +93,7 @@ private:
         torch::load(gru, backup_dir + "/gru.pt");
         torch::load(policy_head, backup_dir + "/policy_head.pt");
         torch::load(value_head, backup_dir + "/value_head.pt");
+        torch::load(gate_layer, backup_dir + "/gate_layer.pt");
         log("Progress loaded successfully");
     }
 
@@ -105,16 +108,19 @@ private:
             torch::nn::BatchNorm2d(128), torch::nn::ReLU(),
             torch::nn::AdaptiveAvgPool2d(1), torch::nn::Flatten()
         );
-        torch::Tensor dummy = torch::randn({1, num_channels, grid_size, grid_size});
-        hidden_size = cnn->forward(dummy).size(1);
+        hidden_size = 128;
         log("hidden_size set to " + std::to_string(hidden_size));
         gru = torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2));
+        gate_layer = torch::nn::Sequential(
+            torch::nn::Linear(num_actions + hidden_size, hidden_size),
+            torch::nn::ReLU()
+        );
         policy_head = torch::nn::Linear(hidden_size, num_actions);
         value_head = torch::nn::Linear(hidden_size, 1);
     }
 
     torch::Tensor computeReturns() {
-        torch::Tensor returns = torch::zeros({(int)rewards.size()}, torch::dtype(torch::kFloat32)).to(device);
+        torch::Tensor returns = torch::zeros({(int)rewards.size()}, device);
         double running = 0;
         for (int i = T - 1; i >= 0; --i) {
             running = rewards[i] + gamma * running;
@@ -127,7 +133,7 @@ private:
         auto returns = computeReturns();
         std::vector<torch::Tensor> advantages;
         for (int i = 0; i < T; ++i) {
-            auto value = value_head->forward(gru_outputs[i]).squeeze();
+            auto value = value_head->forward(gated_outputs[i]).squeeze();
             advantages.push_back(returns[i] - value);
         }
         torch::Tensor adv_tensor = torch::stack(advantages);
@@ -138,11 +144,11 @@ private:
         else 
             adv_tensor = (adv_tensor - adv_mean) / (adv_std + 1e-5);
         for (int epoch = 0; epoch < num_epochs; ++epoch) {
-            torch::Tensor p_loss = torch::zeros({}).to(device);
-            torch::Tensor v_loss = torch::zeros({}).to(device);
+            torch::Tensor p_loss = torch::zeros({}, device);
+            torch::Tensor v_loss = torch::zeros({}, device);
             for (int i = 0; i < T; ++i) {
                 auto old_lp = log_probs[i][actions[i]];
-                auto current_logits = policy_head->forward(gru_outputs[i]);
+                auto current_logits = policy_head->forward(gated_outputs[i]);
                 auto current_logp = torch::log_softmax(current_logits, -1)[actions[i]];
                 auto diff = current_logp - old_lp;
                 if (diff.item<float>() > 10.0f)
@@ -151,7 +157,7 @@ private:
                 auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
                 auto adv = adv_tensor[i];
                 p_loss -= torch::min(ratio * adv, clipped * adv);
-                auto current_value = value_head->forward(gru_outputs[i]).squeeze();
+                auto current_value = value_head->forward(gated_outputs[i]).squeeze();
                 v_loss += torch::mse_loss(current_value, returns[i]);
             }
             auto loss = p_loss + 0.5 * v_loss;
@@ -165,14 +171,12 @@ private:
 
 public:
     Agent(bool _training, int _T, int _num_epochs, float _gamma, float _learning_rate, float _ppo_clip,
-          const std::string& _backup_dir = "bots/bot-1/progress", int _num_channels = 1,
+          float _alpha, const std::string& _backup_dir = "bots/bot-1/backup/agent_backup", int _num_channels = 1,
           int _grid_size = 1, int _num_actions = 1)
         : training(_training), T(_T), num_epochs(_num_epochs), gamma(_gamma), learning_rate(_learning_rate),
-          ppo_clip(_ppo_clip), backup_dir(_backup_dir),
+          ppo_clip(_ppo_clip), alpha(_alpha), backup_dir(_backup_dir),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
           num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
-        log_file.open(backup_dir + "/agent_log.log");
-        log(std::to_string(torch::cuda::is_available()));
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
                 load_progress();
@@ -181,30 +185,39 @@ public:
                 initializeNetwork();
             }
         }
-        else
+        else {
+            if(!backup_dir.empty())
+                std::filesystem::create_directories(backup_dir);
             initializeNetwork();
+        }
+        log_file.open(backup_dir + "/agent_log.log");
+        log(std::to_string(torch::cuda::is_available()));
         cnn->to(device);
         gru->to(device);
         policy_head->to(device);
         value_head->to(device);
+        gate_layer->to(device);
         std::vector<torch::Tensor> params;
         auto cnn_params = cnn->parameters();
         auto gru_params = gru->parameters();
         auto policy_params = policy_head->parameters();
         auto value_params = value_head->parameters();
+        auto gate_params = gate_layer->parameters();
         params.insert(params.end(), cnn_params.begin(), cnn_params.end());
         params.insert(params.end(), gru_params.begin(), gru_params.end());
         params.insert(params.end(), policy_params.begin(), policy_params.end());
         params.insert(params.end(), value_params.begin(), value_params.end());
+        params.insert(params.end(), gate_params.begin(), gate_params.end());
         optimizer = new torch::optim::AdamW(params, torch::optim::AdamWOptions().lr(learning_rate).weight_decay(1e-4));
-        reward_net = new RewardNet(true, (T << 1), learning_rate, backup_dir + "/../reward_backup", num_actions, num_channels, grid_size);
+        reward_net = new RewardNet(true, (T << 1), learning_rate, alpha, backup_dir + "/../reward_backup", num_actions, num_channels, grid_size);
         log("--------------------------------------------------------");
         auto t = time(nullptr);
         log(std::string(ctime(&t)));
         log("--------------------------------------------------------");
         log("Agent initialized with T=" + std::to_string(T) + ", num_epochs=" + std::to_string(num_epochs) +
-            ", gamma=" + std::to_string(gamma) + ", learning_rate=" + std::to_string(learning_rate) +
+            ", gamma=" + std::to_string(gamma) + ", alpha=" + std::to_string(alpha) + ", learning_rate=" + std::to_string(learning_rate) +
             ", ppo_clip=" + std::to_string(ppo_clip));
+        action_input = torch::zeros({num_actions}, device);
     }
 
     ~Agent() {
@@ -220,8 +233,9 @@ public:
         auto gru_in = feat.view({1, 1, -1});
         auto [gru_out, _] = gru->forward(gru_in);
         gru_out = gru_out.squeeze(0).squeeze(0);
-        gru_outputs.push_back(gru_out.detach());
-        auto logits = policy_head->forward(gru_out.squeeze(0));
+        auto gated_out = gate_layer->forward(torch::cat({gru_out.view({hidden_size}), action_input}));
+        gated_outputs.push_back(gated_out.detach());
+        auto logits = policy_head->forward(gated_out);
         auto probs = torch::softmax(logits, -1);
         auto logp = torch::log(probs + 1e-10);
         log_probs.push_back(logp.detach());
@@ -229,21 +243,21 @@ public:
         std::mt19937 gen(std::random_device{}());
         std::discrete_distribution<> dist(v.begin(), v.end());
         int action = dist(gen);
-        //log("Predicted action: " + std::to_string(action));
         return action;
     }
 
     void update(int action, bool imitate) {
         actions.push_back(action);
         rewards.push_back(reward_net->get_reward(action, imitate, state));
-        //log("Updated with action=" + std::to_string(action) + ", imitate=" + std::to_string(imitate));
+        action_input = action_input * alpha;
+        action_input[action] += 1 - alpha;
         if (actions.size() == T) {
             if (training)
                 train();
             actions.clear();
             rewards.clear();
             log_probs.clear();
-            gru_outputs.clear();
+            gated_outputs.clear();
         }
     }
 };

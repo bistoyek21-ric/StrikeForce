@@ -29,6 +29,7 @@ SOFTWARE.
 #include <vector>
 #include <cstring>
 #include <string>
+#include <fstream>
 #include <unistd.h>
 #include <time.h>
 #include <execution>
@@ -39,6 +40,8 @@ SOFTWARE.
 #else
 #include "inet_for_windows.hpp"
 #endif
+
+//#define LOGGING
 
 int constexpr BUFFER_SIZE = 2048, BS = 2;
 
@@ -78,6 +81,11 @@ void rcv_commands(){
 				if(command[i] == '_')
 					announce[i] = true;
 			}
+			#ifdef LOGGING
+			std::ofstream file("./" + std::to_string(i) + ".act");
+			file << command[i];
+			file.close();
+			#endif
 		}
 	});
 	return;

@@ -22,12 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include "Item.hpp"
+#include "basic.hpp"
 
 class Agent{
 private:
     int x;
 public:
 
-    void update(int a){return;}
+    void update(int a, bool b){return;}
 };

@@ -22,9 +22,27 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include "selected_agent.hpp"
+#include "Item.hpp"
 
 namespace Environment::Character{
+
+	int compute_damage(int x, int y){
+    	int l = 0, r = x + 1, z = 2;
+    	while(1 < y){
+	        y >>= 1;
+    	    ++z;
+    	}
+	    while(r - l > 1){
+    	    int mid = (l + r) >> 1, tmp = x;
+        	for(int i = 0; i < z && mid; ++i)
+            	tmp /= mid;
+	        	if(tmp)
+    	        	l = mid;
+        		else
+            		r = mid;
+    	}
+    	return l;
+	}
 
 	const int wdx[4] = {1, 0, -1, 0}, wdy[4] = {0, 1, 0, -1};
 
@@ -270,11 +288,38 @@ namespace Environment::Character{
 	protected:
 
 		bool rnpc, active_agent = false;
-		int level_solo, level_timer, level_squad, money, stamina, def_stamina, rate_solo, rate_timer, rate_squad, rate, way, team;
+		int level_solo, level_timer, level_squad, money, stamina, def_stamina;
+		int rate_solo, rate_timer, rate_squad, rate, way, team, kills = 0, damage = 0, effect = 0;
 	
 	public:
 		Agent* agent;
-		
+
+		void reset() {
+			back_Hp();
+			back_mindamage();
+			back_stamina();
+			backpack.back_tmp();
+			reset_kills();
+			set_damage(0);
+			set_effect(0);
+		}
+
+		void set_damage(int damage_) {
+			damage = damage_;
+		}
+
+		int get_damage() const{
+			return damage;
+		}
+
+		void set_effect(int effect_) {
+			effect = effect_;
+		}
+
+		int get_effect() const{
+			return effect;
+		}
+
 		void set_agent_active(){
 			active_agent = true;
 		}
@@ -301,6 +346,18 @@ namespace Environment::Character{
 	        return;
 	    }
 
+		int get_kills() const{
+			return kills;
+		}
+
+		void increase_kills(){
+			++kills;
+		}
+
+		void reset_kills(){
+			kills = 0;
+		}
+
 		void set_team(int team){
 			this->team = team;
 			return;
@@ -325,13 +382,13 @@ namespace Environment::Character{
 			mindamage += c.get_effect();
 			if((--backpack.list_cons[backpack.ind].second) < 1)
 				backpack.vec = -1;
-            		backpack.set_vol(backpack.get_vol() - c.get_vol());
+            backpack.set_vol(backpack.get_vol() - c.get_vol());
 			return true;
 		}
 
 		bool punch(Environment::Item::Bullet &b){
 			Environment::Item::Weapon p;
-			p.ready(std::max(damage(mindamage_def, 1), mindamage), 0, 1);
+			p.ready(std::max(compute_damage(mindamage_def, 1), mindamage), 0, 1);
 			std::vector<int> cor_ = {cor[0], cor[1] + wdx[way - 1], cor[2] + wdy[way - 1]};
 			b.shot(cor_, way, p, (uintptr_t)this);
 			return true;
@@ -342,7 +399,7 @@ namespace Environment::Character{
 			if(stamina + w.get_stamina() < 0)
 				return false;
 			stamina += w.get_stamina();
-			w.set_damage(std::max(damage(w.get_damage(), w.get_range()), w.get_damage() + mindamage));
+			w.set_damage(std::max(compute_damage(w.get_damage(), w.get_range()), w.get_damage() + mindamage));
 			std::vector<int> cor_ = {cor[0], cor[1] + wdx[way - 1], cor[2] + wdy[way - 1]};
 			b.shot(cor_, way, w, (uintptr_t)this);
 			return true;
@@ -369,7 +426,7 @@ namespace Environment::Character{
 
 		std::vector<int> get_damage_effect() const{
 		    int vec = backpack.vec;
-		    int dmg = std::max(damage(mindamage_def, 1), mindamage);
+		    int dmg = std::max(compute_damage(mindamage_def, 1), mindamage);
             if(vec == 1){
                 auto b = &backpack.list_throw[backpack.ind].first;
                 if(0 <= stamina + b->get_stamina())
@@ -378,7 +435,7 @@ namespace Environment::Character{
             if(vec == 2){
                 auto w = &backpack.list_w[backpack.ind].first;
                 if(0 <= stamina + w->get_stamina())
-                    return {std::max({damage(w->get_damage(), w->get_range()), w->get_damage() + mindamage, dmg}), w->get_effect()};
+                    return {std::max({compute_damage(w->get_damage(), w->get_range()), w->get_damage() + mindamage, dmg}), w->get_effect()};
             }
             return {dmg, 0};
 		}
@@ -738,6 +795,9 @@ namespace Environment::Character{
 		h.build(true, name, dir);
 		h.set_rnpc(rnpc);
 		h.set_team(0);
+		h.reset_kills();
+		h.set_damage(0);
+		h.set_effect(0);
 		while(--lvl){
 			h.level_solo_up();
 			h.level_timer_up();

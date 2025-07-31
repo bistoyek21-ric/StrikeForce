@@ -26,7 +26,7 @@ SOFTWARE.
 
 namespace Environment::Field{
     
-    auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(40000000LL);
+    auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(50000000LL);
 
 	void gameplay::print_game() const{
 		if(silent){
@@ -143,7 +143,7 @@ namespace Environment::Field{
 		res.push_back(cell.s[2]); res.push_back(cell.s[3]); res.push_back(cell.s[4]);
 		res.push_back(cell.s[5] || cell.s[6]);
 		res.push_back(cell.s[7]); res.push_back(cell.s[10]);
-		// character situation |khoodie, doshmane, npc, zombie| {0, 1}^4               | 4
+		// character situation |khoodie, doshmane, npc, zombie| {0, 1}^4 N^3 {0, 1}    | 8
 		std::vector<float> sit = {0, 0, 0, 0};
 		if(cell.s[0]){
 			int t = cell.human->get_team();
@@ -158,6 +158,16 @@ namespace Environment::Field{
 			sit[3] = 1;
 		for(int i = 0; i < 4; ++i)
 			res.push_back(sit[i]);
+		if(cell.s[0]){
+			res.push_back(cell.human->get_kills());
+			res.push_back(cell.human->backpack.get_blocks());
+			res.push_back(cell.human->backpack.get_portals());
+			res.push_back(cell.human->backpack.get_portal_ind() != -1);
+		}
+		else{
+			for(int i = 0; i < 4; ++i)
+				res.push_back(0);
+		}
 		// it can't be passed through by human, bullet; can it destroyed by shooting, Hp {0, 1}^3 [0, inf)| 4
 		char obj = cell.showit();
 		sit = {0, 0, 0};
@@ -183,7 +193,7 @@ namespace Environment::Field{
 		for(int i = 0; i < 3; ++i)
 			res.push_back(sit[i]);
 		res.push_back(hp);
-		// is it a bullet, attack vector, damage effect stamina {0, 1} [0, 1]^4 (-inf, inf)^3    | 8
+		// is it a bullet, attack vector, damage effect stamina {0, 1} [0, 1]^4 [0, inf)^3 | 8
 		sit = {0, 0, 0, 0};
 		float damage = 0, effect = 0, is_bull = 0, estamina = 0;
 		if(cell.s[0]){
@@ -204,17 +214,17 @@ namespace Environment::Field{
 			int dist_traveled = abs(c[1] - dc[1]) + abs(c[2] - dc[2]);
 			sit[cell.bullet->get_way() - 1] = (cell.bullet->get_range() - dist_traveled) / 100.0;
 			damage = cell.bullet->get_damage() / 1000.0;
-			effect = cell.bullet->get_effect() / 1000.0;
+			effect = -cell.bullet->get_effect() / 1000.0;
 		}
 		else if(cell.s[7]){
 			damage = 20 / 1000.0;
-			effect = -10 / 1000.0;
+			effect = 10 / 1000.0;
 		}
 		res.push_back(is_bull);
 		for(int i = 0; i < 4; ++i)
 			res.push_back(sit[i]);
 		res.push_back(damage), res.push_back(effect), res.push_back(estamina);
-		// Consumable items (-inf, inf)^3                                                     | 3
+		// Consumable items [0, inf)^3                                                     | 3
 		sit = {0, 0, 0};
 		if(cell.s[4]){
 			sit[0] = cell.cons->get_stamina() / 1000.0;
@@ -223,24 +233,23 @@ namespace Environment::Field{
 		}
 		for(int i = 0; i < 3; ++i)
 			res.push_back(sit[i]);
+		// damage effect   [0, inf)^2                                                     | 2
+		if(cell.s[0]){
+			res.push_back(cell.human->get_damage() / 1000.0);
+			res.push_back(-cell.human->get_effect() / 1000.0);
+		}
+		else{
+			res.push_back(0);
+			res.push_back(0);
+		}
 		return res;
 	}
 
-	void gameplay::prepare(Environment::Character::Human& player){
-		action = "+`1upxawsdfghjkl;'cvbnm,./[]";
-		player.agent = new Agent(true, 128, 4, 0.99, 1e-3, 0.2, "bots/bot-1/agent_backup", 26, 15, action.size());
-		player.set_agent_active();
-	}
-
-	void gameplay::view() const {
-        return;
-    }
-
-    char gameplay::bot(Environment::Character::Human& player) const {
+	char gameplay::bot(Environment::Character::Human& player) const {
 		if(&player != &hum[ind])
 			return '+';
 		std::vector<int> v = player.get_cor();
-		std::vector<float> obs, ch[26];
+		std::vector<float> obs, ch[32];
 		for(int i = v[1] - 7; i <= v[1] + 7; ++i)
 			for(int j = v[2] - 7; j <= v[2] + 7; ++j){
 				std::vector<float> vec;
@@ -251,9 +260,19 @@ namespace Environment::Field{
 				for(int k = 0; k < vec.size(); ++k)
 					ch[k].push_back(vec[k]);
 			}
-		for(int i = 0; i < 26; ++i)
+		for(int i = 0; i < 32; ++i)
 			for(int j = 0; j < 15 * 15; ++j)
 				obs.push_back(ch[i][j]);
 		return action[player.agent->predict(obs)];
+    }
+
+	void gameplay::prepare(Environment::Character::Human& player){
+		action = "+`1upxawsd[]";
+		player.agent = new Agent(true, 128, 4, 0.99, 1e-3, 0.2, 0.9, "bots/bot-1/backup/agent_backup", 32, 15, action.size());
+		player.set_agent_active();
+	}
+
+	void gameplay::view() const {
+        return;
     }
 }

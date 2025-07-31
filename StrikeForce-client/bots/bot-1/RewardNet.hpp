@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include "Item.hpp"
+#include "basic.hpp"
 #include <torch/torch.h>
 #include <random>
 #include <filesystem>
@@ -30,12 +30,14 @@ SOFTWARE.
 class RewardNet {
 private:
     bool training, logging = true;
-    float learning_rate;
-    int T, num_actions, num_channels, grid_size;
+    float learning_rate, alpha;
+    int T, num_actions, num_channels, grid_size, action_history;
 
     std::string backup_dir;
 
     std::vector<float> probs;
+
+    torch::Tensor action_buffer[2];
 
     torch::Device device;
 
@@ -48,7 +50,8 @@ private:
 
     std::ofstream log_file;
 
-    void log(const std::string& message) {
+    template<typename T>
+    void log(const T& message) {
         if (!logging)
             return;
         log_file << message << std::endl;
@@ -87,13 +90,12 @@ private:
             torch::nn::Linear(128, 128), torch::nn::ReLU()
         );
         combined_processor = torch::nn::Sequential(
-            torch::nn::Linear(128 + 128, 256), torch::nn::ReLU(),
             torch::nn::Linear(256, 128), torch::nn::ReLU(),
             torch::nn::Linear(128, 64), torch::nn::ReLU(),
             torch::nn::Linear(64, 1), torch::nn::Tanh()
         );
     }
-
+  
     void load_progress() {
         std::ifstream dim(backup_dir + "/dim.txt");
         if (!dim.is_open()) {
@@ -117,7 +119,7 @@ private:
         targets.push_back(target);
         if (outputs.size() < T)
             return;
-        auto loss = torch::zeros({}).to(device);
+        auto loss = torch::zeros({}, device);
         for (int i = 0; i < T; ++i)
             loss += torch::mse_loss(outputs[i], targets[i]);
         loss /= T;
@@ -131,26 +133,26 @@ private:
         std::mt19937 gen(std::random_device{}());
         std::discrete_distribution<> dist(probs.begin(), probs.end());
         auto target = torch::tensor(-1.0f).to(device);
-        auto output = forward(dist(gen), state);
+        auto output = forward(dist(gen), action_buffer[1], state);
         update(output, target);
     }
 
-    torch::Tensor forward(int action, torch::Tensor &state) {
+    torch::Tensor forward(int action, torch::Tensor &action_input, torch::Tensor &state) {
         auto features = cnn->forward(state);
-        auto action_input = torch::zeros({num_actions}, device);
-        action_input[action] = 1;
+        action_input = action_input * alpha;
+        action_input[action] += 1 - alpha;
         auto action_features = action_processor->forward(action_input);
-        auto combined = torch::cat({features, action_features.unsqueeze(0)}, /*dim=*/1);
+        auto combined = torch::cat({features.view({128}), action_features});
         return combined_processor->forward(combined);
     }
 
 public:
-    RewardNet(bool _training, int _T, float _learning_rate, const std::string &_backup_dir = "bots/bot-1/reward_backup",
-          int _num_actions = 1, int _num_channels = 1, int _grid_size = 1)
-          : training(_training), T(_T), learning_rate(_learning_rate), backup_dir(_backup_dir),
+    RewardNet(bool _training, int _T, float _learning_rate, float _alpha, const std::string &_backup_dir = "bots/bot-1/backup/reward_backup",
+          int _num_actions = 1, int _num_channels = 1, int _grid_size = 1, int _action_history = 1)
+          : training(_training), T(_T), learning_rate(_learning_rate), alpha(_alpha), backup_dir(_backup_dir),
           num_actions(_num_actions), num_channels(_num_channels), grid_size(_grid_size),
+          action_history(_action_history),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU){
-        log_file.open(backup_dir + "/reward_log.log");
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
                 load_progress();
@@ -159,8 +161,12 @@ public:
                 initializeNetwork();
             }
         }
-        else
+        else {
+            if (!backup_dir.empty())
+                std::filesystem::create_directories(backup_dir);
             initializeNetwork();
+        }
+        log_file.open(backup_dir + "/reward_log.log");
         cnn->to(device);
         action_processor->to(device);
         combined_processor->to(device);
@@ -173,6 +179,8 @@ public:
         params.insert(params.end(), combined_params.begin(), combined_params.end());
         optimizer = new torch::optim::Adam(params, torch::optim::AdamOptions().lr(learning_rate));
         probs.assign(num_actions, 1.0 / num_actions);
+        for (int i = 0; i < 2; ++i)
+            action_buffer[i] = torch::zeros({num_actions}, device);
     }
 
     ~ RewardNet() {
@@ -184,10 +192,11 @@ public:
     float get_reward(int action, bool imitate, torch::Tensor &state) {
         if (training)
             punish_random(state);
-        auto output = forward(action, state);
-        if (training && imitate) {
+        auto output = forward(action, action_buffer[0], state);
+        if (imitate) {
             auto target = torch::tensor(1.0f).to(device);
-            update(output, target);
+            if (training)
+                update(output, target);
             output = target;
         }
         return output.item<float>();

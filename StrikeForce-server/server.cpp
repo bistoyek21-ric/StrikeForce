@@ -22,10 +22,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+#pragma once
+
 #include <iostream>
 #include <vector>
 #include <cstring>
 #include <string>
+#include <fstream>
 #include <unistd.h>
 #include <time.h>
 #include <execution>
@@ -37,14 +41,21 @@ SOFTWARE.
 #include "inet_for_windows.hpp"
 #endif
 
+#define LOGGING
+
 int constexpr BUFFER_SIZE = 2048, BS = 2;
 
 static int PORT;
 static std::string PASS;
 
+std::string dir;
+
 std::vector<int> clients, team, indices;
 std::vector<bool> alive, disconnect, announce;
 std::vector<char> command;
+
+std::vector<std::ofstream> actions;
+std::ofstream match_log;
 
 int n, m, cnt;
 
@@ -70,11 +81,22 @@ void rcv_commands(){
 			sscanf(buffer, "%c", &command[i]);
 			if(command[i] == '_' || command[i] == '~' || disconnect[i]){
 				alive[i] = false, close(clients[i]);
+#ifdef LOGGING
+				match_log << "player with index " << i << " from team " << team[i] << " ";
+				match_log << (command[i] == '_' ? (disconnect[i] ? "disconnected" : "quited") : "eleminated") << '\n';
+				match_log.flush();
+#endif
                 std::cout << "player with index " << i << " from team " << team[i] << " ";
 				std::cout << (command[i] == '_' ? (disconnect[i] ? "disconnected" : "quited") : "eleminated") << '\n';
 				if(command[i] == '_')
 					announce[i] = true;
 			}
+#ifdef LOGGING
+			actions[i] << command[i];
+			if(command[i] == '_')
+				actions[i] << "\n\n"  << (disconnect[i] ? "disconnected" : "quited") << '\n';
+			actions[i].flush();
+#endif
 		}
 	});
 	return;
@@ -114,7 +136,7 @@ int main(){
 	std::cout << "StrikeForce-server\n";
 	std::cout << "Created by: 21\n";
 	std::cout << "____________________________________________________\n\n";
-    #if !defined(__unix__) && !defined(__APLLE__)
+    #if !defined(__unix__) && !defined(__APPLE__)
     WSADATA wsaData;
     if(WSAStartup(MAKEWORD(2, 2), &wsaData) != 0){
         std::cerr << "WSAStartup failed" << std::endl;
@@ -200,6 +222,20 @@ int main(){
 			std::cout << "Password REJETED" << std::endl;
 		}
 	}
+#ifdef LOGGING
+	dir = std::to_string(tb) + " " + std::to_string(serial_number);
+	system(("mkdir " + dir).c_str());
+	match_log.open(dir + "/match_log.txt");
+	match_log << tb << " " << serial_number << '\n';
+	match_log << n << " " << m << '\n';
+	actions.resize(n);
+	for(int i = 0; i < n; ++i){
+		match_log << team[i] << " ";
+		actions[i].open(dir + "/actions-" + std::to_string(i) + ".txt");
+	}
+	match_log << '\n';
+	match_log.flush();
+#endif
 	for(int i = 0; i < n; ++i){
 		std::string msg = std::to_string(tb) + " " + std::to_string(serial_number);
 		send(clients[i], msg.c_str(), msg.size() + 1, 0);
@@ -212,6 +248,13 @@ int main(){
 		char buffer[BUFFER_SIZE];
 		memset(buffer, 0, BUFFER_SIZE);
 		my_recv(clients[i], buffer, i);
+#ifdef LOGGING
+		match_log << "~~~~~~~~~~~~~\n" << buffer << '\n';
+		if(i == n - 1){
+			match_log << "Match starts:\n";
+			match_log.flush();
+		}
+#endif
 		for(int j = 0; j < n; ++j)
 			if(i != j){
 				send(clients[j], buffer, strlen(buffer) + 1, 0);
@@ -249,6 +292,15 @@ int main(){
         std::cout << "Team " << winner << " won the match!!!\n";
     else
         std::cout << "This match didn't have a winner.\n";
+#ifdef LOGGING
+	if(winner)
+        match_log << "Team " << winner << " won the match!!!\n";
+    else
+        match_log << "This match didn't have a winner.\n";
+	for(int i = 0; i < n; ++i)
+		actions[i].close();
+	match_log.close();
+#endif
 	std::cout << "Enter \"done!\" to end the program.\n";
     std::cout << "___________________________\n";
 	std::string str = "";

@@ -166,6 +166,10 @@ namespace Environment::Item{
 			int dist = abs(cor[0] - dcor[0]) + abs(cor[1] - dcor[1]) + abs(cor[2] - dcor[2]);
 			return (dist + 1 >= range);
 		}
+
+		std::vector<int> get_dcor(){
+			return dcor;
+		}
 	};
 
 	ConsumableItem cons[4];

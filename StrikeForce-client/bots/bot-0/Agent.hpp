@@ -22,4 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include "./bots/bot-0/bot-0.hpp"
+#include "basic.hpp"
+
+class Agent{
+private:
+    int x;
+public:
+
+    void update(int a, bool b){return;}
+};

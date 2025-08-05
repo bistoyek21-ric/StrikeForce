@@ -105,6 +105,14 @@ int getch(){
 #include "inet_for_windows.hpp"
 
 int constexpr BK = 8, EN = 13;
+
+void disable_input_buffering(){
+	return;
+}
+
+void restore_input_buffering(){
+	return;
+}
 #endif
 
 std::string user;
@@ -151,24 +159,6 @@ std::string head(bool ingame = false, bool dont = false){
 	res += c_col(36, 40) + "Local time: " + date() + "\n";
 	res += c_col(37, 40);
 	return res;
-}
-
-int damage(int x, int y){
-    int l = 0, r = x + 1, z = 2;
-    while(1 < y){
-        y >>= 1;
-        ++z;
-    }
-    while(r - l > 1){
-        int mid = (l + r) >> 1, tmp = x;
-        for(int i = 0; i < z && mid; ++i)
-            tmp /= mid;
-        if(tmp)
-            l = mid;
-        else
-            r = mid;
-    }
-    return l;
 }
 
 int my_recv(int sock, char* buffer, const int buffer_size, int flags){

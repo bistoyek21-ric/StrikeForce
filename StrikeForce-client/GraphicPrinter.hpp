@@ -1,7 +1,7 @@
 /*
 MIT License
 
-Copyright (c) 2024 bistoyek21 R.I.C.
+Copyright (c) 2025 bistoyek21 R.I.C.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -38,10 +38,41 @@ SOFTWARE.
 #include <mutex>
 #include <condition_variable>
 
+sf::ConvexShape createTriangle(int direction, sf::FloatRect bounds, sf::Color fillColor, float x, float y){
+    sf::ConvexShape triangle(3);
+    triangle.setFillColor(fillColor);
+    float w = bounds.width, h = bounds.height;
+    switch(direction){
+        case 1:
+            triangle.setPoint(0, sf::Vector2f(0, 0));
+            triangle.setPoint(1, sf::Vector2f(w, 0));
+            triangle.setPoint(2, sf::Vector2f(w/2, h));
+            break;
+        case 2:
+            triangle.setPoint(0, sf::Vector2f(0, 0));
+            triangle.setPoint(1, sf::Vector2f(0, h));
+            triangle.setPoint(2, sf::Vector2f(w, h/2));
+            break;
+        case 3:
+            triangle.setPoint(0, sf::Vector2f(0, h));
+            triangle.setPoint(1, sf::Vector2f(w, h));
+            triangle.setPoint(2, sf::Vector2f(w/2, 0));
+            break;
+        case 4:
+            triangle.setPoint(0, sf::Vector2f(w, 0));
+            triangle.setPoint(1, sf::Vector2f(w, h));
+            triangle.setPoint(2, sf::Vector2f(0, h/2));
+            break;
+        default:
+            break;
+    }
+    triangle.setPosition(x + bounds.left, y + bounds.top);
+    return triangle;
+}
 
-class GraphicPrinter {
+class GraphicPrinter{
 private:
-    struct TextBufferEntry {
+    struct TextBufferEntry{
         std::string text;
         std::vector<sf::Color> textColor;
         std::vector<sf::Color> bgColor;
@@ -67,8 +98,8 @@ private:
 
     sf::RenderWindow* window;
 
-    sf::Color ansiColor(int code, bool isForeground) {
-        switch (code) {
+    sf::Color ansiColor(int code, bool isForeground){
+        switch(code){
             case 30: return sf::Color(0, 0, 0);
             case 31: return sf::Color::Red;
             case 32: return sf::Color::Green;
@@ -89,51 +120,49 @@ private:
         }
     }
 
-    void renderLoop() {
+    void renderLoop(){
         sf::RenderWindow w(sf::VideoMode(W, H), "StrikeForce");
         window = &w;
         window->setFramerateLimit(100);
-
-        while (window->isOpen() && running) {
+        while(window->isOpen() && running){
             sf::Event event;
-            while (window->pollEvent(event)) {
-                if (event.type == sf::Event::Closed) {
+            while(window->pollEvent(event))
+                if(event.type == sf::Event::Closed)
                     window->close();
-                }
-            }
-
             std::unique_lock lock(mtx);
             cv.wait_for(lock, std::chrono::milliseconds(1));
-
-            if (clearRequested) {
+            if(clearRequested){
                 buffer.clear();
                 clearRequested = false;
             }
-
-            while (!printQueue.empty()) {
+            while(!printQueue.empty()){
                 parsePrint(printQueue.front());
                 printQueue.pop();
             }
-
             window->clear(sf::Color::Black);
             float yOffset = startY;
-            for (const auto& entry : buffer) {
+            for(const auto& entry: buffer){
                 float xOffset = startX;
-                for (int i = 0; i < entry.text.size(); ++i) {
-                    std::string s; s.push_back(entry.text[i]);
+                for(int i = 0; i < entry.text.size(); ++i){
+                    char c = entry.text[i];
+                    std::string s; s.push_back(c);
                     sf::Text text(s, font, charSize);
                     text.setFillColor(entry.textColor[i]);
                     text.setPosition(xOffset, yOffset);
-
                     sf::FloatRect bounds = text.getLocalBounds();
                     sf::RectangleShape bgRect(sf::Vector2f(bounds.width, bounds.height));
                     bgRect.setFillColor(entry.bgColor[i]);
                     bgRect.setPosition(xOffset + bounds.left, yOffset + bounds.top);
-
+                    if(1 <= s[0] && s[0] <= 4){
+                        sf::ConvexShape triangle = createTriangle(s[0], bounds, entry.textColor[i], xOffset, yOffset);
+                        window->draw(bgRect);
+                        window->draw(triangle);
+                    }
+                    else{
+                        window->draw(bgRect);
+                        window->draw(text);
+                    }
                     xOffset += charSize * lineSpacing / 2;
-
-                    window->draw(bgRect);
-                    window->draw(text);
                 }
                 yOffset += charSize * lineSpacing;
             }
@@ -141,61 +170,62 @@ private:
         }
     }
 
-    void parsePrint(const std::string& str) {
+    void parsePrint(const std::string& str){
         std::string line;
         std::vector<sf::Color> textColor, BgColor;
         size_t i = 0;
-        while (i < str.size()) {
-            if (i + 9 < str.size() && str[i] == '\033' && str[i + 1] == '[' && str[i + 4] == 'm'
-                && str[i + 5] == '\033' && str[i + 6] == '[' && str[i + 9] == 'm') {
+        while(i < str.size()){
+            if(i + 9 < str.size() && str[i] == '\033' && str[i + 1] == '[' && str[i + 4] == 'm'
+                && str[i + 5] == '\033' && str[i + 6] == '[' && str[i + 9] == 'm'){
                 int code1 = 10 * (str[i + 2] - '0') + str[i + 3] - '0';
                 int code2 = 10 * (str[i + 7] - '0') + str[i + 8] - '0';
                 currentTextColor = ansiColor(code1, true);
                 currentBgColor = ansiColor(code2, false);
                 i += 10;
-            } else if (str[i] == '\n') {
+            }
+            else if (str[i] == '\n'){
                 buffer.push_back({line, textColor, BgColor});
                 line.clear(), textColor.clear(), BgColor.clear();
                 ++i;
-            } else {
+            }
+            else{
                 line += str[i++];
                 textColor.push_back(currentTextColor);
                 BgColor.push_back(currentBgColor);
             }
         }
-        if (!line.empty()) {
+        if(!line.empty()){
             buffer.push_back({line, textColor, BgColor});
             line.clear(), textColor.clear(), BgColor.clear();
         }
     }
 
 public:
-    GraphicPrinter(unsigned int characterSize = 14, unsigned int H = 800, unsigned int W = 800) : charSize(characterSize), H(H), W(W) {
-        if (!font.loadFromFile("./DejaVuSansMono.ttf")) {
+    GraphicPrinter(unsigned int characterSize = 14, unsigned int H = 800, unsigned int W = 800) : charSize(characterSize), H(H), W(W){
+        if(!font.loadFromFile("./DejaVuSansMono.ttf"))
             throw std::runtime_error("Failed to load font");
-        }
     }
 
-    void start() {
+    void start(){
         running = true;
         renderThread = std::thread(&GraphicPrinter::renderLoop, this);
     }
 
-    void stop() {
+    void stop(){
         running = false;
         cv.notify_all();
-        if (renderThread.joinable())
+        if(renderThread.joinable())
             renderThread.join();
         window->close();
     }
 
-    void print(const std::string& str) {
+    void print(const std::string& str){
         std::lock_guard lock(mtx);
         printQueue.push(str);
         cv.notify_all();
     }
 
-    void cls() {
+    void cls(){
         std::lock_guard lock(mtx);
         clearRequested = true;
         cv.notify_all();

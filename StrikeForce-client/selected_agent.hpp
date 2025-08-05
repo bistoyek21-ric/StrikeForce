@@ -22,15 +22,4 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include "../../gameplay.hpp"
-
-namespace Environment::Field{
-
-	void gameplay::view() const{
-		return;
-    }
-
-	char gameplay::bot(Environment::Character::Human& player) const{
-		return '+';
-	}
-}
+#include "./bots/bot-1/Agent.hpp"

@@ -34,17 +34,15 @@ namespace Environment::Field{
 		return Environment::Random::_rand();
 	}
 
-	int constexpr F = 3, N = 29, M = 100, H = 9000, Z = 9000, B = 9000, C = 9000, lim_portal = 1000, lim_block = 1100;
+	int constexpr F = 3, N = 30, M = 100, H = 9000, Z = 9000, B = 9000, C = 9000, lim_portal = 1000, lim_block = 1100;
 
-	int ind, countdown;
+	int ind;
 
-	bool disconnect;
-
+	bool disconnect, using_an_agent;
+    
 	char command[H], symbol[8][4] = {{'V', '>', 'A', '<'}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
 
-	int agent[H];
-
-	const std::string valid_commands = "`13upxawsdfghjkl;'cvbnm,./[]+";
+	const std::string valid_commands = "+`13upxawsdfghjkl;'cvbnm,./[]";
 
 	Environment::Item::Bullet bull[B];
 	Environment::Character::Zombie zomb[Z];
@@ -69,7 +67,7 @@ namespace Environment::Field{
 
 		void start(const std::string& server_ip, int server_port, const std::string& server_password){
 			open = true;
-			#if !defined(__unix__) && !defined(__APLLE__)
+			#if !defined(__unix__) && !defined(__APPLE__)
 			WSADATA wsaData;
 			if(WSAStartup(MAKEWORD(2, 2), &wsaData) != 0){
 				std::cout << "WSAStartup failed" << std::endl;
@@ -219,7 +217,7 @@ namespace Environment::Field{
 
 	int h_ind(){
 		for(int i = 0; i < H; ++i)
-			if(i != ind && !mh[i] && !remote[i] && agent[ind] == -1)
+			if(i != ind && !mh[i] && !remote[i])
 				return i;
 		return -1;
 	}
@@ -357,7 +355,9 @@ namespace Environment::Field{
 		Environment::Character::Zombie* recomZ;
 		Environment::Character::Human* recomH;
 
-		const int L = 9, pc = 30, pz = 40, ph = 50, wdx[4] = {1, 0, -1, 0}, wdy[4] = {0, 1, 0, -1};
+		std::string action, mode;
+
+		const int L = 10, pc = 30, pz = 40, ph = 50, wdx[4] = {1, 0, -1, 0}, wdy[4] = {0, 1, 0, -1};
 		long long loot, level, teams_kills, kills, chest, frame, serial_number;
 		int W, _H;
 
@@ -365,18 +365,21 @@ namespace Environment::Field{
 
 		std::vector<int> place[2 * B];
 
-		std::string mode;
 		time_t tb;
 
 		node themap[F][N][M], themap1[F][N][M];
 
-		void view() const;
-
 		char bot(Environment::Character::Human& player) const;
+
+		char human_rnpc_bot(Environment::Character::Human& player) const;
+
+		void prepare(Environment::Character::Human& player);
 
 		void print_game() const;
 
-		char human_rnpc_bot(Environment::Character::Human& player) const;
+		void view() const;
+
+		void load_data();
 
 		void updmap(){
 			for(int i = 0; i < F; ++i)
@@ -385,102 +388,6 @@ namespace Environment::Field{
                         themap[i][j][k].update();
             return;
         }
-
-		void load_data(){
-			if(!manual)
-				agent[ind] = 0;
-			srand(tb);
-			serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
-			Environment::Random::_srand(tb, serial_number);
-			if(online){
-				disconnect = false;
-				std::string server_ip;
-				int server_port = 0;
-				std::cout << "Enter the server IP: ";
-				std::cout.flush();
-				getline(std::cin, server_ip);
-				std::cout << "Enter the server port: ";
-				std::cout.flush();
-				std::string server_port_s;
-				getline(std::cin, server_port_s);
-				std::cout << "Enter the server's password: ";
-				std::cout.flush();
-				std::string server_password;
-				getline(std::cin, server_password);
-				for(auto e: server_port_s)
-					server_port = 10 * server_port + (e - '0');
-				server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
-				client.start(server_ip, server_port, server_password);
-				if(disconnect){
-					std::cout << "press space button to continue" << std::endl;
-					while(getch() != ' ');
-					return;
-				}
-				client.give_info();
-				client.get_info();
-				serial_number = client.serial_number;
-				tb = time(nullptr);
-				Environment::Random::_srand(client.tb, serial_number);
-				for(int i = 0; i < client.n; ++i){
-					hum[i].set_way(rand() % 4 + 1);
-					while(true){
-						std::vector<int> v = {rand() % F, rand() % N, rand() % M};
-						if(themap[v[0]][v[1]][v[2]].showit() == '.'){
-							themap[v[0]][v[1]][v[2]].human = &hum[i];
-							themap[v[0]][v[1]][v[2]].s[0] = 1;
-							hum[i].set_cor(v);
-							break;
-						}
-					}
-				}
-				return;
-			}
-			if(mode == "Squad"){
-				ind = 0;
-				mh[ind] = true;
-				hum[ind] = Environment::Character::me;
-				remote[ind] = false;
-				themap[0][3][1].human = &hum[ind];
-				themap[0][3][1].s[0] = 1;
-				hum[ind].set_way(1);
-				hum[ind].set_cor(std::vector<int>{0, 3, 1});
-				hum[ind].set_team(1);
-				for(int i = 1; i < 5; ++i){
-					mh[i] = true;
-					remote[i] = false;
-					std::string s = "team mate ";
-					s += (char)('0' + i);
-					gen_human(false, hum[i], level, std::vector<int>{0, 1, i + 1}, s);
-					themap[0][1][i + 1].human = &hum[i];
-					themap[0][1][i + 1].s[0] = 1;
-					hum[i].set_team(1);
-				}
-				for(int i = 5; i < 10; ++i){
-					mh[i] = true;
-					remote[i] = false;
-					std::string s = "opponent ";
-					s += (char)('0' + i - 4);
-					gen_human(false, hum[i], level, std::vector<int>{2, 1, i + 1}, s);
-					themap[2][1][i + 1].human = &hum[i];
-					themap[2][1][i + 1].s[0] = 1;
-					hum[i].set_team(2);
-				}
-				return;
-			}
-			if(mode == "Solo" || mode == "Timer"){
-				ind = 0;
-				mh[ind] = true;
-				remote[ind] = false;
-				hum[ind] = Environment::Character::me;
-				themap[0][1][1].human = &hum[ind];
-				themap[0][1][1].s[0] = 1;
-				hum[ind].set_way(1);
-				hum[ind].set_cor(std::vector<int>{0, 1, 1});
-				hum[ind].set_team(1);
-				return;
-			}
-			return;
-		}
 
 		bool rivals_are_dead(){
 			for(int i = 0; i < H; ++i)
@@ -564,6 +471,10 @@ namespace Environment::Field{
 			pix->zombie->hit(*(pix->bullet));
 			pix->s[2] = 0;
 			Environment::Character::Human* owner = reinterpret_cast<Environment::Character::Human*>(pix->bullet->get_owner());
+			if(owner){
+				owner->set_damage(owner->get_damage() + pix->bullet->get_damage());
+				owner->set_effect(owner->get_effect() + pix->bullet->get_effect());
+			}
 			mb[pix->bullet - bull] = false;
 			if(pix->zombie->get_Hp() <= 0){
 				mz[pix->zombie - zomb] = false;
@@ -575,6 +486,8 @@ namespace Environment::Field{
 					if(owner == &hum[ind])
 						loot += pts * 9 / 10, ++kills;
 				}
+				if(owner)
+					owner->increase_kills();
 			}
 			return;
 		}
@@ -595,17 +508,22 @@ namespace Environment::Field{
 			pix->human->hit(*(pix->bullet));
 			pix->s[2] = 0;
 			Environment::Character::Human* owner = reinterpret_cast<Environment::Character::Human*>(pix->bullet->get_owner());
+			if(owner && pix->human->get_team() != owner->get_team()){
+				owner->set_damage(owner->get_damage() + pix->bullet->get_damage());
+				owner->set_effect(owner->get_effect() + pix->bullet->get_effect());
+			}
 			mb[pix->bullet - bull] = false;
-			if(pix->human->get_Hp() <= 0 && pix->human != &hum[ind]){
+			if(pix->human->get_Hp() <= 0){
 				mh[pix->human - hum] = false;
-				agent[pix->human - hum] = -1;
 				pix->s[8] = 1;
-				pix->s[0] = 0;
+				pix->s[0] = (&hum[ind] == pix->human);
 				if(owner && owner->get_team() == hum[ind].get_team() && pix->human->get_team() != hum[ind].get_team()){
 					++teams_kills, loot += 100;
 					if(owner == &hum[ind])
 						loot += 900, ++kills;
 				}
+				if(owner && pix->human->get_team() != owner->get_team())
+					owner->increase_kills();
 			}
 			return;
 		}
@@ -617,12 +535,13 @@ namespace Environment::Field{
 	       			auto pix = &themap[v[0]][v[1]][v[2]];
 					if(hum[i].get_Hp() <= 0){
 						mh[i] = false;
-						agent[i] = -1;
 						pix->s[8] = 1;
-						pix->s[0] = 0;
+						pix->s[0] = (pix->human == &hum[ind]);
 					}
 	       			else if(pix->s[2])
     	       			human_damage(pix);
+					if(hum[i].get_Hp() <= 0)
+						hum[i].deleteAgent();
 				}
         	return;
 		}
@@ -793,7 +712,7 @@ namespace Environment::Field{
 			}
 			return;
 		}
-
+	
 		void my_command(){
 			if(kbhit()){
 				command[ind] = getch();
@@ -805,7 +724,7 @@ namespace Environment::Field{
 					command[ind] = 'd';
 				else if(command[ind] == '2')
 					command[ind] = 's';
-				if(agent[ind] != -1){
+				if(using_an_agent){
 					if(!manual && command[ind] == ' ')
 						silent = !silent;
 					if(command[ind] == '3')
@@ -888,15 +807,26 @@ namespace Environment::Field{
 					client.send_it();
 					client.end_it();
 				}
+				silent = false;
+				print_game();
 				printer.print("You quitted, press space button to continue\n");
 				while(getch() != ' ');
 				return;
 			}
-			if(agent[ind] != -1 && !manual && command[ind] != '3')
-				command[ind] = bot(hum[ind]); 
+			if(using_an_agent){
+				char c = bot(hum[ind]);
+				if(!manual && command[ind] != '3')
+					command[ind] = c;
+				int act = 0;
+				for(int i = 0; i < action.size(); ++i)
+					if(action[i] == command[ind])
+						act = i;
+				hum[ind].agent->update(act, manual || command[ind] == '3');
+			}
 			if(online){
 				client.send_it();
-				client.recieve();
+				if(!disconnect)
+					client.recieve();
 			}
 			for(int i = 0; i < ind; ++i)
 				if(mh[i] && !remote[i])
@@ -1000,12 +930,24 @@ namespace Environment::Field{
 		}
 
 		bool check_end(){
+			if(online && rivals_are_dead()){
+                command[ind] = '+';
+				client.send_it();
+				client.end_it();
+				std::string s = c_col(32, 40);
+				s += "*** Congratulations! You won the match :) ***\n";
+				s += c_col(0, 0);
+				s += "press space button to continue\n";
+				silent = false;
+				print_game();
+				printer.print(s);
+				while(getch() != ' ');
+				return true;
+			}
 		    if(online && disconnect){
+				silent = false;
+				print_game();
                 printer.print("You're disconnected :(\npress space button to continue\n");
-				hum[ind].back_Hp();
-				hum[ind].back_mindamage();
-				hum[ind].back_stamina();
-				hum[ind].backpack.back_tmp();
 				client.end_it();
 				while(getch() != ' ');
 				return true;
@@ -1016,22 +958,18 @@ namespace Environment::Field{
 					client.send_it();
 					client.end_it();
 				}
+				silent = false;
+				print_game();
                 printer.print("You Died :(\npress space button to continue\n");
-				hum[ind].back_Hp();
-				hum[ind].back_mindamage();
-				hum[ind].back_stamina();
-				hum[ind].backpack.back_tmp();
 				while(getch() != ' ');
 				return true;
 			}
 			if(mode == "Timer"){
 				if(time(0) - tb >= level * 60 * 5){
 					if(kills < level * 5){
-						printer.print("You Lost :(\npress space button to continue\n");
-						hum[ind].back_Hp();
-						hum[ind].back_mindamage();
-						hum[ind].back_stamina();
-						hum[ind].backpack.back_tmp();
+						silent = false;
+						print_game();
+						printer.print("Time's up\nYou Lost :(\npress space button to continue\n");
 						while(getch() != ' ');
 						return true;
 					}
@@ -1041,14 +979,12 @@ namespace Environment::Field{
 						s += "$\nlevel ";
 						s += std::to_string(level);
 						s += " has done successfully!\npress space button to continue\n";
+						silent = false;
+						print_game();
 						printer.print(s);
 						hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_timer() == level) * level * 1000);
 						if(hum[ind].get_level_timer() == level)
 							hum[ind].level_timer_up();
-						hum[ind].back_Hp();
-						hum[ind].back_mindamage();
-						hum[ind].back_stamina();
-						hum[ind].backpack.back_tmp();
 						while(getch() != ' ');
 						return true;
 					}
@@ -1061,14 +997,12 @@ namespace Environment::Field{
 				s += "$\nlevel ";
 				s += std::to_string(level);
 				s += " has done successfully!\npress space button to continue\n";
+				silent = false;
+				print_game();
 				printer.print(s);
 				hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_solo() == level) * level * 1000);
 				if(hum[ind].get_level_solo() == level)
 					hum[ind].level_solo_up();
-				hum[ind].back_Hp();
-				hum[ind].back_mindamage();
-				hum[ind].back_stamina();
-				hum[ind].backpack.back_tmp();
 				while(getch() != ' ');
 				return true;
 			}
@@ -1078,27 +1012,12 @@ namespace Environment::Field{
 				s += "$\nlevel ";
 				s += std::to_string(level);
 				s += " has done successfully!\npress space button to continue\n";
+				silent = false;
+				print_game();
 				printer.print(s);
 				if(hum[ind].get_level_squad() == level)
 					hum[ind].level_squad_up();
-				hum[ind].back_Hp();
-				hum[ind].back_mindamage();
-				hum[ind].back_stamina();
-                hum[ind].backpack.back_tmp();
 				hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_squad() == level) * level * 1000);
-				while(getch() != ' ');
-				return true;
-			}
-			if(online && rivals_are_dead()){
-                if(countdown > 0){
-                    --countdown;
-                    return false;
-                }
-				std::string s = c_col(32, 40);
-				s += "*** Congratulations! You won the match :) ***\n";
-				s += c_col(0, 0);
-				s += "press space button to continue\n";
-				printer.print(s);
 				while(getch() != ' ');
 				return true;
 			}
@@ -1106,7 +1025,6 @@ namespace Environment::Field{
 		}
 
 		void setup(){
-			countdown = 1;
 			Environment::Character::me.backpack.vec = -1;
 			tb = time(nullptr);
 			loot = teams_kills = kills = frame = 0;
@@ -1121,7 +1039,8 @@ namespace Environment::Field{
 				mz[i] = false;
 			for(int i = 0; i < H; ++i){
 				mh[i] = remote[i] = false;
-				agent[i] = -1, command[i] = '+';
+				command[i] = '+';
+				hum[i].deleteAgent();
             }
 			for(int k = 0; k < F; ++k){
 				std::ifstream f("./map/floor" + std::to_string(k + 1) + ".txt");
@@ -1248,7 +1167,7 @@ namespace Environment::Field{
                     e->dmg = 0;
                 }
             }
-            for(int i = 0; i < (int)temp.size(); ++i)
+            for(int i = 0; i < temp.size(); ++i)
                 if(!(temp[i]->s[10])){
                     std::swap(temp[i], temp.back());
                     temp.pop_back();
@@ -1266,12 +1185,11 @@ namespace Environment::Field{
 			cls();
 			std::cout << "* Please keep this terminal\nwindow active while playing :)" << std::endl;
 			during_battle = true;
-			#if defined(__unix__) || defined(__APPLE__)
 			disable_input_buffering();
-			#endif
 			printer.start();
 			start = std::chrono::steady_clock::now();
-			++frame, find_recom(), view(), print_game();
+			view();
+			++frame, find_recom(), print_game();
 			start = std::chrono::steady_clock::now();
 			while(true){
 				if(frame % pc == 1)
@@ -1283,10 +1201,8 @@ namespace Environment::Field{
 				if(check_end())
 					break;
 				human_action();
-				if(quit){
-					printer.stop();
+				if(quit)
 					break;
-				}
 				zombie_action();
 				portal_damage();
 				view();
@@ -1304,15 +1220,16 @@ namespace Environment::Field{
 				updmap();
 				update_bull();
 			}
+			during_battle = false;
+			restore_input_buffering();
+			view();
 			printer.stop();
+			hum[ind].deleteAgent();
+			hum[ind].reset();
 			if(!online && !quit)
 				Environment::Character::me = hum[ind];
 			if(!quit)
 				update();
-			during_battle = false;
-			#if defined(__unix__) || defined(__APPLE__)
-			restore_input_buffering();
-			#endif
 			return;
 		}
 
@@ -1441,7 +1358,7 @@ namespace Environment::Field{
 		}
 
 		void update(){
-			if(online || agent[ind] != -1)
+			if(online || using_an_agent)
 				return;
 			int r_changes = (kills * 100 * level) / (time(0) - tb + 1);
 			if(mode == "Timer")
@@ -1501,104 +1418,99 @@ namespace Environment::Field{
 		}
 	} g;
 
-	auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(40000000LL);
-
-	void gameplay::print_game() const{
-		if(silent){
-			if(agent[ind] != -1 && !manual)
-			       	return;
-			auto end_ = std::chrono::steady_clock::now();
-			int k = (lim.count() - (end_ - start).count()) / 1000;
-			usleep(std::max(k, 0));
-			return;
-		}
-		std::string res = "";
-		if(!full){
-			res += head(true, true) + "Mode: " + mode;
-			if(agent[ind] != -1){
-				if(manual)
-					res += " (Manual)";
-				else
-					res += " (Automate)";
+	void gameplay::load_data(){
+		using_an_agent = !manual;
+		if(using_an_agent)
+			prepare(Environment::Character::me);
+		srand(tb);
+		serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
+		Environment::Random::_srand(tb, serial_number);
+		if(online){
+			disconnect = false;
+			std::string server_ip, server_port_s, server_password;
+			int server_port = 0;
+			std::cout << "JOINIGN INTO THE MATCH SERVER:" << std::endl;
+			std::cout << "Enter the server IP: ";
+			std::cout.flush();
+			getline(std::cin, server_ip);
+			std::cout << "Enter the server port: ";
+			std::cout.flush();
+			getline(std::cin, server_port_s);
+			std::cout << "Enter the server's password: ";
+			std::cout.flush();
+			getline(std::cin, server_password);
+			for(auto e: server_port_s)
+				server_port = 10 * server_port + (e - '0');
+			server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
+			client.start(server_ip, server_port, server_password);
+			if(disconnect){
+				std::cout << "press space button to continue" << std::endl;
+				while(getch() != ' ');
+				return;
 			}
-			if(online){
-                res += " | index: " + std::to_string(ind);
-                res += ", team: " + std::to_string(hum[ind].get_team());
-            }
-            res += "\n_____________________\n";
-    		res += c_col(33, 40);
-            res += "Frame: " + std::to_string(frame) + "\n";
-			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
-			res += c_col(34, 40);
-			res += "Your teams' kills: " + std::to_string(teams_kills) + " (yours': " + std::to_string(kills) + ")";
-			if(!online)
-				res += ", level: " + std::to_string(level);
-			res += "\n";
-			if(mode == "Timer")
-				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_timer() == level) * 1000 * level) + "\n";
-			else if(mode == "Solo")
-				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_solo() == level) * 1000 * level) + "\n";
-			else if(mode == "Squad")
-				res += "Your' reward (If you win): " + std::to_string(loot + (int)(hum[ind].get_level_squad() == level) * 1000 * level) + "\n";
-			res += "\nYou:\n";
-			res += hum[ind].subtitle();
-			res += c_col(31, 40) + "\n";
-			if(!is_human && recomZ != nullptr){
-				res += "Enemy:\n";
-				res += (*recomZ).subtitle() + '\n';
-			}
-			else if(recomH != nullptr){
-				res += "Enemy:\n";
-				res += (*recomH).subtitle();
-			}
-			else
-				res += "\n\n\n\n\n";
-			res += c_col(0, 0);
-			if(agent[ind] == -1){
-				res += "to see the command list";
-				res += (!online ? " or pause the game" : "");
-				res += " press 0\n";
-			}
-			else
-				res += "to not show the situation please press space button\n";
-			res += "____________________________________________________\n";
-		}
-		else
-			res += "0: command list\n";
-		std::vector<int> v = hum[ind].get_cor();
-		std::string last = "", color, cell;
-		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
-		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-		for(int i = v[1] - _H; i <= v[1] + _H; ++i, res.push_back('\n'))
-			for(int j = v[2] - W; j <= v[2] + W; ++j){
-				cell = themap[v[0]][i][j].showit_();
-				color = "";
-				int cnt = 2;
-				for(int k = 0; k < cell.size(); ++k){
-					if(cnt < 2)
-						color.push_back(cell[k]);
-					else if(cell[k] != '\033')
-						res.push_back(cell[k]);
-					else
-						color.push_back(cell[k]), cnt = 0;
-					if(cell[k] == 'm')
-						++cnt;
-					if(cnt == 2 && color != last){
-						res += color;
-						last = color;
+			client.give_info();
+			client.get_info();
+			serial_number = client.serial_number;
+			tb = time(nullptr);
+			Environment::Random::_srand(client.tb, serial_number);
+			for(int i = 0; i < client.n; ++i){
+				hum[i].set_way(rand() % 4 + 1);
+				while(true){
+					std::vector<int> v = {rand() % F, rand() % N, rand() % M};
+					if(themap[v[0]][v[1]][v[2]].showit() == '.'){
+						themap[v[0]][v[1]][v[2]].human = &hum[i];
+						themap[v[0]][v[1]][v[2]].s[0] = 1;
+						hum[i].set_cor(v);
+						break;
 					}
 				}
 			}
-		color = c_col(0, 0);
-		if(last != color)
-			res += color;
-		printer.cls();
-		printer.print(res.c_str());
-		#if defined(__unix__) || defined(__APPLE__)
-		auto end_ = std::chrono::steady_clock::now();
-		int k = (lim.count() - (end_ - start).count()) / 1000;
-		usleep(std::max(k, 0));
-		#endif
+		}
+		else if(mode == "Squad"){
+			ind = 0;
+			mh[ind] = true;
+			hum[ind] = Environment::Character::me;
+			remote[ind] = false;
+			themap[0][3][1].human = &hum[ind];
+			themap[0][3][1].s[0] = 1;
+			hum[ind].set_way(1);
+			hum[ind].set_cor(std::vector<int>{0, 3, 1});
+			hum[ind].set_team(1);
+			for(int i = 1; i < 5; ++i){
+				mh[i] = true;
+				remote[i] = false;
+				std::string s = "team mate ";
+				s += (char)('0' + i);
+				gen_human(false, hum[i], level, std::vector<int>{0, 1, i + 1}, s);
+				themap[0][1][i + 1].human = &hum[i];
+				themap[0][1][i + 1].s[0] = 1;
+				hum[i].set_team(1);
+			}
+			for(int i = 5; i < 10; ++i){
+				mh[i] = true;
+				remote[i] = false;
+				std::string s = "opponent ";
+				s += (char)('0' + i - 4);
+				gen_human(false, hum[i], level, std::vector<int>{2, 1, i + 1}, s);
+				themap[2][1][i + 1].human = &hum[i];
+				themap[2][1][i + 1].s[0] = 1;
+				hum[i].set_team(2);
+			}
+		}
+		else if(mode == "Solo" || mode == "Timer"){
+			ind = 0;
+			mh[ind] = true;
+			remote[ind] = false;
+			hum[ind] = Environment::Character::me;
+			themap[0][1][1].human = &hum[ind];
+			themap[0][1][1].s[0] = 1;
+			hum[ind].set_way(1);
+			hum[ind].set_cor(std::vector<int>{0, 1, 1});
+			hum[ind].set_team(1);
+		}
+		Environment::Character::me.reset_agent_active();
+		if(using_an_agent)
+			manual = true;
 		return;
 	}
 

@@ -714,6 +714,7 @@ namespace Environment::Field{
 		}
 	
 		void my_command(){
+			manual = hum[ind].agent->is_manual(); // just in this branch
 			if(kbhit()){
 				command[ind] = getch();
 				if(command[ind] == '8')
@@ -728,7 +729,7 @@ namespace Environment::Field{
 					if(!manual && command[ind] == ' ')
 						silent = !silent;
 					if(command[ind] == '3')
-						manual = !manual;
+						command[ind] = '+';
 					else if(!manual){
 						command[ind] = '+';
 						return;
@@ -853,7 +854,7 @@ namespace Environment::Field{
 			printer.print(" 0 : command list\n");
 			printer.print(" ` : turn to left [1]\n");
 			printer.print(" 1 : turn to right\n");
-			printer.print(" 3 : switch bitween Manual and Automate\n");
+			//printer.print(" 3 : switch bitween Manual and Automate\n");
 			printer.print(" a or 4 : move to left [2]\n");
 			printer.print(" d or 6: move to right\n");
 			printer.print(" w or 8: move to up\n");

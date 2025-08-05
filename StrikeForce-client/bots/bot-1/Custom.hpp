@@ -26,7 +26,7 @@ SOFTWARE.
 
 namespace Environment::Field{
     
-    auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(50000000LL);
+    auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(45000000LL);
 
 	void gameplay::print_game() const{
 		if(silent){
@@ -131,7 +131,7 @@ namespace Environment::Field{
 		printer.print(res.c_str());
 		auto end_ = std::chrono::steady_clock::now();
 		int k = (lim.count() - (end_ - start).count()) / 1000;
-		if(manual)
+		//if(manual)
 			usleep(std::max(k, 0));
 		return;
 	}
@@ -268,7 +268,7 @@ namespace Environment::Field{
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+`1upxawsd[]";
-		player.agent = new Agent(true, 128, 4, 0.99, 1e-3, 0.2, 0.9, "bots/bot-1/backup/agent_backup", 32, 15, action.size());
+		player.agent = new Agent(true, 256, 4, 0.99, 1e-3, 0.2, 0.9, "bots/bot-1/backup/agent_backup", 32, 15, action.size());
 		player.set_agent_active();
 	}
 

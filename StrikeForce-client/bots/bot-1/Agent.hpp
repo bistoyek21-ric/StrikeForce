@@ -27,9 +27,17 @@ SOFTWARE.
 
 class Agent {
 private:
-    bool training, logging = true;
+    bool manual;
+    int cnt = 0;
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool is_training = false, not_training;
+    std::thread trainThread;
+
+    bool training, logging = false;
     int hidden_size, num_actions, T, num_epochs, num_channels, grid_size;
-    float gamma, learning_rate, ppo_clip, alpha;
+    float gamma, learning_rate, ppo_clip, alpha, c_v;
     
     std::string backup_dir;
     std::vector<int> actions;
@@ -73,6 +81,9 @@ private:
         std::ofstream dim(backup_dir + "/dim.txt");
         dim << num_channels << " " << grid_size << " " << num_actions << " ";
         dim.close();
+        std::ofstream coef(backup_dir + "/c_v.txt");
+        coef << c_v;
+        coef.close();
         gru->to(torch::kCPU);
         action_processor->to(torch::kCPU);
         policy_head->to(torch::kCPU);
@@ -103,6 +114,9 @@ private:
             ", grid_size=" + std::to_string(grid_size) +
             ", num_actions=" + std::to_string(num_actions));
         dim.close();
+        std::ifstream coef(backup_dir + "/c_v.txt");
+        coef >> c_v;
+        coef.close();
         initializeNetwork();
         torch::load(cnn, backup_dir + "/cnn.pt");
         torch::load(gru, backup_dir + "/gru.pt");
@@ -163,6 +177,23 @@ private:
         return returns;
     }
 
+    std::vector<torch::Tensor> forward(const torch::Tensor &state) {
+        auto feat = cnn->forward(state);
+        feat = feat.view({1, 1, -1});
+        auto r = gru->forward(feat, h_state);
+        auto out_seq = std::get<0>(r).view({-1});
+        out_seq = gru_norm->forward(out_seq);
+        h_state = std::get<1>(r).detach();
+        auto a_feat = action_processor->forward(action_input);
+        a_feat = action_norm->forward(a_feat.view({-1}));
+        auto gate_input = torch::cat({out_seq, a_feat});
+        auto gated = gate->forward(gate_input);
+        auto logits = policy_head->forward(gated);
+        auto p = torch::softmax(logits, -1);
+        auto v = 2 * value_head->forward(gated).squeeze() - 1;
+        return {p, v};
+    }
+
     void train() {
         auto returns = computeReturns();
         std::vector<torch::Tensor> advantages;
@@ -191,7 +222,7 @@ private:
                 p_loss -= torch::min(ratio * adv, clipped * adv);
                 v_loss += torch::mse_loss(v, returns[i]);
             }
-            auto loss = p_loss + 0.05 * v_loss / T;
+            auto loss = p_loss + c_v * v_loss / T;
             log("Epoch " + std::to_string(epoch) + ": loss=" + std::to_string(loss.item<float>()));
             optimizer->zero_grad();
             loss.backward({}, /*retain_graph=*/true);
@@ -199,6 +230,12 @@ private:
             log("*");
         }
         log("Training completed");
+        actions.clear();
+        rewards.clear();
+        log_probs.clear();
+        states.clear();
+        values.clear();
+        not_training = true;
     }
 
 public:
@@ -209,6 +246,8 @@ public:
           ppo_clip(_ppo_clip), alpha(_alpha), backup_dir(_backup_dir),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
           num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
+        c_v = 0.05;
+        // Get a backup from API
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
                 load_progress();
@@ -218,7 +257,7 @@ public:
             }
         }
         else {
-            if(!backup_dir.empty())
+            if (!backup_dir.empty())
                 std::filesystem::create_directories(backup_dir);
             initializeNetwork();
         }
@@ -263,31 +302,28 @@ public:
     }
 
     ~Agent() {
+        if (is_training)
+            if (trainThread.joinable())
+                trainThread.join();
         if (training)
             saveProgress();
+        /// Send backup to API
         delete optimizer;
         delete reward_net;
         log_file.close();
     }
 
-    std::vector<torch::Tensor> forward(const torch::Tensor &state) {
-        auto feat = cnn->forward(state);
-        feat = feat.view({1, 1, -1});
-        auto r = gru->forward(feat, h_state);
-        auto out_seq = std::get<0>(r).view({-1});
-        out_seq = gru_norm->forward(out_seq);
-        h_state = std::get<1>(r).detach();
-        auto a_feat = action_processor->forward(action_input);
-        a_feat = action_norm->forward(a_feat.view({-1}));
-        auto gate_input = torch::cat({out_seq, a_feat});
-        auto gated = gate->forward(gate_input);
-        auto logits = policy_head->forward(gated);
-        auto p = torch::softmax(logits, -1);
-        auto v = 2 * value_head->forward(gated).squeeze() - 1;
-        return {p, v};
-    }
-
     int predict(const std::vector<float>& obs) {
+        if (is_training) {
+            if (not_training) {
+                is_training = false;
+                cv.notify_all();
+                if (trainThread.joinable())
+                    trainThread.join();
+            }
+            else
+                return 0;
+        }
         auto state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_size, grid_size});
         states.push_back(state);
         auto output = forward(state);
@@ -300,19 +336,37 @@ public:
     }
 
     void update(int action, bool imitate) {
+        if (is_training)
+            return;
         actions.push_back(action);
         log_probs.push_back(torch::log(probs.detach()[action] + 1e-8));
         rewards.push_back(reward_net->get_reward(action, imitate, states.back()));
         action_input = action_input * alpha;
         action_input[action] += 1 - alpha;
+        ++cnt;
         if (actions.size() == T) {
-            if (training)
-                train();
-            actions.clear();
-            rewards.clear();
-            log_probs.clear();
-            states.clear();
-            values.clear();
+            if (training && T < cnt) {
+                is_training = true;
+                not_training = false;
+                trainThread = std::thread(&Agent::train, this);
+            }
+            else {
+                actions.clear();
+                rewards.clear();
+                log_probs.clear();
+                states.clear();
+                values.clear();
+            }
         }
+    }
+
+    bool is_manual() {
+        if (is_training || cnt <= T) {
+            manual = true;
+            return true;
+        }
+        if (cnt % T == T / 2)
+            manual = !manual;
+        return manual;
     }
 };

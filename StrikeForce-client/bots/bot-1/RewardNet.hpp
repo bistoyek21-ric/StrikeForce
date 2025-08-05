@@ -51,7 +51,14 @@ private:
 
 class RewardNet {
 private:
-    bool training, logging = true;
+    int cnt = 0;
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool is_training = false, not_training;
+    std::thread trainThread;
+
+    bool training, logging = false;
     float learning_rate, alpha;
     int T, num_actions, num_channels, grid_size, hidden_size;
 
@@ -154,11 +161,7 @@ private:
         log("Progress loaded successfully");
     }
 
-    void update(const torch::Tensor &output, const torch::Tensor &target) {
-        outputs.push_back(output);
-        targets.push_back(target);
-        if (outputs.size() < T)
-            return;
+    void train() {
         auto loss = torch::zeros({}, device);
         for (int i = 0; i < T; ++i)
             loss += torch::binary_cross_entropy(outputs[i], targets[i]);
@@ -169,6 +172,17 @@ private:
         optimizer->step();
         outputs.clear(), targets.clear();
         log("*");
+        not_training = true;
+    }
+
+    void update(const torch::Tensor &output, const torch::Tensor &target) {
+        outputs.push_back(output);
+        targets.push_back(target);
+        if (outputs.size() == T) {
+            is_training = true;
+            not_training = false;
+            trainThread = std::thread(&RewardNet::train, this);
+        }
     }
 
     torch::Tensor forward(int action, const torch::Tensor &state) {
@@ -230,6 +244,9 @@ public:
     }
 
     ~RewardNet() {
+        if (is_training)
+            if (trainThread.joinable())
+                trainThread.join();
         if (training)
             saveProgress();
         delete optimizer;
@@ -237,9 +254,20 @@ public:
     }
 
     float get_reward(int action, bool imitate, const torch::Tensor &state) {
+        if (is_training) {
+            if (not_training) {
+                is_training = false;
+                cv.notify_all();
+                if (trainThread.joinable())
+                    trainThread.join();
+            }
+            else
+                return -2;
+        }
         auto output = forward(action, state);
         auto target = torch::tensor(imitate ? 1.0f : 0.0f).to(device);
-        if (training)
+        ++cnt;
+        if (training && T < cnt)
             update(output, target);
         float reward = 2 * output.item<float>() - 1;
         if (imitate)

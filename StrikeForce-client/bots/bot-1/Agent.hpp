@@ -28,7 +28,7 @@ SOFTWARE.
 class Agent {
 private:
     bool manual;
-    int cnt = 0;
+    int cnt = 0, cnt1 = 0;
 
     std::mutex mtx;
     std::condition_variable cv;
@@ -44,7 +44,7 @@ private:
     std::vector<float> rewards;
     std::vector<torch::Tensor> log_probs, states, values;
 
-    torch::Tensor state, action_input, h_state, probs;
+    torch::Tensor state, action_input, store_action, h_state, probs;
 
     torch::Device device;
 
@@ -209,11 +209,14 @@ private:
         for (int epoch = 0; epoch < num_epochs; ++epoch) {
             torch::Tensor p_loss = torch::zeros({}, device);
             torch::Tensor v_loss = torch::zeros({}, device);
+            action_input = store_action;
             for (int i = 0; i < T; ++i) {
-                auto old_lp = log_probs[i];
                 auto output = forward(states[i]);
+                action_input = action_input * alpha;
+                action_input[actions[i]] += 1 - alpha;
                 auto p = output[0];
                 auto v = output[1];
+                auto old_lp = log_probs[i];
                 auto current_logp = torch::log(p)[actions[i]];
                 auto diff = torch::clamp(current_logp - old_lp, -100, 10);
                 auto ratio = torch::exp(diff);
@@ -225,10 +228,11 @@ private:
             auto loss = p_loss + c_v * v_loss / T;
             log("Epoch " + std::to_string(epoch) + ": loss=" + std::to_string(loss.item<float>()));
             optimizer->zero_grad();
-            loss.backward({}, /*retain_graph=*/true);
+            loss.backward();
             optimizer->step();
             log("*");
         }
+        store_action = action_input;
         log("Training completed");
         actions.clear();
         rewards.clear();
@@ -247,7 +251,9 @@ public:
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
           num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
         c_v = 0.05;
-        // Get a backup from API
+#if defined(COWRDSOURCED_TRAINING)
+        // get a backup from api
+#endif
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
                 load_progress();
@@ -297,8 +303,12 @@ public:
         log("Agent initialized with T=" + std::to_string(T) + ", num_epochs=" + std::to_string(num_epochs) +
             ", gamma=" + std::to_string(gamma) + ", alpha=" + std::to_string(alpha) + ", learning_rate=" + std::to_string(learning_rate) +
             ", ppo_clip=" + std::to_string(ppo_clip));
-        action_input = torch::zeros({num_actions}, device);
         h_state = torch::zeros({2, 1, hidden_size}, device);
+        action_input = torch::zeros({num_actions}, device);
+        store_action = action_input;
+#if !defined(COWRDSOURCED_TRAINING)
+        cnt = T + 1;
+#endif
     }
 
     ~Agent() {
@@ -307,23 +317,17 @@ public:
                 trainThread.join();
         if (training)
             saveProgress();
-        /// Send backup to API
+#if defined(COWRDSOURCED_TRAINING)
+        // pass backup to api
+#endif
         delete optimizer;
         delete reward_net;
         log_file.close();
     }
 
     int predict(const std::vector<float>& obs) {
-        if (is_training) {
-            if (not_training) {
-                is_training = false;
-                cv.notify_all();
-                if (trainThread.joinable())
-                    trainThread.join();
-            }
-            else
-                return 0;
-        }
+        if (is_training || cnt <= T)
+            return 0;
         auto state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_size, grid_size});
         states.push_back(state);
         auto output = forward(state);
@@ -336,16 +340,17 @@ public:
     }
 
     void update(int action, bool imitate) {
-        if (is_training)
+        if (is_training || cnt <= T)
             return;
         actions.push_back(action);
         log_probs.push_back(torch::log(probs.detach()[action] + 1e-8));
         rewards.push_back(reward_net->get_reward(action, imitate, states.back()));
         action_input = action_input * alpha;
         action_input[action] += 1 - alpha;
-        ++cnt;
         if (actions.size() == T) {
-            if (training && T < cnt) {
+            if (training) {
+                log_file << "=====================================\n";
+                log_file.flush();
                 is_training = true;
                 not_training = false;
                 trainThread = std::thread(&Agent::train, this);
@@ -361,12 +366,44 @@ public:
     }
 
     bool is_manual() {
-        if (is_training || cnt <= T) {
+        if (!is_training && cnt <= T)
+            ++cnt;
+        if (is_training) {
+            if (not_training) {
+                //log_file << "----------------------------------\n";
+                //log_file.flush();
+                is_training = false;
+                cv.notify_all();
+                if (trainThread.joinable())
+                    trainThread.join();
+                cnt1 = 0;
+            }
+            else {
+               //log_file << "+";
+               ++cnt1;
+               //if(cnt1 % 16 == 0)
+               // log_file << '\n';
+               //log_file.flush();
+               return true;
+            }
+        }
+        if (cnt <= T){
             manual = true;
+            log_file << 1;
+            //if(cnt % 16 == 0)
+            //    log_file << '\n';
+            //if (cnt == T)
+            //    log_file << "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n";
             return true;
         }
-        if (cnt % T == T / 2)
+        else if (actions.size() == T / 2) {
             manual = !manual;
+            //log_file << "~~~~~~~~~~~~~~\n";
+        }
+        //log_file << manual;
+        //if ((actions.size() + 1) % 16 == 0)
+        //    log_file << '\n';
+        //log_file.flush();
         return manual;
     }
 };

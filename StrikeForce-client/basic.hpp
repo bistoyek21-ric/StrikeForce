@@ -38,6 +38,8 @@ SOFTWARE.
 
 #include "GraphicPrinter.hpp"
 
+#define COWRDSOURCED_TRAINING
+
 bool during_battle = false;
 
 void usleep(int x){

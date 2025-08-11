@@ -41,7 +41,7 @@ SOFTWARE.
 #include "inet_for_windows.hpp"
 #endif
 
-#define LOGGING
+//#define LOGGING
 
 int constexpr BUFFER_SIZE = 2048, BS = 2;
 

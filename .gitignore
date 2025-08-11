@@ -6,9 +6,8 @@
 *.log
 
 /StrikeForce-client/accounts/game/*
+! /StrikeForce-client/accounts/game/1
 ! /StrikeForce-client/accounts/game/.gitkeep
-
-/StrikeForce-client/data
 
 */app*
 

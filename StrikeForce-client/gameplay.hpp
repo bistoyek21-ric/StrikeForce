@@ -540,7 +540,7 @@ namespace Environment::Field{
 					}
 	       			else if(pix->s[2])
     	       			human_damage(pix);
-					if(hum[i].get_Hp() <= 0)
+					if(hum[i].get_Hp() <= 0 && i != ind)
 						hum[i].deleteAgent();
 				}
         	return;
@@ -714,6 +714,9 @@ namespace Environment::Field{
 		}
 	
 		void my_command(){
+#if defined(COWRDSOURCED_TRAINING)
+			manual = hum[ind].agent->is_manual();
+#endif
 			if(kbhit()){
 				command[ind] = getch();
 				if(command[ind] == '8')
@@ -725,10 +728,17 @@ namespace Environment::Field{
 				else if(command[ind] == '2')
 					command[ind] = 's';
 				if(using_an_agent){
+#if !defined(COWRDSOURCED_TRAINING)
 					if(!manual && command[ind] == ' ')
 						silent = !silent;
-					if(command[ind] == '3')
+#endif
+					if(command[ind] == '3'){
+#if defined(COWRDSOURCED_TRAINING)
+						command[ind] = '+';
+#else
 						manual = !manual;
+#endif
+					}
 					else if(!manual){
 						command[ind] = '+';
 						return;
@@ -853,7 +863,9 @@ namespace Environment::Field{
 			printer.print(" 0 : command list\n");
 			printer.print(" ` : turn to left [1]\n");
 			printer.print(" 1 : turn to right\n");
+#if !defined(COWRDSOURCED_TRAINING)
 			printer.print(" 3 : switch bitween Manual and Automate\n");
+#endif
 			printer.print(" a or 4 : move to left [2]\n");
 			printer.print(" d or 6: move to right\n");
 			printer.print(" w or 8: move to up\n");
@@ -880,6 +892,9 @@ namespace Environment::Field{
 			printer.print("[1]: its location on the standardized keyboards is the key below Esc.\n");
 			printer.print("[2]: you can enable NumLock and then use the arrows!.\n");
 			printer.print("note: if you do an invalid move nothing will happen\n");
+#if !defined(COWRDSOURCED_TRAINING)
+			printer.print("* If you selected Automate you can press the space key to disable rendering.\n");
+#endif
 			printer.print("press any key to continue\n");
 			if(!b)
 				getch();
@@ -1221,11 +1236,11 @@ namespace Environment::Field{
 				update_bull();
 			}
 			during_battle = false;
-			restore_input_buffering();
 			view();
 			printer.stop();
 			hum[ind].deleteAgent();
 			hum[ind].reset();
+			restore_input_buffering();
 			if(!online && !quit)
 				Environment::Character::me = hum[ind];
 			if(!quit)

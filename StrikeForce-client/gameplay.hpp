@@ -540,7 +540,7 @@ namespace Environment::Field{
 					}
 	       			else if(pix->s[2])
     	       			human_damage(pix);
-					if(hum[i].get_Hp() <= 0)
+					if(hum[i].get_Hp() <= 0 && i != ind)
 						hum[i].deleteAgent();
 				}
         	return;
@@ -1236,11 +1236,11 @@ namespace Environment::Field{
 				update_bull();
 			}
 			during_battle = false;
-			restore_input_buffering();
 			view();
 			printer.stop();
 			hum[ind].deleteAgent();
 			hum[ind].reset();
+			restore_input_buffering();
 			if(!online && !quit)
 				Environment::Character::me = hum[ind];
 			if(!quit)

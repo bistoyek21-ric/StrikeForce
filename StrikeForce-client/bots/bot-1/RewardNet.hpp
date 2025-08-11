@@ -245,8 +245,13 @@ public:
 
     ~RewardNet() {
         if (is_training)
-            if (trainThread.joinable())
+            if (trainThread.joinable()) {
+                restore_input_buffering();
+                std::cout << "Reward Network is updating...\nthis might take a few seconds" << std::endl;
                 trainThread.join();
+                std::cout << "done!" << std::endl;
+                disable_input_buffering();
+            }
         if (training)
             saveProgress();
         delete optimizer;

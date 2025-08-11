@@ -38,7 +38,7 @@ SOFTWARE.
 
 #include "GraphicPrinter.hpp"
 
-#define COWRDSOURCED_TRAINING
+//#define COWRDSOURCED_TRAINING
 
 bool during_battle = false;
 
@@ -193,3 +193,4 @@ namespace Environment{
 
 	}
 }
+

@@ -25,7 +25,7 @@ SOFTWARE.
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
 #include "RewardNet.hpp"
 
-const std::string SERVER_URL = "http://bistoyek21.org";
+const std::string SERVER_URL = "http://bistoyek21.com:8080";
 const std::string bot_code = "bot-1";
 
 // Function to escape paths for system commands (handles spaces and special chars)

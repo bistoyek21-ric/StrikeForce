@@ -28,7 +28,6 @@ SOFTWARE.
 const std::string SERVER_URL = "http://89.106.206.119:8080";
 const std::string bot_code = "bot-1";
 
-// Function to escape paths for system commands (handles spaces and special chars)
 std::string escape_path(const std::string& path) {
     std::string escaped;
     for (char c : path) {
@@ -40,85 +39,70 @@ std::string escape_path(const std::string& path) {
     return "\"" + escaped + "\"";
 }
 
-// Function to request and extract backup: delete dir if exists, download backup.zip, extract to dir
 int request_and_extract_backup(const std::string& dir) {
-    // Sanitize inputs (basic validation)
     if (bot_code.empty() || dir.empty()) {
         std::cerr << "Error: bot_code or dir cannot be empty" << std::endl;
         return 1;
     }
-    // Normalize path
-    fs::path dir_path = dir;
-    // Delete dir if exists
-    if (fs::exists(dir_path)) {
+    std::filesystem::path dir_path = dir;
+    if (std::filesystem::exists(dir_path)) {
         try {
-            fs::remove_all(dir_path);
-        } catch (const fs::filesystem_error& e) {
+            std::filesystem::remove_all(dir_path);
+        } catch (const std::filesystem::filesystem_error& e) {
             std::cerr << "Failed to delete directory " << dir << ": " << e.what() << std::endl;
             return 1;
         }
     }
-    // Download backup.zip using curl
-    std::string download_cmd = "curl -o backup.zip \"" + SERVER_URL + "/StrikeForce/api/request_backup?code=" + bot_code + "\"";
+    std::string download_cmd = "curl --noproxy \"*\" -o backup.zip \"" + SERVER_URL + "/StrikeForce/api/request_backup?bot=" + bot_code + "\"";
     if (system(download_cmd.c_str()) != 0) {
         std::cerr << "Failed to download backup.zip for bot_code: " << bot_code << std::endl;
         return 1;
     }
-    // Create dir
     try {
-        fs::create_directories(dir_path);
-    } catch (const fs::filesystem_error& e) {
+        std::filesystem::create_directories(dir_path);
+    } catch (const std::filesystem::filesystem_error& e) {
         std::cerr << "Failed to create directory " << dir << ": " << e.what() << std::endl;
         return 1;
     }
-    // Extract backup.zip to dir using 7z
     std::string extract_cmd = "7z x -y -o" + escape_path(dir) + " backup.zip";
+    int ret = 0;
     if (system(extract_cmd.c_str()) != 0) {
         std::cerr << "Failed to extract backup.zip to " << dir << std::endl;
-        return 1;
+        ret = 1;
     }
-    // Delete the downloaded zip
     try {
-        fs::remove("backup.zip");
-    } catch (const fs::filesystem_error& e) {
+        std::filesystem::remove("backup.zip");
+    } catch (const std::filesystem::filesystem_error& e) {
         std::cerr << "Failed to delete backup.zip: " << e.what() << std::endl;
         return 1;
     }
     std::cout << "Backup requested and extracted to " << dir << std::endl;
-    return 0;
+    return ret;
 }
 
-// Function to zip and return backup: zip dir, send to server, delete zip
 int zip_and_return_backup(const std::string& dir) {
-    // Sanitize input
     if (dir.empty()) {
         std::cerr << "Error: dir cannot be empty" << std::endl;
         return 1;
     }
-    // Normalize path
-    fs::path dir_path = dir;
-    if (!fs::exists(dir_path)) {
+    std::filesystem::path dir_path = dir;
+    if (!std::filesystem::exists(dir_path)) {
         std::cerr << "Error: Directory " << dir << " does not exist" << std::endl;
         return 1;
     }
-    // Generate zip name
     std::string zip_name = dir_path.filename().string() + ".zip";
-    // Zip the directory using 7z
     std::string zip_cmd = "7z a -tzip " + escape_path(zip_name) + " " + escape_path(dir) + "/*";
     if (system(zip_cmd.c_str()) != 0) {
         std::cerr << "Failed to zip directory: " << dir << std::endl;
         return 1;
     }
-    // Send the zip using curl
-    std::string send_cmd = "curl -X POST --data-binary @" + escape_path(zip_name) + " \"" + SERVER_URL + "/StrikeForce/api/return_backup\"";
+    std::string send_cmd = "curl --noproxy \"*\" -X POST -F \"file=@" + escape_path(zip_name) + "\" \"" + SERVER_URL + "/StrikeForce/api/return_backup\"";
     if (system(send_cmd.c_str()) != 0) {
         std::cerr << "Failed to send zip Golgi file to server" << std::endl;
-        // Continue to delete zip
     }
-    // Delete the zip
     try {
-        fs::remove(zip_name);
-    } catch (const fs::filesystem_error& e) {
+        std::filesystem::remove(zip_name);
+    } catch (const std::filesystem::filesystem_error& e) {
         std::cerr << "Failed to delete zip: " << zip_name << ": " << e.what() << std::endl;
         return 1;
     }
@@ -351,7 +335,9 @@ public:
           num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
         c_v = 0.05;
 #if defined(COWRDSOURCED_TRAINING)
+        std::cout << "downloading backup from server ..." << std::endl;
         request_and_extract_backup(backup_dir + "/..");
+        std::cout << "done!" << std::endl;
 #endif
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
@@ -422,7 +408,7 @@ public:
         delete optimizer;
         delete reward_net;
 #if defined(COWRDSOURCED_TRAINING)
-        std::cout << "sending backup to server" << std::endl;
+        std::cout << "uploading backup to server ..." << std::endl;
         zip_and_return_backup(backup_dir + "/..");
         std::cout << "done!" << std::endl;
 #endif

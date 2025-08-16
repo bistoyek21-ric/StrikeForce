@@ -26,7 +26,7 @@ SOFTWARE.
 
 namespace Environment::Field{
     
-    auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(45000000LL);
+    auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(40000000LL);
 
 	void gameplay::print_game() const{
 		if(silent){

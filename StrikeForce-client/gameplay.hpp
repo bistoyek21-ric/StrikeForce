@@ -714,8 +714,9 @@ namespace Environment::Field{
 		}
 	
 		void my_command(){
-#if defined(COWRDSOURCED_TRAINING)
-			manual = hum[ind].agent->is_manual();
+#if defined(CROWDSOURCED_TRAINING)
+			if(using_an_agent)
+				manual = hum[ind].agent->is_manual();
 #endif
 			if(kbhit()){
 				command[ind] = getch();
@@ -728,12 +729,12 @@ namespace Environment::Field{
 				else if(command[ind] == '2')
 					command[ind] = 's';
 				if(using_an_agent){
-#if !defined(COWRDSOURCED_TRAINING)
+#if !defined(CROWDSOURCED_TRAINING)
 					if(!manual && command[ind] == ' ')
 						silent = !silent;
 #endif
 					if(command[ind] == '3'){
-#if defined(COWRDSOURCED_TRAINING)
+#if defined(CROWDSOURCED_TRAINING)
 						command[ind] = '+';
 #else
 						manual = !manual;
@@ -863,7 +864,7 @@ namespace Environment::Field{
 			printer.print(" 0 : command list\n");
 			printer.print(" ` : turn to left [1]\n");
 			printer.print(" 1 : turn to right\n");
-#if !defined(COWRDSOURCED_TRAINING)
+#if !defined(CROWDSOURCED_TRAINING)
 			printer.print(" 3 : switch bitween Manual and Automate\n");
 #endif
 			printer.print(" a or 4 : move to left [2]\n");
@@ -892,7 +893,7 @@ namespace Environment::Field{
 			printer.print("[1]: its location on the standardized keyboards is the key below Esc.\n");
 			printer.print("[2]: you can enable NumLock and then use the arrows!.\n");
 			printer.print("note: if you do an invalid move nothing will happen\n");
-#if !defined(COWRDSOURCED_TRAINING)
+#if !defined(CROWDSOURCED_TRAINING)
 			printer.print("* If you selected Automate you can press the space key to disable rendering.\n");
 #endif
 			printer.print("press any key to continue\n");

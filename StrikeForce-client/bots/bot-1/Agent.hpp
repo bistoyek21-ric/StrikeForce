@@ -334,7 +334,7 @@ public:
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
           num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
         c_v = 0.05;
-#if defined(COWRDSOURCED_TRAINING)
+#if defined(CROWDSOURCED_TRAINING)
         std::cout << "downloading backup from server ..." << std::endl;
         request_and_extract_backup(backup_dir + "/..");
         std::cout << "done!" << std::endl;
@@ -390,7 +390,7 @@ public:
             ", ppo_clip=" + std::to_string(ppo_clip));
         h_state = torch::zeros({2, 1, hidden_size}, device);
         action_input = torch::zeros({num_actions}, device);
-#if !defined(COWRDSOURCED_TRAINING)
+#if !defined(CROWDSOURCED_TRAINING)
         cnt = T + 1;
 #endif
     }
@@ -407,7 +407,7 @@ public:
             saveProgress();
         delete optimizer;
         delete reward_net;
-#if defined(COWRDSOURCED_TRAINING)
+#if defined(CROWDSOURCED_TRAINING)
         std::cout << "uploading backup to server ..." << std::endl;
         zip_and_return_backup(backup_dir + "/..");
         std::cout << "done!" << std::endl;
@@ -420,7 +420,7 @@ public:
         if (cnt <= T)
             return 0;
         if (is_training) {
-#if !defined(COWRDSOURCED_TRAINING)
+#if !defined(CROWDSOURCED_TRAINING)
             if (not_training) {
                 is_training = false;
                 cv.notify_all();
@@ -470,7 +470,7 @@ public:
         }
     }
 
-#if defined(COWRDSOURCED_TRAINING)
+#if defined(CROWDSOURCED_TRAINING)
     bool is_manual() {
         if (!is_training && cnt <= T)
             ++cnt;

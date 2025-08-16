@@ -493,4 +493,6 @@ public:
         return manual;
     }
 #endif
+
 };
+

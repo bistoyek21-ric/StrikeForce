@@ -268,6 +268,8 @@ public:
                 cv.notify_all();
                 if (trainThread.joinable())
                     trainThread.join();
+                action_input = torch::zeros({num_actions}, device);
+                h_state = torch::zeros({2, 1, hidden_size}, device);
             }
             else
                 return -2;

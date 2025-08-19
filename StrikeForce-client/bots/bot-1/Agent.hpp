@@ -390,7 +390,6 @@ public:
             ", ppo_clip=" + std::to_string(ppo_clip));
         h_state = torch::zeros({2, 1, hidden_size}, device);
         action_input = torch::zeros({num_actions}, device);
-        action_input[0] = 1;
 #if !defined(CROWDSOURCED_TRAINING)
         cnt = T + 1;
 #endif

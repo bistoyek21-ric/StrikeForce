@@ -810,7 +810,7 @@ namespace Environment::Field{
 			return;
 		}
 
-		void human_action(){
+		void get_my_action(){
 			my_command();
 			if(quit){
 				command[ind] = '_';
@@ -834,11 +834,14 @@ namespace Environment::Field{
 						act = i;
 				hum[ind].agent->update(act, manual || command[ind] == '3');
 			}
-			if(online){
+			if(online)
 				client.send_it();
-				if(!disconnect)
-					client.recieve();
-			}
+			return;
+		}
+
+		void human_action(){
+			if(online && !disconnect)
+				client.recieve();
 			for(int i = 0; i < ind; ++i)
 				if(mh[i] && !remote[i])
 					get_command(i);
@@ -1208,15 +1211,15 @@ namespace Environment::Field{
 			++frame, find_recom(), print_game();
 			start = std::chrono::steady_clock::now();
 			while(true){
-				if(frame % pc == 1)
+				if(frame % pc <= 1)
 					spawn_chest();
-				if(frame % pz == 1)
+				if(frame % pz <= 1)
 					spawn_zombie_npc();
-				if(frame % ph == 1)
+				if(frame % ph <= 1)
 					spawn_human_npc();
 				if(check_end())
 					break;
-				human_action();
+				get_my_action();
 				if(quit)
 					break;
 				zombie_action();
@@ -1228,6 +1231,7 @@ namespace Environment::Field{
 				start = std::chrono::steady_clock::now();
 				updmap();
 				update_bull();
+				human_action();
 				view();
 				update_tmp();
 				hit_human(), hit_zombie();
@@ -1531,7 +1535,7 @@ namespace Environment::Field{
 	}
 
 	char gameplay::human_rnpc_bot(Environment::Character::Human& player) const{
-		if(frame % 50 == 1){
+		if(frame % 50 <= 1){
 			char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
 			return c[rand() % 8];
 		}

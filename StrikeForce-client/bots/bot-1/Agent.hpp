@@ -390,6 +390,7 @@ public:
             ", ppo_clip=" + std::to_string(ppo_clip));
         h_state = torch::zeros({2, 1, hidden_size}, device);
         action_input = torch::zeros({num_actions}, device);
+        action_input[0] = 1;
 #if !defined(CROWDSOURCED_TRAINING)
         cnt = T + 1;
 #endif
@@ -449,9 +450,15 @@ public:
     void update(int action, bool imitate) {
         if (is_training || cnt <= T)
             return;
+        rewards.push_back(reward_net->get_reward(action, imitate, states.back()));
+        if (rewards.back() == -2){
+            rewards.pop_back();
+            states.pop_back();
+            values.pop_back();
+            return;
+        }
         actions.push_back(action);
         log_probs.push_back(torch::log(probs.detach()[action] + 1e-8));
-        rewards.push_back(reward_net->get_reward(action, imitate, states.back()));
         action_input = action_input * alpha;
         action_input[action] += 1 - alpha;
         if (actions.size() == T) {
@@ -482,13 +489,22 @@ public:
                     trainThread.join();
                 h_state = torch::zeros({2, 1, hidden_size}, device);
                 action_input = torch::zeros({num_actions}, device);
+                std::mt19937 gen(std::random_device{}());
+                std::uniform_int_distribution<> dist(0, 1);
+                manual = dist(gen);
             }
             else
                return true;
         }
         if (cnt <= T)
             manual = true;
-        else if (actions.size() == T / 2)
+        if (cnt == T + 1) {
+            std::mt19937 gen(std::random_device{}());
+            std::uniform_int_distribution<> dist(0, 1);
+            manual = dist(gen);
+            ++cnt;
+        }
+        if (actions.size() == T / 2)
             manual = !manual;
         return manual;
     }

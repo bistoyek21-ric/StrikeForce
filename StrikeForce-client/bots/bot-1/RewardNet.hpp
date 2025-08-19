@@ -241,6 +241,9 @@ public:
         optimizer = new torch::optim::Adam(params, torch::optim::AdamOptions().lr(learning_rate));
         action_input = torch::zeros({num_actions}, device);
         h_state = torch::zeros({2, 1, hidden_size}, device);
+#if !defined(CROWDSOURCED_TRAINING)
+        cnt = T + 1;
+#endif
     }
 
     ~RewardNet() {
@@ -271,7 +274,8 @@ public:
         }
         auto output = forward(action, state);
         auto target = torch::tensor(imitate ? 1.0f : 0.0f).to(device);
-        ++cnt;
+        if (cnt <= T)
+            ++cnt;
         if (training && T < cnt)
             update(output, target);
         float reward = 2 * output.item<float>() - 1;

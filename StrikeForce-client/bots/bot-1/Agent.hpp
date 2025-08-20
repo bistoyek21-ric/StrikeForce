@@ -90,7 +90,7 @@ int zip_and_return_backup(const std::string& dir) {
         std::cerr << "Error: Directory " << dir << " does not exist" << std::endl;
         return 1;
     }
-    std::string zip_name = dir_path.filename().string() + ".zip";
+    std::string zip_name = "backup.zip";
     std::string zip_cmd = "7z a -tzip " + escape_path(zip_name) + " " + escape_path(dir) + "/*";
     if (system(zip_cmd.c_str()) != 0) {
         std::cerr << "Failed to zip directory: " << dir << std::endl;
@@ -308,8 +308,7 @@ private:
                 p_loss -= torch::min(ratio * adv, clipped * adv);
                 v_loss += torch::mse_loss(output[1], returns[i]);
             }
-            v_loss /= T;
-            auto loss = p_loss + c_v * v_loss;
+            auto loss = (p_loss + c_v * v_loss) / T;
             log("Epoch " + std::to_string(epoch) + ": loss=" + std::to_string(loss.item<float>()));
             optimizer->zero_grad();
             loss.backward();
@@ -333,7 +332,7 @@ public:
           ppo_clip(_ppo_clip), alpha(_alpha), backup_dir(_backup_dir),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
           num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
-        c_v = 0.05;
+        c_v = 0.25;
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "downloading backup from server ..." << std::endl;
         request_and_extract_backup(backup_dir + "/..");

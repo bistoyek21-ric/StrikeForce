@@ -25,90 +25,7 @@ SOFTWARE.
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
 #include "RewardNet.hpp"
 
-const std::string SERVER_URL = "http://89.106.206.119:8080";
 const std::string bot_code = "bot-1";
-
-std::string escape_path(const std::string& path) {
-    std::string escaped;
-    for (char c : path) {
-        if (std::isspace(c) || c == '"' || c == '\\') {
-            escaped += '\\';
-        }
-        escaped += c;
-    }
-    return "\"" + escaped + "\"";
-}
-
-int request_and_extract_backup(const std::string& dir) {
-    if (bot_code.empty() || dir.empty()) {
-        std::cerr << "Error: bot_code or dir cannot be empty" << std::endl;
-        return 1;
-    }
-    std::filesystem::path dir_path = dir;
-    if (std::filesystem::exists(dir_path)) {
-        try {
-            std::filesystem::remove_all(dir_path);
-        } catch (const std::filesystem::filesystem_error& e) {
-            std::cerr << "Failed to delete directory " << dir << ": " << e.what() << std::endl;
-            return 1;
-        }
-    }
-    std::string download_cmd = "curl --noproxy \"*\" -o backup.zip \"" + SERVER_URL + "/StrikeForce/api/request_backup?bot=" + bot_code + "\"";
-    if (system(download_cmd.c_str()) != 0) {
-        std::cerr << "Failed to download backup.zip for bot_code: " << bot_code << std::endl;
-        return 1;
-    }
-    try {
-        std::filesystem::create_directories(dir_path);
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "Failed to create directory " << dir << ": " << e.what() << std::endl;
-        return 1;
-    }
-    std::string extract_cmd = "7z x -y -o" + escape_path(dir) + " backup.zip";
-    int ret = 0;
-    if (system(extract_cmd.c_str()) != 0) {
-        std::cerr << "Failed to extract backup.zip to " << dir << std::endl;
-        ret = 1;
-    }
-    try {
-        std::filesystem::remove("backup.zip");
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "Failed to delete backup.zip: " << e.what() << std::endl;
-        return 1;
-    }
-    std::cout << "Backup requested and extracted to " << dir << std::endl;
-    return ret;
-}
-
-int zip_and_return_backup(const std::string& dir) {
-    if (dir.empty()) {
-        std::cerr << "Error: dir cannot be empty" << std::endl;
-        return 1;
-    }
-    std::filesystem::path dir_path = dir;
-    if (!std::filesystem::exists(dir_path)) {
-        std::cerr << "Error: Directory " << dir << " does not exist" << std::endl;
-        return 1;
-    }
-    std::string zip_name = "backup.zip";
-    std::string zip_cmd = "7z a -tzip " + escape_path(zip_name) + " " + escape_path(dir) + "/*";
-    if (system(zip_cmd.c_str()) != 0) {
-        std::cerr << "Failed to zip directory: " << dir << std::endl;
-        return 1;
-    }
-    std::string send_cmd = "curl --noproxy \"*\" -X POST -F \"file=@" + escape_path(zip_name) + "\" \"" + SERVER_URL + "/StrikeForce/api/return_backup\"";
-    if (system(send_cmd.c_str()) != 0) {
-        std::cerr << "Failed to send zip Golgi file to server" << std::endl;
-    }
-    try {
-        std::filesystem::remove(zip_name);
-    } catch (const std::filesystem::filesystem_error& e) {
-        std::cerr << "Failed to delete zip: " << zip_name << ": " << e.what() << std::endl;
-        return 1;
-    }
-    std::cout << "Backup zipped and returned from " << dir << std::endl;
-    return 0;
-}
 
 class Agent {
 private:
@@ -117,12 +34,12 @@ private:
 
     std::mutex mtx;
     std::condition_variable cv;
-    bool is_training = false, not_training;
+    bool is_training = false, done_training;
     std::thread trainThread;
 
     bool training, logging = false;
-    int hidden_size, num_actions, T, num_epochs, num_channels, grid_size;
-    float gamma, learning_rate, ppo_clip, alpha, c_v;
+    int hidden_size, num_actions, T, num_epochs, num_channels, grid_x, grid_y;
+    float gamma, learning_rate, ppo_clip, alpha;
     
     std::string backup_dir;
     std::vector<int> actions;
@@ -150,8 +67,8 @@ private:
 
     RewardNet* reward_net;
 
-    template<typename T>
-    void log(const T& message) {
+    template<typename Type>
+    void log(const Type& message) {
         if (!logging)
             return;
         log_file << message << std::endl;
@@ -164,11 +81,8 @@ private:
         if (!std::filesystem::exists(backup_dir))
             std::filesystem::create_directories(backup_dir);
         std::ofstream dim(backup_dir + "/dim.txt");
-        dim << num_channels << " " << grid_size << " " << num_actions << " ";
+        dim << num_channels << " " << grid_x << " " << grid_y << " " << num_actions << " ";
         dim.close();
-        std::ofstream coef(backup_dir + "/c_v.txt");
-        coef << c_v;
-        coef.close();
         gru->to(torch::kCPU);
         action_processor->to(torch::kCPU);
         policy_head->to(torch::kCPU);
@@ -194,14 +108,12 @@ private:
             log("Failed to open dim.txt");
             throw std::runtime_error("Failed to open dim.txt");
         }
-        dim >> num_channels >> grid_size >> num_actions;
+        dim >> num_channels >> grid_x >> grid_y >> num_actions;
         log("Loaded dimensions: num_channels=" + std::to_string(num_channels) +
-            ", grid_size=" + std::to_string(grid_size) +
+            ", grid_x=" + std::to_string(grid_x) +
+            ", grid_y=" + std::to_string(grid_y) +
             ", num_actions=" + std::to_string(num_actions));
         dim.close();
-        std::ifstream coef(backup_dir + "/c_v.txt");
-        coef >> c_v;
-        coef.close();
         initializeNetwork();
         torch::load(cnn, backup_dir + "/cnn.pt");
         torch::load(gru, backup_dir + "/gru.pt");
@@ -240,7 +152,7 @@ private:
             ResidualBlock(hidden_size),
             ResidualBlock(hidden_size),
             ResidualBlock(hidden_size),
-            torch::nn::Linear(hidden_size, num_actions), torch::nn::ReLU()
+            torch::nn::Linear(hidden_size, num_actions)
         );
         value_head = torch::nn::Sequential(
             ResidualBlock(hidden_size),
@@ -304,11 +216,10 @@ private:
                 auto diff = torch::clamp(current_logp - log_probs[i], -100, 10);
                 auto ratio = torch::exp(diff);
                 auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
-                auto adv = adv_tensor[i];
-                p_loss -= torch::min(ratio * adv, clipped * adv);
+                p_loss -= torch::min(ratio * adv_tensor[i], clipped * adv_tensor[i]);
                 v_loss += torch::mse_loss(output[1], returns[i]);
             }
-            auto loss = (p_loss + c_v * v_loss) / T;
+            auto loss = (p_loss + 0.25 * v_loss) / T;
             log("Epoch " + std::to_string(epoch) + ": loss=" + std::to_string(loss.item<float>()));
             optimizer->zero_grad();
             loss.backward();
@@ -321,21 +232,20 @@ private:
         log_probs.clear();
         states.clear();
         values.clear();
-        not_training = true;
+        done_training = true;
     }
 
 public:
     Agent(bool _training, int _T, int _num_epochs, float _gamma, float _learning_rate, float _ppo_clip,
-          float _alpha, const std::string& _backup_dir = "bots/bot-1/backup/agent_backup", int _num_channels = 1,
-          int _grid_size = 1, int _num_actions = 1)
+          float _alpha, const std::string& _backup_dir = "bots/bot-1/backup/agent_backup", int _num_channels = 32,
+          int _grid_x = 15, int _grid_y = 49, int _num_actions = 12)
         : training(_training), T(_T), num_epochs(_num_epochs), gamma(_gamma), learning_rate(_learning_rate),
           ppo_clip(_ppo_clip), alpha(_alpha), backup_dir(_backup_dir),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
-          num_channels(_num_channels), grid_size(_grid_size), num_actions(_num_actions){
-        c_v = 0.25;
+          num_channels(_num_channels), grid_x(_grid_x), grid_y(_grid_y), num_actions(_num_actions) {
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "downloading backup from server ..." << std::endl;
-        request_and_extract_backup(backup_dir + "/..");
+        request_and_extract_backup(backup_dir + "/..", bot_code);
         std::cout << "done!" << std::endl;
 #endif
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
@@ -379,7 +289,7 @@ public:
         params.insert(params.end(), gru_norm_params.begin(), gru_norm_params.end());
         params.insert(params.end(), action_norm_params.begin(), action_norm_params.end());
         optimizer = new torch::optim::AdamW(params, torch::optim::AdamWOptions().lr(learning_rate).weight_decay(1e-4));
-        reward_net = new RewardNet(true, T, learning_rate, alpha, backup_dir + "/../reward_backup", num_actions, num_channels, grid_size);
+        reward_net = new RewardNet(true, T, learning_rate, alpha, backup_dir + "/../reward_backup", num_actions, num_channels, grid_x, grid_y);
         log("--------------------------------------------------------");
         auto t = time(nullptr);
         log(std::string(ctime(&t)));
@@ -406,10 +316,10 @@ public:
             saveProgress();
         delete optimizer;
         delete reward_net;
-#if defined(CROWDSOURCED_TRAINING)
-        std::cout << "uploading backup to server ..." << std::endl;
-        zip_and_return_backup(backup_dir + "/..");
-        std::cout << "done!" << std::endl;
+#if defined(CROWDSOURCED_TRAINING) && !defined(KEEP_IT)
+        if (returnThread.joinable())
+            returnThread.join();
+        returnThread = std::thread(zip_and_return_backup, backup_dir + "/..");
 #endif
         log_file.close();
         disable_input_buffering();
@@ -420,7 +330,7 @@ public:
             return 0;
         if (is_training) {
 #if !defined(CROWDSOURCED_TRAINING)
-            if (not_training) {
+            if (done_training) {
                 is_training = false;
                 cv.notify_all();
                 if (trainThread.joinable())
@@ -434,7 +344,7 @@ public:
             return 0;
 #endif
         }
-        auto state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_size, grid_size});
+        auto state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_x, grid_y});
         states.push_back(state);
         auto output = forward(state);
         values.push_back(output[1].detach());
@@ -449,20 +359,20 @@ public:
         if (is_training || cnt <= T)
             return;
         rewards.push_back(reward_net->get_reward(action, imitate, states.back()));
-        if (rewards.back() == -2){
-            rewards.pop_back();
-            states.pop_back();
-            values.pop_back();
+        action_input = action_input * alpha;
+        action_input[action] += 1 - alpha;
+        if (rewards.back() == -2 && training) {
+            rewards.clear();
+            states.clear();
+            values.clear();
             return;
         }
         actions.push_back(action);
         log_probs.push_back(torch::log(probs.detach()[action] + 1e-8));
-        action_input = action_input * alpha;
-        action_input[action] += 1 - alpha;
         if (actions.size() == T) {
             if (training) {
                 is_training = true;
-                not_training = false;
+                done_training = false;
                 trainThread = std::thread(&Agent::train, this);
             }
             else {
@@ -480,7 +390,7 @@ public:
         if (!is_training && cnt <= T)
             ++cnt;
         if (is_training) {
-            if (not_training) {
+            if (done_training) {
                 is_training = false;
                 cv.notify_all();
                 if (trainThread.joinable())

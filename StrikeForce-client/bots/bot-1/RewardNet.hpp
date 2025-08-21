@@ -24,8 +24,6 @@ SOFTWARE.
 */
 #include "basic.hpp"
 #include <torch/torch.h>
-#include <random>
-#include <filesystem>
 
 class ResidualBlock : public torch::nn::Module {
 public:
@@ -51,16 +49,14 @@ private:
 
 class RewardNet {
 private:
-    int cnt = 0;
-
     std::mutex mtx;
     std::condition_variable cv;
-    bool is_training = false, not_training;
+    bool is_training = false, done_training;
     std::thread trainThread;
 
     bool training, logging = false;
     float learning_rate, alpha;
-    int T, num_actions, num_channels, grid_size, hidden_size;
+    int T, num_actions, num_channels, grid_x, grid_y, hidden_size;
 
     std::string backup_dir;
 
@@ -81,8 +77,8 @@ private:
 
     std::ofstream log_file;
 
-    template<typename T>
-    void log(const T& message) {
+    template<typename Type>
+    void log(const Type& message) {
         if (!logging)
             return;
         log_file << message << std::endl;
@@ -95,7 +91,7 @@ private:
         if (!std::filesystem::exists(backup_dir))
             std::filesystem::create_directories(backup_dir);
         std::ofstream dim(backup_dir + "/dim.txt");
-        dim << num_channels << " " << grid_size << " " << num_actions << " ";
+        dim << num_channels << " " << grid_x << " " << grid_y << " " << num_actions << " ";
         dim.close();
         cnn->to(torch::kCPU);
         gru->to(torch::kCPU);
@@ -146,9 +142,10 @@ private:
             log("Failed to open dim.txt");
             throw std::runtime_error("Failed to open dim.txt");
         }
-        dim >> num_channels >> grid_size >> num_actions;
+        dim >> num_channels >> grid_x >> grid_y >> num_actions;
         log("Loaded dimensions: num_channels=" + std::to_string(num_channels) +
-            ", grid_size=" + std::to_string(grid_size) +
+            ", grid_x=" + std::to_string(grid_x) +
+            ", grid_y=" + std::to_string(grid_y) +
             ", num_actions=" + std::to_string(num_actions));
         dim.close();
         initializeNetwork();
@@ -164,7 +161,7 @@ private:
     void train() {
         auto loss = torch::zeros({}, device);
         for (int i = 0; i < T; ++i)
-            loss += torch::binary_cross_entropy(outputs[i], targets[i]);
+            loss += torch::mse_loss(outputs[i], targets[i]);
         loss /= T;
         log("loss=" + std::to_string(loss.item<float>()));
         optimizer->zero_grad();
@@ -172,7 +169,7 @@ private:
         optimizer->step();
         outputs.clear(), targets.clear();
         log("*");
-        not_training = true;
+        done_training = true;
     }
 
     void update(const torch::Tensor &output, const torch::Tensor &target) {
@@ -180,7 +177,7 @@ private:
         targets.push_back(target);
         if (outputs.size() == T) {
             is_training = true;
-            not_training = false;
+            done_training = false;
             trainThread = std::thread(&RewardNet::train, this);
         }
     }
@@ -202,9 +199,9 @@ private:
 
 public:
     RewardNet(bool _training, int _T, float _learning_rate, float _alpha, const std::string &_backup_dir = "bots/bot-1/backup/reward_backup",
-              int _num_actions = 1, int _num_channels = 1, int _grid_size = 1)
+              int _num_actions = 12, int _num_channels = 33, int _grid_x = 15, int _grid_y = 49)
         : training(_training), T(_T), learning_rate(_learning_rate), alpha(_alpha), backup_dir(_backup_dir),
-          num_actions(_num_actions), num_channels(_num_channels), grid_size(_grid_size),
+          num_actions(_num_actions), num_channels(_num_channels), grid_x(_grid_x), grid_y(_grid_y),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU) {
         if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             try {
@@ -241,9 +238,6 @@ public:
         optimizer = new torch::optim::Adam(params, torch::optim::AdamOptions().lr(learning_rate));
         action_input = torch::zeros({num_actions}, device);
         h_state = torch::zeros({2, 1, hidden_size}, device);
-#if !defined(CROWDSOURCED_TRAINING)
-        cnt = T + 1;
-#endif
     }
 
     ~RewardNet() {
@@ -263,7 +257,7 @@ public:
 
     float get_reward(int action, bool imitate, const torch::Tensor &state) {
         if (is_training) {
-            if (not_training) {
+            if (done_training) {
                 is_training = false;
                 cv.notify_all();
                 if (trainThread.joinable())
@@ -276,9 +270,7 @@ public:
         }
         auto output = forward(action, state);
         auto target = torch::tensor(imitate ? 1.0f : 0.0f).to(device);
-        if (cnt <= T)
-            ++cnt;
-        if (training && T < cnt)
+        if (training)
             update(output, target);
         float reward = 2 * output.item<float>() - 1;
         if (imitate)

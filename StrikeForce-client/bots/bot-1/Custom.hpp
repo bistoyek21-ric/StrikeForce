@@ -131,13 +131,17 @@ namespace Environment::Field{
 		printer.print(res.c_str());
 		auto end_ = std::chrono::steady_clock::now();
 		int k = (lim.count() - (end_ - start).count()) / 1000;
-		//if(manual)
-			usleep(std::max(k, 0));
+		usleep(std::max(k, 0));
 		return;
 	}
 
 	std::vector<float> describe(const node &cell, const Environment::Character::Human &player){
 		std::vector<float> res;
+		// is it me                {0, 1} | 1 
+		if(cell.s[0] && cell.human == &player)
+			res.push_back(1);
+		else
+			res.push_back(0);
 		// object type |Char bullet wall chest portal-in portal-out tmp| {0, 1}^7      | 7
 		res.push_back(cell.s[0] || cell.s[1]);
 		res.push_back(cell.s[2]); res.push_back(cell.s[3]); res.push_back(cell.s[4]);
@@ -246,29 +250,28 @@ namespace Environment::Field{
 	}
 
 	char gameplay::bot(Environment::Character::Human& player) const {
-		if(&player != &hum[ind])
+		if(!player.get_active_agent())
 			return '+';
 		std::vector<int> v = player.get_cor();
-		std::vector<float> obs, ch[32];
-		for(int i = v[1] - 7; i <= v[1] + 7; ++i)
-			for(int j = v[2] - 7; j <= v[2] + 7; ++j){
+		std::vector<float> obs, ch[33];
+		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
+		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
+		for(int i = v[1] - _H; i <= v[1] + _H; ++i)
+			for(int j = v[2] - W; j <= v[2] + W; ++j){
 				std::vector<float> vec;
-				if(std::min(i, j) < 0 || N <= i || M <= j)
-					vec = describe(themap[0][0][0], player);
-				else
-					vec = describe(themap[v[0]][i][j], player);
+				vec = describe(themap[v[0]][i][j], player);
 				for(int k = 0; k < vec.size(); ++k)
 					ch[k].push_back(vec[k]);
 			}
-		for(int i = 0; i < 32; ++i)
-			for(int j = 0; j < 15 * 15; ++j)
+		for(int i = 0; i < 33; ++i)
+			for(int j = 0; j < (2 * _H + 1) * (2 * W + 1); ++j)
 				obs.push_back(ch[i][j]);
 		return action[player.agent->predict(obs)];
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+`1upxawsd[]";
-		player.agent = new Agent(true, 256, 4, 0.99, 1e-3, 0.2, 0.9, "bots/bot-1/backup/agent_backup", 32, 15, action.size());
+		player.agent = new Agent(true, 256, 4, 0.99, 1e-3, 0.2, 0.9, "bots/bot-1/backup/agent_backup", 33, 2 * _H + 1, 2 * W + 1, action.size());
 		player.set_agent_active();
 	}
 

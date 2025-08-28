@@ -25,7 +25,7 @@ SOFTWARE.
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
 #include "RewardNet.hpp"
 
-const std::string bot_code = "bot-1";
+const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
 
 class Agent {
 private:
@@ -76,8 +76,6 @@ private:
     }
 
     void saveProgress() {
-        if (backup_dir.empty())
-            return;
         if (!std::filesystem::exists(backup_dir))
             std::filesystem::create_directories(backup_dir);
         std::ofstream dim(backup_dir + "/dim.txt");
@@ -131,11 +129,11 @@ private:
         hidden_size = 128;
         log("hidden_size set to " + std::to_string(hidden_size));
         cnn = torch::nn::Sequential(
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(num_channels, 32, 3).stride(1).padding(1)),
-            torch::nn::BatchNorm2d(32), torch::nn::ReLU(),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(32, 64, 3).stride(1).padding(1)),
-            torch::nn::BatchNorm2d(64), torch::nn::ReLU(),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(64, hidden_size, 3).stride(1).padding(1)),
+            torch::nn::Conv2d(torch::nn::Conv2dOptions(num_channels, hidden_size, 3).stride(1).padding(1)),
+            torch::nn::BatchNorm2d(hidden_size), torch::nn::ReLU(),
+            torch::nn::Conv2d(torch::nn::Conv2dOptions(hidden_size, hidden_size, 3).stride(1).padding(1)),
+            torch::nn::BatchNorm2d(hidden_size), torch::nn::ReLU(),
+            torch::nn::Conv2d(torch::nn::Conv2dOptions(hidden_size, hidden_size, 3).stride(1).padding(1)),
             torch::nn::BatchNorm2d(hidden_size), torch::nn::ReLU(),
             torch::nn::AdaptiveAvgPool2d(1), torch::nn::Flatten()
         );
@@ -165,7 +163,7 @@ private:
     }
 
     torch::Tensor computeReturns() {
-        torch::Tensor returns = torch::zeros({(int)rewards.size()}, device);
+        torch::Tensor returns = torch::zeros({T}, device);
         double running = 0;
         for (int i = T - 1; i >= 0; --i) {
             running = rewards[i] + gamma * running;
@@ -237,18 +235,20 @@ private:
 
 public:
     Agent(bool _training, int _T, int _num_epochs, float _gamma, float _learning_rate, float _ppo_clip,
-          float _alpha, const std::string& _backup_dir = "bots/bot-1/backup/agent_backup", int _num_channels = 32,
-          int _grid_x = 15, int _grid_y = 49, int _num_actions = 12)
+          float _alpha, int _num_channels = 33, int _grid_x = 15, int _grid_y = 49, int _num_actions = 10)
         : training(_training), T(_T), num_epochs(_num_epochs), gamma(_gamma), learning_rate(_learning_rate),
-          ppo_clip(_ppo_clip), alpha(_alpha), backup_dir(_backup_dir),
-          device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
+          ppo_clip(_ppo_clip), alpha(_alpha), device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU),
           num_channels(_num_channels), grid_x(_grid_x), grid_y(_grid_y), num_actions(_num_actions) {
+        backup_dir = backup_path + "/agent_backup";
 #if defined(CROWDSOURCED_TRAINING)
-        std::cout << "downloading backup from server ..." << std::endl;
-        request_and_extract_backup(backup_dir + "/..", bot_code);
+        std::cout << "loading backup ..." << std::endl;
+        request_and_extract_backup(backup_path, bot_code);
         std::cout << "done!" << std::endl;
+        std::cout << "press space to continue" << std::endl;
+        while (getch() != ' ');
 #endif
-        if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
+        log_file.open(backup_dir + "/agent_log.log");
+        if (std::filesystem::exists(backup_dir)) {
             try {
                 load_progress();
             } catch (const std::exception& e) {
@@ -257,11 +257,9 @@ public:
             }
         }
         else {
-            if (!backup_dir.empty())
-                std::filesystem::create_directories(backup_dir);
+            std::filesystem::create_directories(backup_dir);
             initializeNetwork();
         }
-        log_file.open(backup_dir + "/agent_log.log");
         log(std::to_string(torch::cuda::is_available()));
         cnn->to(device);
         gru->to(device);
@@ -289,7 +287,7 @@ public:
         params.insert(params.end(), gru_norm_params.begin(), gru_norm_params.end());
         params.insert(params.end(), action_norm_params.begin(), action_norm_params.end());
         optimizer = new torch::optim::AdamW(params, torch::optim::AdamWOptions().lr(learning_rate).weight_decay(1e-4));
-        reward_net = new RewardNet(true, T, learning_rate, alpha, backup_dir + "/../reward_backup", num_actions, num_channels, grid_x, grid_y);
+        reward_net = new RewardNet(true, T, learning_rate, alpha, backup_path + "/reward_backup", num_actions, num_channels, grid_x, grid_y);
         log("--------------------------------------------------------");
         auto t = time(nullptr);
         log(std::string(ctime(&t)));
@@ -305,7 +303,6 @@ public:
     }
 
     ~Agent() {
-        restore_input_buffering();
         if (is_training)
             if (trainThread.joinable()) {
                 std::cout << "Agent Network is updating...\nthis might take a few seconds" << std::endl;
@@ -316,13 +313,17 @@ public:
             saveProgress();
         delete optimizer;
         delete reward_net;
-#if defined(CROWDSOURCED_TRAINING) && !defined(KEEP_IT)
-        if (returnThread.joinable())
-            returnThread.join();
-        returnThread = std::thread(zip_and_return_backup, backup_dir + "/..");
+#if defined(CROWDSOURCED_TRAINING)
+        std::cout << "Do you want to submit your backup into our server?\n(y:yes/any other key:no)" << std::endl;
+        if (getch() == 'y') {
+            std::cout << "this might takes a few seconds....\n------------" << std::endl;
+            zip_and_return_backup(backup_path);
+            std::cout << "\n------------\ndone!" << std::endl;
+            std::cout << "press space to continue" << std::endl;
+            while (getch() != ' ');
+        }
 #endif
         log_file.close();
-        disable_input_buffering();
     }
 
     int predict(const std::vector<float>& obs) {

@@ -1243,9 +1243,9 @@ namespace Environment::Field{
 			during_battle = false;
 			view();
 			printer.stop();
+			restore_input_buffering();
 			hum[ind].deleteAgent();
 			hum[ind].reset();
-			restore_input_buffering();
 			if(!online && !quit)
 				Environment::Character::me = hum[ind];
 			if(!quit)

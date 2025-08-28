@@ -86,8 +86,6 @@ private:
     }
 
     void saveProgress() {
-        if (backup_dir.empty())
-            return;
         if (!std::filesystem::exists(backup_dir))
             std::filesystem::create_directories(backup_dir);
         std::ofstream dim(backup_dir + "/dim.txt");
@@ -111,11 +109,11 @@ private:
     void initializeNetwork() {
         hidden_size = 128;
         cnn = torch::nn::Sequential(
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(num_channels, 32, 3).stride(1).padding(1)),
-            torch::nn::BatchNorm2d(32), torch::nn::ReLU(),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(32, 64, 3).stride(1).padding(1)),
-            torch::nn::BatchNorm2d(64), torch::nn::ReLU(),
-            torch::nn::Conv2d(torch::nn::Conv2dOptions(64, hidden_size, 3).stride(1).padding(1)),
+            torch::nn::Conv2d(torch::nn::Conv2dOptions(num_channels, hidden_size, 3).stride(1).padding(1)),
+            torch::nn::BatchNorm2d(hidden_size), torch::nn::ReLU(),
+            torch::nn::Conv2d(torch::nn::Conv2dOptions(hidden_size, hidden_size, 3).stride(1).padding(1)),
+            torch::nn::BatchNorm2d(hidden_size), torch::nn::ReLU(),
+            torch::nn::Conv2d(torch::nn::Conv2dOptions(hidden_size, hidden_size, 3).stride(1).padding(1)),
             torch::nn::BatchNorm2d(hidden_size), torch::nn::ReLU(),
             torch::nn::AdaptiveAvgPool2d(1), torch::nn::Flatten()
         );
@@ -203,7 +201,8 @@ public:
         : training(_training), T(_T), learning_rate(_learning_rate), alpha(_alpha), backup_dir(_backup_dir),
           num_actions(_num_actions), num_channels(_num_channels), grid_x(_grid_x), grid_y(_grid_y),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU) {
-        if (!backup_dir.empty() && std::filesystem::exists(backup_dir)) {
+        log_file.open(backup_dir + "/reward_log.log");
+        if (std::filesystem::exists(backup_dir)) {
             try {
                 load_progress();
             } catch (const std::exception& e) {
@@ -211,11 +210,9 @@ public:
                 initializeNetwork();
             }
         } else {
-            if (!backup_dir.empty())
-                std::filesystem::create_directories(backup_dir);
+            std::filesystem::create_directories(backup_dir);
             initializeNetwork();
         }
-        log_file.open(backup_dir + "/reward_log.log");
         cnn->to(device);
         gru->to(device);
         action_processor->to(device);
@@ -243,11 +240,9 @@ public:
     ~RewardNet() {
         if (is_training)
             if (trainThread.joinable()) {
-                restore_input_buffering();
                 std::cout << "Reward Network is updating...\nthis might take a few seconds" << std::endl;
                 trainThread.join();
                 std::cout << "done!" << std::endl;
-                disable_input_buffering();
             }
         if (training)
             saveProgress();

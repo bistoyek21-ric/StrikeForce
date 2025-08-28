@@ -423,13 +423,9 @@ namespace Environment::Character{
                 user = "";
                 return;
             }
-            if(c == '8'){
-				std::cout << "exitting the program ..." << std::endl;
-				if (returnThread.joinable())
-            		returnThread.join();
-                exit(0);
-			}
-        }
+            if(c == '8')
+				exit(0);
+		}
         return;
     }
 }

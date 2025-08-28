@@ -270,8 +270,8 @@ namespace Environment::Field{
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
-		action = "+`1upxawsd[]";
-		player.agent = new Agent(true, 256, 4, 0.99, 1e-3, 0.2, 0.9, "bots/bot-1/backup/agent_backup", 33, 2 * _H + 1, 2 * W + 1, action.size());
+		action = "+`1upxawsd";
+		player.agent = new Agent(true, 256, 4, 0.99, 1e-3, 0.2, 0.9, 33, 2 * _H + 1, 2 * W + 1, action.size());
 		player.set_agent_active();
 	}
 

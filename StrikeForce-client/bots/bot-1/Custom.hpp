@@ -145,24 +145,24 @@ namespace Environment::Field{
 			return '+';
 		std::vector<int> v = player.get_cor();
 		std::vector<float> obs, ch[33];
-		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
-		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-		for(int i = v[1] - _H; i <= v[1] + _H; ++i)
-			for(int j = v[2] - W; j <= v[2] + W; ++j){
+		v[1] = std::max(v[1], 7), v[1] = std::min(v[1], N - 8);
+		v[2] = std::max(v[2], 24), v[2] = std::min(v[2], M - 25);
+		for(int i = v[1] - 7; i <= v[1] + 7; ++i)
+			for(int j = v[2] - 24; j <= v[2] + 24; ++j){
 				std::vector<float> vec;
 				vec = describe(themap[v[0]][i][j], player);
 				for(int k = 0; k < vec.size(); ++k)
 					ch[k].push_back(vec[k]);
 			}
 		for(int i = 0; i < 33; ++i)
-			for(int j = 0; j < (2 * _H + 1) * (2 * W + 1); ++j)
+			for(int j = 0; j < 15 * 49; ++j)
 				obs.push_back(ch[i][j]);
 		return action[player.agent->predict(obs)];
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+`1upxawsd";
-		player.agent = new Agent(true, 256, 4, 0.99, 1e-3, 0.2, 0.9, 33, 2 * _H + 1, 2 * W + 1, action.size());
+		player.agent = new Agent(true, 256, 4, 0.99, 1e-3, 0.2, 0.9, 33, 15, 49, action.size());
 		player.set_agent_active();
 	}
 

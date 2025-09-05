@@ -1414,9 +1414,9 @@ namespace Environment::Field{
 		}
 
 		void open(){
-			full = false;
-			_H = 7, W = 24;
 			for(bool b = false; true;){
+				full = false;
+				_H = 7, W = 24;
 				std::cout << head();
 				std::cout << "Game Modes:" << '\n';
 				std::cout << "  1. Solo" << '\n';

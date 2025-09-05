@@ -54,8 +54,6 @@ namespace Environment::Field{
 	std::bitset<Z> mz;
 	std::bitset<H> mh, remote;
 
-	std::chrono::time_point<std::chrono::steady_clock> start;
-
 	class Client{
 
 	public:
@@ -348,17 +346,116 @@ namespace Environment::Field{
 		}
 	};
 
+	struct temp_node{
+		int way = -1, team = -1;
+		bool super = 0, iam = 0;
+		std::bitset<11> s;
+
+		std::string showit() const{
+			std::string ans = "";
+			if(s[3]){
+				if(s[10]){
+					if(s[9])
+						ans += c_col(35, 47) + "#";
+					else
+						ans += c_col(35, 40) + "#";
+				}
+				else
+					ans += c_col(0, 0) + "#";
+				return ans;
+			}
+			if(s[0]){
+				if(!s[9]){
+					if(iam)
+						ans += c_col(32, 40);
+					else if(!team)
+						ans += c_col(31, 40);
+					else if(team != hum[ind].get_team())
+						ans += c_col(35, 40);
+					else
+						ans += c_col(34, 40);
+					ans += symbol[0][way - 1];
+					return ans;
+				}
+				if(iam)
+					ans += c_col(32, 47);
+				else if(!team)
+					ans += c_col(31, 47);
+				else if(team != hum[ind].get_team())
+					ans += c_col(35, 47);
+				else
+					ans += c_col(34, 47);
+				ans += symbol[0][way - 1];
+				ans += c_col(0, 0);
+				return ans;
+			}
+			if(s[1]){
+				if(!s[9]){
+					ans += c_col(31, 40);
+					ans += symbol[1][super];
+					return ans;
+				}
+				ans += c_col(31, 47);
+				ans += symbol[1][super];
+				ans += c_col(0, 0);
+				return ans;
+			}
+			if(s[5]){
+				if(s[10]){
+					if(s[9])
+						ans += c_col(35, 47) + "^";
+					else
+						ans += c_col(35, 40) + "^";
+				}
+				else
+					ans += c_col(0, 0) + "^";
+				return ans;
+			}
+			if(s[6])
+				return c_col(0, 0) + "v";
+			if(s[2])
+				return c_col(35, 40) + "*";
+			if(s[4])
+				return c_col(33, 40) + "?";
+			if(s[8])
+				return c_col(0, 0) + "X";
+			if(s[7]){
+				if(s[10])
+					return c_col(35, 40) + "O";
+				return c_col(32, 40) + "O";
+			}
+			return c_col(0, 0) + ".";
+		}
+	} temp_cell;
+
+	temp_node temp_map[N][M];
+
+	Environment::Character::Human temp_me;
+
 	const node nd;
 
 	struct gameplay{
+		std::thread printThread;
+
+		std::chrono::time_point<std::chrono::steady_clock> start, start1;
+
 		bool is_human, online, silent, quit, full, manual;
+
+		bool is_human1, is_zombie1, silent1, full1, manual1;
+
 		Environment::Character::Zombie* recomZ;
 		Environment::Character::Human* recomH;
+
+		std::string temp_recZ, temp_recH;
 
 		std::string action, mode;
 
 		const int L = 10, pc = 30, pz = 40, ph = 50, wdx[4] = {1, 0, -1, 0}, wdy[4] = {0, 1, 0, -1};
+
 		long long loot, level, teams_kills, kills, chest, frame, serial_number;
+
+		long long loot1, teams_kills1, frame1;
+
 		int W, _H;
 
 		std::vector<node*> temp;
@@ -574,9 +671,11 @@ namespace Environment::Field{
 							continue;
 						for(int i1 = 0; i1 < 2; ++i1){
 							int i2 = rand() % 4;
-							if(wdx[i2] + j != 1 && themap[i][wdx[i2] + j][wdy[i2] + k].showit() == '.'){
-								themap[i][j][k].zombie->set_cor({i, wdx[i2] + j, wdy[i2] + k});
-								std::swap(themap[i][j][k], themap[i][wdx[i2] + j][wdy[i2] + k]);
+							if(themap[i][wdx[i2] + j][wdy[i2] + k].showit() == '.'){
+								themap[i][wdx[i2] + j][wdy[i2] + k].s[1] = 1;
+								themap[i][wdx[i2] + j][wdy[i2] + k].zombie = &zomb[_];
+								themap[i][j][k].s[1] = 0;
+								zomb[_].set_cor(std::vector<int>{i, wdx[i2] + j, wdy[i2] + k});
 								break;
 							}
 						}
@@ -757,12 +856,16 @@ namespace Environment::Field{
 			}
 	        if(command[ind] == '0'){
         		silent = online;
+				if(printThread.joinable())
+					printThread.join();
 				command_list(online);
 				command[ind] = '+';
 				return;
 			}
 	        if(command[ind] == '-'){
 				silent = online;
+				if(printThread.joinable())
+					printThread.join();
 				hum[ind].show_backpack(silent, true);
 				command[ind] = '+';
 				return;
@@ -810,7 +913,7 @@ namespace Environment::Field{
 			return;
 		}
 
-		void human_action(){
+		void get_my_action(){
 			my_command();
 			if(quit){
 				command[ind] = '_';
@@ -819,7 +922,9 @@ namespace Environment::Field{
 					client.end_it();
 				}
 				silent = false;
-				print_game();
+				render_it();
+				if(printThread.joinable())
+					printThread.join();
 				printer.print("You quitted, press space button to continue\n");
 				while(getch() != ' ');
 				return;
@@ -834,11 +939,14 @@ namespace Environment::Field{
 						act = i;
 				hum[ind].agent->update(act, manual || command[ind] == '3');
 			}
-			if(online){
+			if(online)
 				client.send_it();
-				if(!disconnect)
-					client.recieve();
-			}
+			return;
+		}
+
+		void human_action(){
+			if(online && !disconnect)
+				client.recieve();
 			for(int i = 0; i < ind; ++i)
 				if(mh[i] && !remote[i])
 					get_command(i);
@@ -858,6 +966,7 @@ namespace Environment::Field{
 		}
 
 		void command_list(bool b = false){
+			printer.cls();
 			printer.print(head(true));
 			printer.print("Command list:\n");
 			printer.print(" - : show backpack\n");
@@ -955,14 +1064,18 @@ namespace Environment::Field{
 				s += c_col(0, 0);
 				s += "press space button to continue\n";
 				silent = false;
-				print_game();
+				render_it();
+				if(printThread.joinable())
+					printThread.join();
 				printer.print(s);
 				while(getch() != ' ');
 				return true;
 			}
 		    if(online && disconnect){
 				silent = false;
-				print_game();
+				render_it();
+				if(printThread.joinable())
+					printThread.join();
                 printer.print("You're disconnected :(\npress space button to continue\n");
 				client.end_it();
 				while(getch() != ' ');
@@ -975,7 +1088,9 @@ namespace Environment::Field{
 					client.end_it();
 				}
 				silent = false;
-				print_game();
+				render_it();
+				if(printThread.joinable())
+					printThread.join();
                 printer.print("You Died :(\npress space button to continue\n");
 				while(getch() != ' ');
 				return true;
@@ -984,7 +1099,9 @@ namespace Environment::Field{
 				if(time(0) - tb >= level * 60 * 5){
 					if(kills < level * 5){
 						silent = false;
-						print_game();
+						render_it();
+						if(printThread.joinable())
+							printThread.join();
 						printer.print("Time's up\nYou Lost :(\npress space button to continue\n");
 						while(getch() != ' ');
 						return true;
@@ -996,7 +1113,9 @@ namespace Environment::Field{
 						s += std::to_string(level);
 						s += " has done successfully!\npress space button to continue\n";
 						silent = false;
-						print_game();
+						render_it();
+						if(printThread.joinable())
+							printThread.join();
 						printer.print(s);
 						hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_timer() == level) * level * 1000);
 						if(hum[ind].get_level_timer() == level)
@@ -1014,7 +1133,9 @@ namespace Environment::Field{
 				s += std::to_string(level);
 				s += " has done successfully!\npress space button to continue\n";
 				silent = false;
-				print_game();
+				render_it();
+				if(printThread.joinable())
+					printThread.join();
 				printer.print(s);
 				hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_solo() == level) * level * 1000);
 				if(hum[ind].get_level_solo() == level)
@@ -1029,7 +1150,9 @@ namespace Environment::Field{
 				s += std::to_string(level);
 				s += " has done successfully!\npress space button to continue\n";
 				silent = false;
-				print_game();
+				render_it();
+				if(printThread.joinable())
+					printThread.join();
 				printer.print(s);
 				if(hum[ind].get_level_squad() == level)
 					hum[ind].level_squad_up();
@@ -1192,6 +1315,46 @@ namespace Environment::Field{
             return;
 		}
 
+		void clone_map(){
+			start1 = std::chrono::steady_clock::now();
+			if(!is_human && recomZ != nullptr){
+				temp_recZ = recomZ->subtitle();
+				is_zombie1 = true;
+			}
+			else if(is_human){
+				temp_recH = recomH->subtitle();
+				is_human1 = true;
+			}
+			silent1 = silent, full1 = full, manual1 = manual;
+			loot1 = loot, teams_kills1 = teams_kills, frame1 = frame;
+			temp_me = hum[ind];
+			std::vector<int> v = temp_me.get_cor();
+			v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
+			v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
+			for(int i = v[1] - _H; i <= v[1] + _H; ++i)
+				for(int j = v[2] - W; j <= v[2] + W; ++j){
+					temp_map[i][j] = temp_cell;
+					temp_map[i][j].s = themap[v[0]][i][j].s;
+					if(temp_map[i][j].s[0]) {
+						temp_map[i][j].team = themap[v[0]][i][j].human->get_team();
+						temp_map[i][j].way = themap[v[0]][i][j].human->get_way();
+					}
+					if(temp_me.get_team() == temp_map[i][j].team)
+						temp_map[i][j].iam = (themap[v[0]][i][j].human == &hum[ind]);
+					if(temp_map[i][j].s[1])
+						temp_map[i][j].super = themap[v[0]][i][j].zombie->is_super();
+				}
+			return;
+		}
+
+		void render_it(){
+			if(printThread.joinable())
+				printThread.join();
+			clone_map();
+			printThread = std::thread(&gameplay::print_game, this);
+			return;
+		}
+
 		void play(){
 			setup();
 			if(disconnect && online)
@@ -1205,18 +1368,18 @@ namespace Environment::Field{
 			printer.start();
 			start = std::chrono::steady_clock::now();
 			view();
-			++frame, find_recom(), print_game();
+			++frame, find_recom(), render_it();
 			start = std::chrono::steady_clock::now();
 			while(true){
-				if(frame % pc == 1)
+				if(frame % pc <= 1)
 					spawn_chest();
-				if(frame % pz == 1)
+				if(frame % pz <= 1)
 					spawn_zombie_npc();
-				if(frame % ph == 1)
+				if(frame % ph <= 1)
 					spawn_human_npc();
 				if(check_end())
 					break;
-				human_action();
+				get_my_action();
 				if(quit)
 					break;
 				zombie_action();
@@ -1224,14 +1387,15 @@ namespace Environment::Field{
 				view();
 				update_tmp();
 				hit_human(), hit_zombie();
-				++frame, find_recom(), print_game();
+				++frame, find_recom(), render_it();
 				start = std::chrono::steady_clock::now();
 				updmap();
 				update_bull();
+				human_action();
 				view();
 				update_tmp();
 				hit_human(), hit_zombie();
-				++frame, find_recom(), print_game();
+				++frame, find_recom(), render_it();
 				start = std::chrono::steady_clock::now();
 				updmap();
 				update_bull();
@@ -1239,13 +1403,13 @@ namespace Environment::Field{
 			during_battle = false;
 			view();
 			printer.stop();
+			restore_input_buffering();
 			hum[ind].deleteAgent();
 			hum[ind].reset();
-			restore_input_buffering();
-			if(!online && !quit)
+			if(!quit){
 				Environment::Character::me = hum[ind];
-			if(!quit)
 				update();
+			}
 			return;
 		}
 
@@ -1374,6 +1538,7 @@ namespace Environment::Field{
 		}
 
 		void update(){
+			Environment::Character::me.save_progress();
 			if(online || using_an_agent)
 				return;
 			int r_changes = (kills * 100 * level) / (time(0) - tb + 1);
@@ -1429,7 +1594,6 @@ namespace Environment::Field{
 				rank1 << vec[i] << '\n';
 			rank1.close();
 			mode = tmp;
-			Environment::Character::me.save_progress();
 			return;
 		}
 	} g;
@@ -1531,7 +1695,7 @@ namespace Environment::Field{
 	}
 
 	char gameplay::human_rnpc_bot(Environment::Character::Human& player) const{
-		if(frame % 50 == 1){
+		if(frame % 50 <= 1){
 			char c[8] = {'c', 'v', 'b', 'n', 'm', ',', '.', '/'};
 			return c[rand() % 8];
 		}
@@ -1543,5 +1707,110 @@ namespace Environment::Field{
 		}
 		char c[8] = {'+', 'u', 'f', 'g', 'h', 'j', '[', ']'};
 		return c[rand() % 8];
+	}
+
+	auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(40000000LL);
+
+	void gameplay::print_game() const{
+		if(silent1){
+			if(using_an_agent && !manual1)
+			    return;
+			auto end_ = std::chrono::steady_clock::now();
+			int k = (lim.count() - (end_ - start1).count()) / 1000;
+			usleep(std::max(k, 0));
+			return;
+		}
+		std::string res = "";
+		if(!full1){
+			res += head(true, true) + "Mode: " + mode;
+			if(using_an_agent){
+				if(manual1)
+					res += " (Manual)";
+				else
+					res += " (Automate)";
+			}
+			if(online){
+                res += " | index: " + std::to_string(ind);
+                res += ", team: " + std::to_string(temp_me.get_team());
+            }
+            res += "\n_____________________\n";
+    		res += c_col(33, 40);
+            res += "Frame: " + std::to_string(frame1) + "\n";
+			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
+			res += c_col(34, 40);
+			res += "Your teams' kills: " + std::to_string(teams_kills1) + " (yours': " + std::to_string(temp_me.get_kills()) + ")";
+			if(!online)
+				res += ", level: " + std::to_string(level);
+			res += "\n";
+			if(mode == "Timer")
+				res += "Your' reward (If you win): " + std::to_string(loot1 + (int)(temp_me.get_level_timer() == level) * 1000 * level) + "\n";
+			else if(mode == "Solo")
+				res += "Your' reward (If you win): " + std::to_string(loot1 + (int)(temp_me.get_level_solo() == level) * 1000 * level) + "\n";
+			else if(mode == "Squad")
+				res += "Your' reward (If you win): " + std::to_string(loot1 + (int)(temp_me.get_level_squad() == level) * 1000 * level) + "\n";
+			res += "\nYou:\n";
+			res += temp_me.subtitle();
+			res += c_col(31, 40) + "\n";
+			if(is_zombie1){
+				res += "Enemy:\n";
+				res += temp_recZ + '\n';
+			}
+			else if(is_human1){
+				res += "Enemy:\n";
+				res += temp_recH;
+			}
+			else
+				res += "\n\n\n\n\n";
+			res += c_col(0, 0);
+			res += "to see the command list";
+			res += (!online ? " or pause the game" : "");
+			res += " press 0\n";
+			res += "____________________________________________________\n";
+		}
+		else
+			res += "0: command list\n";
+		std::vector<int> v = temp_me.get_cor();
+		std::string last = "", color, cell;
+		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
+		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
+		for(int i = v[1] - _H; i <= v[1] + _H; ++i, res.push_back('\n'))
+			for(int j = v[2] - W; j <= v[2] + W; ++j){
+				cell = temp_map[i][j].showit();
+				color = "";
+				int cnt = 2;
+				for(int k = 0; k < cell.size(); ++k){
+					if(cnt < 2)
+						color.push_back(cell[k]);
+					else if(cell[k] != '\033'){
+						if(cell[k] == 'V')
+							res.push_back((char)1);
+						else if(cell[k] == '>')
+							res.push_back((char)2);
+						else if(cell[k] == 'A')
+							res.push_back((char)3);
+						else if(cell[k] == '<')
+							res.push_back((char)4);
+						else
+							res.push_back(cell[k]);
+					}
+					else
+						color.push_back(cell[k]), cnt = 0;
+					if(cell[k] == 'm')
+						++cnt;
+					if(cnt == 2 && color != last){
+						res += color;
+						last = color;
+					}
+				}
+			}
+		color = c_col(0, 0);
+		if(last != color)
+			res += color;
+		printer.cls();
+		printer.print(res.c_str());
+		auto end_ = std::chrono::steady_clock::now();
+		int k = (lim.count() - (end_ - start1).count()) / 1000;
+		usleep(std::max(k, 0));
+		return;
 	}
 }

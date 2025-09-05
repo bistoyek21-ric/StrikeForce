@@ -424,8 +424,8 @@ namespace Environment::Character{
                 return;
             }
             if(c == '8')
-                exit(0);
-        }
+				exit(0);
+		}
         return;
     }
 }

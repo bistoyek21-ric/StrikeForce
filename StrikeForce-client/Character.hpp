@@ -208,10 +208,8 @@ namespace Environment::Character{
 			s += ")\n------------------------------------------\n";
 			s += "lvl0 means you don't have this item\n";
 			s += "press any key to continue\n";
-			if(ingame){
-				printer.cls();
+			if(ingame)
 				printer.print(s);
-			}
 			else{
 				std::cout << s;
 				std::cout.flush();

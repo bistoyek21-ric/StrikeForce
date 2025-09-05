@@ -347,8 +347,8 @@ namespace Environment::Field{
 	};
 
 	struct temp_node{
-		int way, team;
-		bool super, iam;
+		int way = -1, team = -1;
+		bool super = 0, iam = 0;
 		std::bitset<11> s;
 
 		std::string showit() const{
@@ -426,7 +426,7 @@ namespace Environment::Field{
 			}
 			return c_col(0, 0) + ".";
 		}
-	};
+	} temp_cell;
 
 	temp_node temp_map[N][M];
 
@@ -1316,7 +1316,7 @@ namespace Environment::Field{
 		}
 
 		void clone_map(){
-			start1 = start;
+			start1 = std::chrono::steady_clock::now();
 			if(!is_human && recomZ != nullptr){
 				temp_recZ = recomZ->subtitle();
 				is_zombie1 = true;
@@ -1333,6 +1333,7 @@ namespace Environment::Field{
 			v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
 			for(int i = v[1] - _H; i <= v[1] + _H; ++i)
 				for(int j = v[2] - W; j <= v[2] + W; ++j){
+					temp_map[i][j] = temp_cell;
 					temp_map[i][j].s = themap[v[0]][i][j].s;
 					if(temp_map[i][j].s[0]) {
 						temp_map[i][j].team = themap[v[0]][i][j].human->get_team();
@@ -1387,6 +1388,7 @@ namespace Environment::Field{
 				update_tmp();
 				hit_human(), hit_zombie();
 				++frame, find_recom(), render_it();
+				start = std::chrono::steady_clock::now();
 				updmap();
 				update_bull();
 				human_action();

@@ -247,8 +247,8 @@ public:
         std::cout << "press space to continue" << std::endl;
         while (getch() != ' ');
 #endif
-        log_file.open(backup_dir + "/agent_log.log");
         if (std::filesystem::exists(backup_dir)) {
+            log_file.open(backup_dir + "/agent_log.log");
             try {
                 load_progress();
             } catch (const std::exception& e) {
@@ -258,6 +258,7 @@ public:
         }
         else {
             std::filesystem::create_directories(backup_dir);
+            log_file.open(backup_dir + "/agent_log.log");
             initializeNetwork();
         }
         log(std::to_string(torch::cuda::is_available()));

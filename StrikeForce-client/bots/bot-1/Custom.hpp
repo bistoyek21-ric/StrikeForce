@@ -95,7 +95,7 @@ namespace Environment::Field{
 			sit[cell.human->get_way() - 1] = 1;
 			auto v = cell.human->get_damage_effect();
 			damage = v[0] / 1000.0;
-			effect = v[1] / 1000.0;
+			effect = -v[1] / 1000.0;
 			estamina = cell.human->get_stamina() / 1000.0;
 		}
 		else if(cell.s[1]){

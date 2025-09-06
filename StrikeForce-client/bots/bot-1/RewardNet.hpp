@@ -58,6 +58,8 @@ private:
     float learning_rate, alpha;
     int T, num_actions, num_channels, grid_x, grid_y, hidden_size;
 
+    std::vector<float> prev;
+
     std::string backup_dir;
 
     torch::Tensor action_input, h_state;
@@ -156,6 +158,37 @@ private:
         log("Progress loaded successfully");
     }
 
+    torch::Tensor compute_target(bool imitate, const torch::Tensor &state) {
+        auto target = torch::tensor(imitate ? 0.8f : 0.0f).to(device);
+        std::vector<float> sit(num_channels);
+        for (int i = 0; i < grid_x; ++i)
+            for (int j = 0; j < grid_y; ++j)
+                if (state[0][0][i][j].item<float>() == 1)
+                    for (int k = 0; k < num_channels; ++k)
+                        sit[k] = state[0][k][i][j].item<float>();
+        if (targets.empty()) {
+            prev = sit;
+            return target;
+        }
+        // up  | kills, total-damage, total-effect = 1
+        if (prev[12] < sit[12] || prev[31] < sit[31] || prev[32] < sit[32]) {
+            target = torch::tensor(1.0f).to(device);
+            prev = sit;
+            return target;
+        }
+        // down| Hp, attack-damage, attack-effect = 0
+        if (prev[19] > sit[19] || prev[25] > sit[25] || prev[26] > sit[26])
+            target = torch::tensor(0.0f).to(device);
+        // up  | Hp, attack-damage, attack-effect, stamina = 1
+        else if (prev[19] < sit[19] || prev[25] < sit[25] || prev[26] < sit[26] || prev[27] < sit[27])
+            target = torch::tensor(0.9f).to(device);
+        // down| stamina = *0.9
+        if (prev[27] > sit[27])
+            target *= 0.9;
+        prev = sit;
+        return target;
+    }
+
     void train() {
         auto loss = torch::zeros({}, device);
         for (int i = 0; i < T; ++i)
@@ -173,11 +206,14 @@ private:
     void update(const torch::Tensor &output, const torch::Tensor &target) {
         outputs.push_back(output);
         targets.push_back(target);
-        if (outputs.size() == T) {
-            is_training = true;
-            done_training = false;
-            trainThread = std::thread(&RewardNet::train, this);
-        }
+        if (outputs.size() == T)
+            if (training) {
+                is_training = true;
+                done_training = false;
+                trainThread = std::thread(&RewardNet::train, this);
+            }
+            else
+                outputs.clear(), targets.clear();
     }
 
     torch::Tensor forward(int action, const torch::Tensor &state) {
@@ -201,8 +237,8 @@ public:
         : training(_training), T(_T), learning_rate(_learning_rate), alpha(_alpha), backup_dir(_backup_dir),
           num_actions(_num_actions), num_channels(_num_channels), grid_x(_grid_x), grid_y(_grid_y),
           device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU) {
-        log_file.open(backup_dir + "/reward_log.log");
         if (std::filesystem::exists(backup_dir)) {
+            log_file.open(backup_dir + "/reward_log.log");
             try {
                 load_progress();
             } catch (const std::exception& e) {
@@ -211,6 +247,7 @@ public:
             }
         } else {
             std::filesystem::create_directories(backup_dir);
+            log_file.open(backup_dir + "/reward_log.log");
             initializeNetwork();
         }
         cnn->to(device);
@@ -264,12 +301,9 @@ public:
                 return -2;
         }
         auto output = forward(action, state);
-        auto target = torch::tensor(imitate ? 1.0f : 0.0f).to(device);
-        if (training)
-            update(output, target);
-        float reward = 2 * output.item<float>() - 1;
-        if (imitate)
-            reward = 1;
+        auto target = compute_target(imitate, state);
+        update(output, target);
+        float reward = (imitate ? target.item<float>() : output.item<float>()) * 2 - 1;
         return reward;
     }
 };

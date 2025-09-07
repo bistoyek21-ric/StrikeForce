@@ -160,16 +160,16 @@ private:
 
     torch::Tensor compute_target(bool imitate, const torch::Tensor &state) {
         auto target = torch::tensor(imitate ? 0.8f : 0.0f).to(device);
-        if (outputs.empty()) {
-            prev = sit;
-            return target;
-        }
         std::vector<float> sit(num_channels);
         for (int i = 0; i < grid_x; ++i)
             for (int j = 0; j < grid_y; ++j)
                 if (state[0][0][i][j].item<float>() == 1)
                     for (int k = 0; k < num_channels; ++k)
                         sit[k] = state[0][k][i][j].item<float>();
+        if (outputs.empty()) {
+            prev = sit;
+            return target;
+        }
         // up  | kills, total-damage, total-effect = 1
         if (prev[12] < sit[12] || prev[31] < sit[31] || prev[32] < sit[32]) {
             target = torch::tensor(1.0f).to(device);
@@ -272,7 +272,6 @@ public:
         optimizer = new torch::optim::Adam(params, torch::optim::AdamOptions().lr(learning_rate));
         action_input = torch::zeros({num_actions}, device);
         h_state = torch::zeros({2, 1, hidden_size}, device);
-        prev.assign(num_channels, 0);
     }
 
     ~RewardNet() {

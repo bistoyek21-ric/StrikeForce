@@ -198,7 +198,8 @@ int zip_and_return_backup(const std::string dir) {
         std::cerr << "Failed to delete zip: \"" << dir + "/" + zip_name << "\": " << e.what() << std::endl;
         return 1;
     }
-    if (std::filesystem::exists(dir_path)) {
+	std::cout << "Do you want to delete the former backup? (press 'y' for yes and any other key for no)" << std::endl;
+    if (getch() == 'y') {
         try {
             std::filesystem::remove_all(dir_path);
         } catch (const std::filesystem::filesystem_error& e) {
@@ -206,7 +207,8 @@ int zip_and_return_backup(const std::string dir) {
             return 1;
         }
     }
-    std::cout << "Backup zipped and returned from " << dir << std::endl;
+	else
+    	std::cout << "backup directory remained" << std::endl;
     return 0;
 }
 
@@ -286,4 +288,3 @@ namespace Environment{
 
 	}
 }
-

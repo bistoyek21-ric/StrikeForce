@@ -1317,6 +1317,7 @@ namespace Environment::Field{
 
 		void clone_map(){
 			start1 = std::chrono::steady_clock::now();
+			is_human1 = is_zombie1 = false;
 			if(!is_human && recomZ != nullptr){
 				temp_recZ = recomZ->subtitle();
 				is_zombie1 = true;

@@ -144,9 +144,10 @@ namespace Environment::Field{
 		if(!player.get_active_agent())
 			return '+';
 		std::vector<int> v = player.get_cor();
-		std::vector<float> obs, ch[33];
+		std::vector<float> obs;
 		v[1] = std::max(v[1], 7), v[1] = std::min(v[1], N - 8);
 		v[2] = std::max(v[2], 24), v[2] = std::min(v[2], M - 25);
+		std::vector<float> ch[33];
 		for(int i = v[1] - 7; i <= v[1] + 7; ++i)
 			for(int j = v[2] - 24; j <= v[2] + 24; ++j){
 				std::vector<float> vec;
@@ -154,9 +155,10 @@ namespace Environment::Field{
 				for(int k = 0; k < vec.size(); ++k)
 					ch[k].push_back(vec[k]);
 			}
-		for(int i = 0; i < 33; ++i)
-			for(int j = 0; j < 15 * 49; ++j)
-				obs.push_back(ch[i][j]);
+		for(int k = 0; k < 33; ++k)
+			for(int i = 0; i < 15; ++i)
+				for(int j = 0; j < 49; ++j)
+					obs.push_back(ch[k][i * 49 + j]);
 		return action[player.agent->predict(obs)];
     }
 

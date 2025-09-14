@@ -19,7 +19,7 @@ We organize events focusing on different parts of this game, especially the AI B
 
 To install and run this project, you need a C++ compiler. Follow these steps:
 
-1. Install dependencies using 'Install_dependencies.md'.
+1. Install dependencies using 'INSTALLDEP.md'.
 
 2. Clone the repository (Or you can download one of the versions):
     ```sh
@@ -62,4 +62,5 @@ Thank you! 😊
 
 #### In case of any issues like errors, bugs, or questions about the code, you can contact the author at:
 - k04sr405@gmail.com
+
 

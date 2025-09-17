@@ -1807,8 +1807,7 @@ namespace Environment::Field{
 		color = c_col(0, 0);
 		if(last != color)
 			res += color;
-		printer.cls();
-		printer.print(res.c_str());
+		printer.render(res);
 		auto end_ = std::chrono::steady_clock::now();
 		int k = (lim.count() - (end_ - start1).count()) / 1000;
 		usleep(std::max(k, 0));

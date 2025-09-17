@@ -67,6 +67,31 @@ private:
 
     RewardNet* reward_net;
 
+    std::vector<torch::Tensor> coor[2];
+    std::vector<torch::Tensor> snap_shot(){
+        std::vector<torch::Tensor> params;
+        for (auto& p : cnn->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gru->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : action_processor->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : policy_head->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : value_head->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gate->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gru_norm->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : action_norm->parameters()) params.push_back(p.detach().clone());
+        return params;
+    }
+
+    void calc_diff(){
+        coor[1] = snap_shot();
+        double diff = 0;
+        for (int i = 0; i < coor[0].size(); ++i)
+            diff += (coor[1][i] - coor[0][i]).pow(2).sum().item<float>();
+        counter << std::sqrt(diff) << "\n";
+        for (auto& p: coor[1])
+            coor[0].push_back(p.clone());
+        coor[1].clear();
+    }
+
     template<typename Type>
     void log(const Type& message) {
         if (!logging)
@@ -201,6 +226,7 @@ private:
             adv_tensor = adv_tensor - adv_mean;
         else
             adv_tensor = (adv_tensor - adv_mean) / (adv_std + 1e-5);
+        float loss_g;
         for (int epoch = 0; epoch < num_epochs; ++epoch) {
             torch::Tensor p_loss = torch::zeros({}, device);
             torch::Tensor v_loss = torch::zeros({}, device);
@@ -223,6 +249,7 @@ private:
             loss.backward();
             optimizer->step();
             log("*");
+            loss_g = loss.item<float>();
         }
         log("Training completed");
         actions.clear();
@@ -230,6 +257,9 @@ private:
         log_probs.clear();
         states.clear();
         values.clear();
+        counter << "A: {" << loss_g << "} ";
+        calc_diff();
+        counter.flush();
         done_training = true;
     }
 
@@ -301,6 +331,7 @@ public:
 #if !defined(CROWDSOURCED_TRAINING)
         cnt = T + 1;
 #endif
+        coor[0] = snap_shot();
     }
 
     ~Agent() {
@@ -310,6 +341,8 @@ public:
                 trainThread.join();
                 std::cout << "done!" << std::endl;
             }
+        counter << "====\n";
+        counter.flush();
         if (training)
             saveProgress();
         delete optimizer;

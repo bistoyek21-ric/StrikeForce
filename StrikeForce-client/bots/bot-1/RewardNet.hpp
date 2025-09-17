@@ -25,6 +25,8 @@ SOFTWARE.
 #include "basic.hpp"
 #include <torch/torch.h>
 
+std::ofstream counter("count.log", std::ios::app);
+
 class ResidualBlock : public torch::nn::Module {
 public:
     ResidualBlock(int hidden_size) {
@@ -78,6 +80,29 @@ private:
     std::vector<torch::Tensor> outputs, targets;
 
     std::ofstream log_file;
+
+    std::vector<torch::Tensor> coor[2];
+    std::vector<torch::Tensor> snap_shot(){
+        std::vector<torch::Tensor> params;
+        for (auto& p : cnn->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gru->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : action_processor->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : combined_processor->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gru_norm->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : action_norm->parameters()) params.push_back(p.detach().clone());
+        return params;
+    }
+
+    void calc_diff(){
+        coor[1] = snap_shot();
+        double diff = 0;
+        for (int i = 0; i < coor[0].size(); ++i)
+            diff += (coor[1][i] - coor[0][i]).pow(2).sum().item<float>();
+        counter << std::sqrt(diff) << "\n";
+        for (auto& p: coor[1])
+            coor[0].push_back(p.clone());
+        coor[1].clear();
+    }
 
     template<typename Type>
     void log(const Type& message) {
@@ -200,6 +225,9 @@ private:
         optimizer->step();
         outputs.clear(), targets.clear();
         log("*");
+        counter << "R: {" << loss.item<float>() << "} ";
+        calc_diff();
+        counter.flush();
         done_training = true;
     }
 
@@ -272,6 +300,7 @@ public:
         optimizer = new torch::optim::Adam(params, torch::optim::AdamOptions().lr(learning_rate));
         action_input = torch::zeros({num_actions}, device);
         h_state = torch::zeros({2, 1, hidden_size}, device);
+        coor[0] = snap_shot();
     }
 
     ~RewardNet() {

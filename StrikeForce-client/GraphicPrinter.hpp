@@ -130,7 +130,7 @@ private:
                 if(event.type == sf::Event::Closed)
                     window->close();
             std::unique_lock lock(mtx);
-            cv.wait_for(lock, std::chrono::milliseconds(1));
+            cv.wait_for(lock, std::chrono::milliseconds(25));
             if(clearRequested){
                 buffer.clear();
                 clearRequested = false;
@@ -228,6 +228,15 @@ public:
     void cls(){
         std::lock_guard lock(mtx);
         clearRequested = true;
+        cv.notify_all();
+    }
+
+    void render(const std::string& str){
+        std::lock_guard lock(mtx);
+        clearRequested = true;
+        while(!printQueue.empty())
+            printQueue.pop();
+        printQueue.push(str);
         cv.notify_all();
     }
 } printer;

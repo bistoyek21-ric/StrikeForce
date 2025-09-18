@@ -454,4 +454,7 @@ public:
     }
 #endif
 
+    bool in_training(){
+        return is_training;
+    }
 };

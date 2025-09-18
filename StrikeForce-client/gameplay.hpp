@@ -456,6 +456,8 @@ namespace Environment::Field{
 
 		long long loot1, teams_kills1, frame1;
 
+		bool is_training1;
+
 		int W, _H;
 
 		std::vector<node*> temp;
@@ -933,11 +935,6 @@ namespace Environment::Field{
 				char c = bot(hum[ind]);
 				if(!manual && command[ind] != '3')
 					command[ind] = c;
-				int act = 0;
-				for(int i = 0; i < action.size(); ++i)
-					if(action[i] == command[ind])
-						act = i;
-				hum[ind].agent->update(act, manual || command[ind] == '3');
 			}
 			if(online)
 				client.send_it();
@@ -945,6 +942,13 @@ namespace Environment::Field{
 		}
 
 		void human_action(){
+			if(using_an_agent){
+				int act = 0;
+				for(int i = 0; i < action.size(); ++i)
+					if(action[i] == command[ind])
+						act = i;
+				hum[ind].agent->update(act, manual || command[ind] == '3');
+			}
 			if(online && !disconnect)
 				client.recieve();
 			for(int i = 0; i < ind; ++i)
@@ -1317,6 +1321,10 @@ namespace Environment::Field{
 
 		void clone_map(){
 			start1 = std::chrono::steady_clock::now();
+			/////////////////////////////////
+			if (using_an_agent)
+				is_training1 = hum[ind].agent->in_training();
+			/////////////////////////////////
 			is_human1 = is_zombie1 = false;
 			if(!is_human && recomZ != nullptr){
 				temp_recZ = recomZ->subtitle();
@@ -1729,6 +1737,10 @@ namespace Environment::Field{
 					res += " (Manual)";
 				else
 					res += " (Automate)";
+				if(is_training1)
+					res += "off";
+				else
+					res += "on";
 			}
 			if(online){
                 res += " | index: " + std::to_string(ind);

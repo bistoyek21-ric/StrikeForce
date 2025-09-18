@@ -147,7 +147,7 @@ namespace Environment::Field{
 		std::vector<float> obs;
 		v[1] = std::max(v[1], 7), v[1] = std::min(v[1], N - 8);
 		v[2] = std::max(v[2], 24), v[2] = std::min(v[2], M - 25);
-		std::vector<float> ch[33];
+		std::vector<std::vector<float>> ch(33);
 		for(int i = v[1] - 7; i <= v[1] + 7; ++i)
 			for(int j = v[2] - 24; j <= v[2] + 24; ++j){
 				std::vector<float> vec;
@@ -164,7 +164,7 @@ namespace Environment::Field{
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+`1upxawsd";
-		player.agent = new Agent(true, 256, 4, 0.99, 1e-3, 0.2, 0.9, 33, 15, 49, action.size());
+		player.agent = new Agent(true, 256, 4, 0.99, 1e-2, 0.2, 0.9, 33, 15, 49, action.size());
 		player.set_agent_active();
 	}
 

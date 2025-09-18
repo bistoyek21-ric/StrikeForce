@@ -87,6 +87,7 @@ private:
         for (int i = 0; i < coor[0].size(); ++i)
             diff += (coor[1][i] - coor[0][i]).pow(2).sum().item<float>();
         counter << std::sqrt(diff) << "\n";
+        coor[0].clear();
         for (auto& p: coor[1])
             coor[0].push_back(p.clone());
         coor[1].clear();
@@ -341,12 +342,12 @@ public:
                 trainThread.join();
                 std::cout << "done!" << std::endl;
             }
+        delete optimizer;
+        delete reward_net;
         counter << "====\n";
         counter.flush();
         if (training)
             saveProgress();
-        delete optimizer;
-        delete reward_net;
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "Do you want to submit your backup into our server?\n(y:yes/any other key:no)" << std::endl;
         if (getch() == 'y') {
@@ -380,9 +381,9 @@ public:
 #endif
         }
         auto state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_x, grid_y});
-        states.push_back(state);
+        states.push_back(state.clone());
         auto output = forward(state);
-        values.push_back(output[1].detach());
+        values.push_back(output[1].detach().clone());
         probs = output[0];
         std::vector<float> v(probs.data_ptr<float>(), probs.data_ptr<float>() + probs.numel());
         std::mt19937 gen(std::random_device{}());
@@ -403,7 +404,7 @@ public:
             return;
         }
         actions.push_back(action);
-        log_probs.push_back(torch::log(probs.detach()[action] + 1e-8));
+        log_probs.push_back(torch::log(probs.detach().clone()[action] + 1e-8));
         if (actions.size() == T) {
             if (training) {
                 is_training = true;

@@ -67,7 +67,7 @@ private:
 
     RewardNet* reward_net;
 
-    std::vector<torch::Tensor> coor[2];
+    std::vector<torch::Tensor> coor[2], initial;
     std::vector<torch::Tensor> snap_shot(){
         std::vector<torch::Tensor> params;
         for (auto& p : cnn->parameters()) params.push_back(p.detach().clone());
@@ -86,7 +86,7 @@ private:
         double diff = 0;
         for (int i = 0; i < coor[0].size(); ++i)
             diff += (coor[1][i] - coor[0][i]).pow(2).sum().item<float>();
-        counter << std::sqrt(diff) << "\n";
+        counter << "step=" << std::sqrt(diff) << "\n";
         coor[0].clear();
         for (auto& p: coor[1])
             coor[0].push_back(p.clone());
@@ -216,6 +216,7 @@ private:
     }
 
     void train() {
+        time_t ts = time(0);
         auto returns = computeReturns();
         std::vector<torch::Tensor> advantages;
         for (int i = 0; i < T; ++i)
@@ -258,7 +259,7 @@ private:
         log_probs.clear();
         states.clear();
         values.clear();
-        counter << "A: {" << loss_g << "} ";
+        counter << "A: loss=" << loss_g << ", time(s)=" << time(0) - ts << ",";
         calc_diff();
         counter.flush();
         done_training = true;
@@ -333,6 +334,8 @@ public:
         cnt = T + 1;
 #endif
         coor[0] = snap_shot();
+        for (auto &p: coor[0])
+            initial.push_back(p.clone());
     }
 
     ~Agent() {
@@ -344,6 +347,11 @@ public:
             }
         delete optimizer;
         delete reward_net;
+        coor[0].clear();
+        for (auto &p: initial)
+            coor[0].push_back(p.clone());
+        counter << "A total dist: ";
+        calc_diff();
         counter << "====\n";
         counter.flush();
         if (training)

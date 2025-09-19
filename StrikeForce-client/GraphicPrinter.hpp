@@ -228,6 +228,8 @@ public:
     void cls(){
         std::lock_guard lock(mtx);
         clearRequested = true;
+        while(!printQueue.empty())
+            printQueue.pop();
         cv.notify_all();
     }
 

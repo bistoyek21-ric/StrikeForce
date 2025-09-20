@@ -25,6 +25,8 @@ SOFTWARE.
 #include "basic.hpp"
 #include <torch/torch.h>
 
+std::ofstream counter("count.log", std::ios::app);
+
 class ResidualBlock : public torch::nn::Module {
 public:
     ResidualBlock(int hidden_size) {
@@ -78,6 +80,30 @@ private:
     std::vector<torch::Tensor> outputs, targets;
 
     std::ofstream log_file;
+
+    std::vector<torch::Tensor> coor[2], initial;
+    std::vector<torch::Tensor> snap_shot(){
+        std::vector<torch::Tensor> params;
+        for (auto& p : cnn->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gru->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : action_processor->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : combined_processor->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gru_norm->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : action_norm->parameters()) params.push_back(p.detach().clone());
+        return params;
+    }
+
+    void calc_diff(){
+        coor[1] = snap_shot();
+        double diff = 0;
+        for (int i = 0; i < coor[0].size(); ++i)
+            diff += (coor[1][i] - coor[0][i]).pow(2).sum().item<float>();
+        counter << "step=" << std::sqrt(diff) << "\n";
+        coor[0].clear();
+        for (auto& p: coor[1])
+            coor[0].push_back(p.clone());
+        coor[1].clear();
+    }
 
     template<typename Type>
     void log(const Type& message) {
@@ -158,7 +184,7 @@ private:
         log("Progress loaded successfully");
     }
 
-    torch::Tensor compute_target(bool imitate, const torch::Tensor &state) {
+    torch::Tensor compute_target(int action, bool imitate, const torch::Tensor &state) {
         auto target = torch::tensor(imitate ? 0.8f : 0.0f).to(device);
         std::vector<float> sit(num_channels);
         for (int i = 0; i < grid_x; ++i)
@@ -182,14 +208,17 @@ private:
         // up  | Hp, attack-damage, attack-effect, stamina = 1
         else if (prev[19] < sit[19] || prev[25] < sit[25] || prev[26] < sit[26] || prev[27] < sit[27])
             target = torch::tensor(0.9f).to(device);
-        // down| stamina = *0.9
+        // down| stamina = *0.9 or do nothing
         if (prev[27] > sit[27])
+            target *= 0.85;
+        else if(!action)
             target *= 0.9;
         prev = sit;
         return target;
     }
 
     void train() {
+        time_t ts = time(0);
         auto loss = torch::zeros({}, device);
         for (int i = 0; i < T; ++i)
             loss += torch::mse_loss(outputs[i], targets[i]);
@@ -200,6 +229,9 @@ private:
         optimizer->step();
         outputs.clear(), targets.clear();
         log("*");
+        counter << "R: loss=" << loss.item<float>() << ", time(s)=" << time(0) - ts << ", ";
+        calc_diff();
+        counter.flush();
         done_training = true;
     }
 
@@ -272,6 +304,9 @@ public:
         optimizer = new torch::optim::Adam(params, torch::optim::AdamOptions().lr(learning_rate));
         action_input = torch::zeros({num_actions}, device);
         h_state = torch::zeros({2, 1, hidden_size}, device);
+        coor[0] = snap_shot();
+        for (auto &p: coor[0])
+            initial.push_back(p.clone());
     }
 
     ~RewardNet() {
@@ -283,6 +318,11 @@ public:
             }
         if (training)
             saveProgress();
+        coor[0].clear();
+        for (auto &p: initial)
+            coor[0].push_back(p.clone());
+        counter << "-------\nR total dist: ";
+        calc_diff();
         delete optimizer;
         log_file.close();
     }
@@ -301,7 +341,7 @@ public:
                 return -2;
         }
         auto output = forward(action, state);
-        auto target = compute_target(imitate, state);
+        auto target = compute_target(action, imitate, state);
         update(output, target);
         float reward = (imitate ? target.item<float>() : output.item<float>()) * 2 - 1;
         return reward;

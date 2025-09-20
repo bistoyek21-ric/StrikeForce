@@ -30,4 +30,6 @@ private:
 public:
 
     void update(int a, bool b){return;}
+
+    bool in_training(){return false;}
 };

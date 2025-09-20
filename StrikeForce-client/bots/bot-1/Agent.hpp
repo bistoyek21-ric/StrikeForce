@@ -67,6 +67,32 @@ private:
 
     RewardNet* reward_net;
 
+    std::vector<torch::Tensor> coor[2], initial;
+    std::vector<torch::Tensor> snap_shot(){
+        std::vector<torch::Tensor> params;
+        for (auto& p : cnn->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gru->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : action_processor->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : policy_head->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : value_head->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gate->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : gru_norm->parameters()) params.push_back(p.detach().clone());
+        for (auto& p : action_norm->parameters()) params.push_back(p.detach().clone());
+        return params;
+    }
+
+    void calc_diff(){
+        coor[1] = snap_shot();
+        double diff = 0;
+        for (int i = 0; i < coor[0].size(); ++i)
+            diff += (coor[1][i] - coor[0][i]).pow(2).sum().item<float>();
+        counter << "step=" << std::sqrt(diff) << "\n";
+        coor[0].clear();
+        for (auto& p: coor[1])
+            coor[0].push_back(p.clone());
+        coor[1].clear();
+    }
+
     template<typename Type>
     void log(const Type& message) {
         if (!logging)
@@ -190,6 +216,7 @@ private:
     }
 
     void train() {
+        time_t ts = time(0);
         auto returns = computeReturns();
         std::vector<torch::Tensor> advantages;
         for (int i = 0; i < T; ++i)
@@ -201,6 +228,7 @@ private:
             adv_tensor = adv_tensor - adv_mean;
         else
             adv_tensor = (adv_tensor - adv_mean) / (adv_std + 1e-5);
+        float loss_g;
         for (int epoch = 0; epoch < num_epochs; ++epoch) {
             torch::Tensor p_loss = torch::zeros({}, device);
             torch::Tensor v_loss = torch::zeros({}, device);
@@ -223,6 +251,7 @@ private:
             loss.backward();
             optimizer->step();
             log("*");
+            loss_g = loss.item<float>();
         }
         log("Training completed");
         actions.clear();
@@ -230,6 +259,9 @@ private:
         log_probs.clear();
         states.clear();
         values.clear();
+        counter << "A: loss=" << loss_g << ", time(s)=" << time(0) - ts << ",";
+        calc_diff();
+        counter.flush();
         done_training = true;
     }
 
@@ -301,6 +333,9 @@ public:
 #if !defined(CROWDSOURCED_TRAINING)
         cnt = T + 1;
 #endif
+        coor[0] = snap_shot();
+        for (auto &p: coor[0])
+            initial.push_back(p.clone());
     }
 
     ~Agent() {
@@ -310,10 +345,17 @@ public:
                 trainThread.join();
                 std::cout << "done!" << std::endl;
             }
-        if (training)
-            saveProgress();
         delete optimizer;
         delete reward_net;
+        coor[0].clear();
+        for (auto &p: initial)
+            coor[0].push_back(p.clone());
+        counter << "A total dist: ";
+        calc_diff();
+        counter << "====\n";
+        counter.flush();
+        if (training)
+            saveProgress();
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "Do you want to submit your backup into our server?\n(y:yes/any other key:no)" << std::endl;
         if (getch() == 'y') {
@@ -347,9 +389,9 @@ public:
 #endif
         }
         auto state = torch::tensor(obs, torch::dtype(torch::kFloat32).device(device)).view({1, num_channels, grid_x, grid_y});
-        states.push_back(state);
+        states.push_back(state.clone());
         auto output = forward(state);
-        values.push_back(output[1].detach());
+        values.push_back(output[1].detach().clone());
         probs = output[0];
         std::vector<float> v(probs.data_ptr<float>(), probs.data_ptr<float>() + probs.numel());
         std::mt19937 gen(std::random_device{}());
@@ -370,7 +412,7 @@ public:
             return;
         }
         actions.push_back(action);
-        log_probs.push_back(torch::log(probs.detach()[action] + 1e-8));
+        log_probs.push_back(torch::log(probs.detach().clone()[action] + 1e-8));
         if (actions.size() == T) {
             if (training) {
                 is_training = true;
@@ -420,4 +462,7 @@ public:
     }
 #endif
 
+    bool in_training(){
+        return is_training;
+    }
 };

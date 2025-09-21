@@ -28,11 +28,6 @@ namespace Environment::Field{
 
 	std::vector<float> describe(const node &cell, const Environment::Character::Human &player){
 		std::vector<float> res;
-		// is it me                {0, 1} | 1 
-		if(cell.s[0] && cell.human == &player)
-			res.push_back(1);
-		else
-			res.push_back(0);
 		// object type |Char bullet wall chest portal-in portal-out tmp| {0, 1}^7      | 7
 		res.push_back(cell.s[0] || cell.s[1]);
 		res.push_back(cell.s[2]); res.push_back(cell.s[3]); res.push_back(cell.s[4]);
@@ -145,26 +140,27 @@ namespace Environment::Field{
 			return '+';
 		std::vector<int> v = player.get_cor();
 		std::vector<float> obs;
-		v[1] = std::max(v[1], 7), v[1] = std::min(v[1], N - 8);
-		v[2] = std::max(v[2], 24), v[2] = std::min(v[2], M - 25);
-		std::vector<std::vector<float>> ch(33);
-		for(int i = v[1] - 7; i <= v[1] + 7; ++i)
-			for(int j = v[2] - 24; j <= v[2] + 24; ++j){
+		std::vector<std::vector<float>> ch(32);
+		for(int i = v[1] - 13; i <= v[1] + 13; ++i)
+			for(int j = v[2] - 43; j <= v[2] + 43; ++j){
 				std::vector<float> vec;
-				vec = describe(themap[v[0]][i][j], player);
+				if(i < 0 || j < 0 || N <= i || M <= j)
+					vec = describe(nd, player);
+				else
+					vec = describe(themap[v[0]][i][j], player);
 				for(int k = 0; k < vec.size(); ++k)
 					ch[k].push_back(vec[k]);
 			}
-		for(int k = 0; k < 33; ++k)
-			for(int i = 0; i < 15; ++i)
-				for(int j = 0; j < 49; ++j)
-					obs.push_back(ch[k][i * 49 + j]);
+		for(int k = 0; k < 32; ++k)
+			for(int i = 0; i < 27; ++i)
+				for(int j = 0; j < 87; ++j)
+					obs.push_back(ch[k][i * 27 + j]);
 		return action[player.agent->predict(obs)];
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+`1upxawsd";
-		player.agent = new Agent(true, 256, 4, 0.99, 1e-2, 0.2, 0.9, 33, 15, 49, action.size());
+		player.agent = new Agent(true, 256, 4, 0.99, 1e-2, 0.2, 0.9);
 		player.set_agent_active();
 	}
 

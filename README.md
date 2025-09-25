@@ -38,7 +38,7 @@ To install and run this project, you need a C++ compiler. Follow these steps:
     ./app
     ```
 
-You should do almost the same thing (but not linking sfml and libtorch linkers) to run the server the only difference is between the name of folders and source files.
+You should do almost the same thing (but not linking sfml and libtorch linkers) to run the server the only difference is between the name of folders and source files. (There is a builtin account with user=1, pass=1)
 
 Attention:\
     1. If you using windows you have to enter the linker -lws2_32 otherwise you shouldn't.\

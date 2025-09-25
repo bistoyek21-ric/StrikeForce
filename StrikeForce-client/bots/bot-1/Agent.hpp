@@ -111,19 +111,16 @@ public:
                 log_file.open(backup_dir + "/agent_log.log", std::ios::app);
                 try{
                     torch::load(model, backup_dir + "/model.pt");
+
                 } catch(...){}
             } else {
                 std::filesystem::create_directories(backup_dir);
                 log_file.open(backup_dir + "/agent_log.log", std::ios::app);
-                coor[0] = snap_shot();
-                int sum = 0;
-                for (auto &p: coor[0]) {
-                    initial.push_back(p.clone());
-                    sum += p.numel();
-                }
-                log("A parameters: " + std::to_string(sum));
             }
         }
+        coor[0] = snap_shot();
+        for (auto &p: coor[0])
+            initial.push_back(p.clone());
         model->to(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
         if (!training)
             model->eval();

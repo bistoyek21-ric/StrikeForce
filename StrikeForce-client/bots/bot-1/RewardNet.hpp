@@ -38,11 +38,11 @@ struct ResidualBlockImpl : torch::nn::Module {
         }
     }
 
-    torch::Tensor forward(torch::Tensor x) {
-        torch::Tensor y;
+    torch::Tensor forward(torch::Tensor X) {
+        torch::Tensor y, x = X.clone();
         for (int i = 0; i < num_layers; ++i) {
             if (i % 2)
-                x = torch::tanh(layers[i]->forward(y) + x);
+                x = torch::relu(layers[i]->forward(y) + x);
             else
                 y = torch::relu(layers[i]->forward(x));
         }
@@ -69,8 +69,8 @@ struct ResidualConvBlockImpl : torch::nn::Module {
         }
     }
 
-    torch::Tensor forward(torch::Tensor x) {
-        torch::Tensor y;
+    torch::Tensor forward(torch::Tensor X) {
+        torch::Tensor y, x = X.clone();
         for (int i = 0; i < num_layers; ++i) {
             if (i % 2) {
                 auto out = layers[i]->forward(y);
@@ -83,7 +83,7 @@ struct ResidualConvBlockImpl : torch::nn::Module {
                     torch::indexing::Slice(m, h - m),
                     torch::indexing::Slice(k, w - k)
                 });
-                x = torch::tanh(out + cropped);
+                x = torch::relu(out + cropped);
             }
             else
                 y = torch::relu(layers[i]->forward(x));
@@ -95,7 +95,7 @@ TORCH_MODULE(ResidualConvBlock);
 
 struct MyCNNImpl : torch::nn::Module {
     std::vector<torch::nn::Conv2d> conv_layers;
-    std::vector<ResidualConvBlock> conv_blocks;    
+    std::vector<ResidualConvBlock> conv_blocks;
 
     MyCNNImpl(int in_channels, int hidden_size) {
         conv_layers.push_back(register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, 80, 3).stride(1).padding(1))));
@@ -106,8 +106,9 @@ struct MyCNNImpl : torch::nn::Module {
     }
 
     torch::Tensor forward(torch::Tensor x) {
-        torch::Tensor cropped, out = conv_layers[0]->forward(x);
+        torch::Tensor cropped, out = conv_layers[0]->forward(10000 * x);
         out = conv_blocks[0]->forward(out);
+        //out = out * out.numel() / (out.norm() + 1e-8);
         cropped = out.index({
             torch::indexing::Slice(),
             torch::indexing::Slice(),
@@ -116,10 +117,12 @@ struct MyCNNImpl : torch::nn::Module {
         });
         auto pad = torch::zeros({cropped.size(0), 24, cropped.size(2), cropped.size(3)});
         auto residual = torch::cat({pad, cropped, pad}, 1);
-        out = conv_layers[1]->forward(out) + residual;
-        out = conv_blocks[1]->forward(out);
+        out = conv_layers[1]->forward(out);
+        //out = out * out.numel() / (out.norm() + 1e-8);
+        out = conv_blocks[1]->forward(out + residual);
+        //out = out * out.numel() / (out.norm() + 1e-8);
         out = conv_blocks[2]->forward(out);
-        return out;
+        return out * out.numel() / (out.norm() + 1e-8);
     }
 };
 TORCH_MODULE(MyCNN);
@@ -129,14 +132,13 @@ struct RewardModelImpl : torch::nn::Module {
     torch::nn::GRU gru{nullptr};
     torch::nn::Sequential action_processor{nullptr};
     torch::nn::Sequential combined_processor{nullptr};
-    torch::nn::LayerNorm gru_norm{nullptr}, action_norm{nullptr};
 
-    const int num_channels = 32, hidden_size = 128, num_actions = 10;
-    const float alpha = 0.9f;
+    int num_channels, hidden_size, num_actions;
+    const float alpha;
 
     torch::Tensor action_input, h_state;
-
-    RewardModelImpl(int n_channels=32, int hidden=128, int n_actions=10, float alpha_=0.9f)
+ 
+    RewardModelImpl(int n_channels = 32, int hidden = 128, int n_actions = 9, float alpha_ = 0.9f)
         : num_channels(n_channels), hidden_size(hidden), num_actions(n_actions), alpha(alpha_){
         cnn = register_module("cnn", MyCNN(num_channels, hidden_size));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
@@ -148,28 +150,30 @@ struct RewardModelImpl : torch::nn::Module {
             ResidualBlock(hidden_size, 6), torch::nn::Linear(hidden_size, 1),
             torch::nn::Sigmoid()
         ));
-        gru_norm = register_module("gru_norm", torch::nn::LayerNorm(torch::nn::LayerNormOptions({hidden_size})));
-        action_norm = register_module("action_norm", torch::nn::LayerNorm(torch::nn::LayerNormOptions({hidden_size})));
-        reset_memory();
+        action_input = register_buffer("a_input", torch::zeros({num_actions}));
+        h_state = register_buffer("h_state", torch::zeros({2, 1, hidden_size}));
     }
 
     void reset_memory() {
+        action_input = action_input.detach();
+        h_state = h_state.detach();
         action_input = torch::zeros({num_actions});
         h_state = torch::zeros({2, 1, hidden_size});
     }
 
     torch::Tensor forward(int action, const torch::Tensor &state) {
         auto feat = cnn->forward(state);
-        feat = feat.view({1, 1, -1});
-        auto r = gru->forward(feat, h_state);
-        auto out_seq = std::get<0>(r).view({-1}) + feat.view({-1});
-        out_seq = gru_norm->forward(out_seq);
-        h_state = std::get<1>(r).detach();
+        auto r = gru->forward(feat.view({1, 1, -1}), h_state);
+        feat = feat.view({-1});
+        auto out_seq = std::get<0>(r).view({-1});
+        out_seq = out_seq / (out_seq.norm() + 1e-8);
+        h_state = std::get<1>(r);
         action_input = action_input * alpha;
         action_input[action] += 1 - alpha;
-        auto a_feat = action_processor->forward(action_input);
-        a_feat = action_norm->forward(a_feat);
-        auto combined = torch::cat({out_seq, a_feat});
+        auto a_feat = action_processor->forward(action_input).view({-1});
+        a_feat = a_feat / (a_feat.norm() + 1e-8);
+        feat = feat / feat.numel();
+        auto combined = torch::cat({out_seq + feat, a_feat + feat});
         return combined_processor->forward(combined);
     }
 };
@@ -291,19 +295,19 @@ private:
             prev = sit;
             return target;
         }
-        if (prev[12] < sit[12] || prev[31] < sit[31] || prev[32] < sit[32]) {
+        if (prev[11] < sit[11] || prev[30] < sit[30] || prev[31] < sit[31]) {
             target = torch::tensor(1.0f);// up  | kills, total-damage, total-effect = 1
             prev = sit;
             return target;
         }
-        if (prev[19] > sit[19] || prev[25] > sit[25] || prev[26] > sit[26])
+        if (prev[18] > sit[18] || prev[24] > sit[24] || prev[25] > sit[25])
             target = torch::tensor(0.0f);// down| Hp, attack-damage, attack-effect = 0
-        else if (prev[19] < sit[19] || prev[25] < sit[25] || prev[26] < sit[26] || prev[27] < sit[27])
+        else if (prev[18] < sit[18] || prev[24] < sit[24] || prev[25] < sit[25] || prev[26] < sit[26])
             target = torch::tensor(0.9f);// up  | Hp, attack-damage, attack-effect, stamina = 1
-        if (prev[27] > sit[27])
-            target *= 0.85;// down| stamina = *0.85 or do nothing
+        else if (prev[26] > sit[26])
+            target *= 0.85;// down | stamina *= 0.85
         else if(!action)
-            target *= 0.9;// nothing| stamina = *0.9 for doing nothing
+            target *= 0.9;// nothing | stamina *= 0.9 for doing nothing
         prev = sit;
         return target;
     }
@@ -311,11 +315,23 @@ private:
     void train() {
         time_t ts = time(0);
         auto loss = torch::zeros({});
-        for (int i = 0; i < T; ++i)
+        for (int i = 0; i < T; ++i) {
             loss += torch::mse_loss(outputs[i], targets[i]);
+            //log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
+        }
         loss /= T;
         optimizer->zero_grad();
         loss.backward();
+        /*
+        for (const auto &p: model->named_parameters())
+            if (p.value().grad().defined()){
+                log(p.key());
+                log(p.value().norm());
+                log(p.value().grad().norm());
+                log(p.value().grad().norm() / (p.value().norm() + 1e-8));
+                log("~~~~~~~~~~~");
+            }
+        */
         optimizer->step();
         outputs.clear(), targets.clear();
         model->reset_memory();

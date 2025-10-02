@@ -59,7 +59,6 @@ namespace Environment::Field{
 				res.push_back(0);
 		}
 		// it can't be passed through by human, bullet; can it destroyed by shooting, Hp {0, 1}^3 [0, inf)| 4
-		char obj = cell.showit();
 		sit = {0, 0, 0};
 		float hp = 0;
 		if(cell.s[3] || cell.s[5] || cell.s[6] || cell.s[0] || cell.s[1]){
@@ -90,7 +89,7 @@ namespace Environment::Field{
 			sit[cell.human->get_way() - 1] = 1;
 			auto v = cell.human->get_damage_effect();
 			damage = v[0] / 1000.0;
-			effect = -v[1] / 1000.0;
+			effect = v[1] / 1000.0;
 			estamina = cell.human->get_stamina() / 1000.0;
 		}
 		else if(cell.s[1]){
@@ -104,11 +103,11 @@ namespace Environment::Field{
 			int dist_traveled = abs(c[1] - dc[1]) + abs(c[2] - dc[2]);
 			sit[cell.bullet->get_way() - 1] = (cell.bullet->get_range() - dist_traveled) / 100.0;
 			damage = cell.bullet->get_damage() / 1000.0;
-			effect = -cell.bullet->get_effect() / 1000.0;
+			effect = cell.bullet->get_effect() / 1000.0;
 		}
 		else if(cell.s[7]){
 			damage = 20 / 1000.0;
-			effect = 10 / 1000.0;
+			effect = -10 / 1000.0;
 		}
 		res.push_back(is_bull);
 		for(int i = 0; i < 4; ++i)
@@ -126,7 +125,7 @@ namespace Environment::Field{
 		// damage effect   [0, inf)^2                                                     | 2
 		if(cell.s[0]){
 			res.push_back(cell.human->get_damage() / 1000.0);
-			res.push_back(-cell.human->get_effect() / 1000.0);
+			res.push_back(cell.human->get_effect() / 1000.0);
 		}
 		else{
 			res.push_back(0);
@@ -154,12 +153,15 @@ namespace Environment::Field{
 		for(int k = 0; k < 32; ++k)
 			for(int i = 0; i < 27; ++i)
 				for(int j = 0; j < 87; ++j)
-					obs.push_back(ch[k][i * 27 + j]);
+					if(ch[k][i * 87 + j] < 0) 
+						obs.push_back(-std::pow(-ch[k][i * 87 + j] / 10, 0.2));
+					else 
+						obs.push_back(std::pow(ch[k][i * 87 + j] / 10, 0.2));
 		return action[player.agent->predict(obs)];
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
-		action = "+`1upxawsd";
+		action = "+xp`1awsd";
 		player.agent = new Agent(true, 256, 4, 0.99, 1e-2, 0.2, 0.9);
 		player.set_agent_active();
 	}

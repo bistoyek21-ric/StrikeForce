@@ -32,14 +32,13 @@ struct AgentModelImpl : torch::nn::Module {
     torch::nn::GRU gru{nullptr};
     torch::nn::Sequential action_processor{nullptr};
     torch::nn::Sequential policy_head{nullptr}, value_head{nullptr}, gate{nullptr};
-    torch::nn::LayerNorm gru_norm{nullptr}, action_norm{nullptr};
 
-    const int num_channels = 32, hidden_size = 128, num_actions = 10;
-    const float alpha = 0.9f;
+    int num_channels, hidden_size, num_actions;
+    const float alpha;
 
     torch::Tensor action_input, h_state;
 
-    AgentModelImpl(int n_channels=32, int hidden=128, int n_actions=10, float alpha_=0.9f)
+    AgentModelImpl(int n_channels = 32, int hidden = 128, int n_actions = 9, float alpha_ = 0.9f)
         : num_channels(n_channels), hidden_size(hidden), num_actions(n_actions), alpha(alpha_){
         cnn = register_module("cnn", MyCNN(num_channels, hidden_size));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
@@ -57,12 +56,13 @@ struct AgentModelImpl : torch::nn::Module {
         policy_head = register_module("policy", torch::nn::Sequential(
             ResidualBlock(hidden_size, 6), torch::nn::Linear(hidden_size, num_actions)
         ));
-        gru_norm = register_module("gru_norm", torch::nn::LayerNorm(torch::nn::LayerNormOptions({hidden_size})));
-        action_norm = register_module("action_norm", torch::nn::LayerNorm(torch::nn::LayerNormOptions({hidden_size})));
-        reset_memory();
+        action_input = register_buffer("a_input", torch::zeros({num_actions}));
+        h_state = register_buffer("h_state", torch::zeros({2, 1, hidden_size}));
     }
 
     void reset_memory() {
+        action_input = action_input.detach();
+        h_state = h_state.detach();
         action_input = torch::zeros({num_actions});
         h_state = torch::zeros({2, 1, hidden_size});
     }
@@ -74,14 +74,15 @@ struct AgentModelImpl : torch::nn::Module {
 
     std::vector<torch::Tensor> forward(const torch::Tensor &state) {
         auto feat = cnn->forward(state);
-        feat = feat.view({1, 1, -1});
-        auto r = gru->forward(feat, h_state);
-        auto out_seq = std::get<0>(r).view({-1}) + feat.view({-1});
-        out_seq = gru_norm->forward(out_seq);
-        h_state = std::get<1>(r).detach();
+        auto r = gru->forward(feat.view({1, 1, -1}), h_state);
+        feat = feat.view({-1});
+        auto out_seq = std::get<0>(r).view({-1});
+        out_seq = out_seq / (out_seq.norm() + 1e-8);
+        h_state = std::get<1>(r);
         auto a_feat = action_processor->forward(action_input);
-        a_feat = action_norm->forward(a_feat.view({-1}));
-        auto gate_input = torch::cat({out_seq, a_feat});
+        a_feat = a_feat / (a_feat.norm() + 1e-8);
+        feat = feat / feat.numel();
+        auto gate_input = torch::cat({out_seq + feat, a_feat + feat});
         auto gated = gate->forward(gate_input);
         auto logits = policy_head->forward(gated);
         auto p = torch::softmax(logits, -1) + 1e-8;
@@ -122,6 +123,8 @@ public:
         for (auto &p: coor[0])
             initial.push_back(p.clone());
         model->to(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
+        for (auto &p : model->parameters())
+            p.set_requires_grad(true);
         if (!training)
             model->eval();
         else
@@ -178,7 +181,7 @@ public:
             return 0;
 #endif
         }
-        auto state = torch::clamp(torch::tensor(obs, torch::dtype(torch::kFloat32)).view({1, num_channels, grid_x, grid_y}), 0, 3);
+        auto state = torch::tensor(obs, torch::dtype(torch::kFloat32)).view({1, num_channels, grid_x, grid_y});
         states.push_back(state);
         auto output = model->forward(state);
         values.push_back(output[1]);
@@ -324,7 +327,8 @@ private:
         for (int epoch = 0; epoch < num_epochs; ++epoch) {
             torch::Tensor p_loss = torch::zeros({});
             torch::Tensor v_loss = torch::zeros({});
-            model->reset_memory();
+            if (epoch)
+                model->reset_memory();
             for (int i = 0; i < T; ++i) {
                 torch::Tensor current_logp;
                 std::vector<torch::Tensor> output;
@@ -355,7 +359,7 @@ private:
         actions.clear(), rewards.clear(), log_probs.clear();
         states.clear(), values.clear();
         model->reset_memory();
-        log("A: loss=" + std::to_string(loss_g) + ", time(s)=" + std::to_string(time(0) - ts) + "," + calc_diff());
+        log("A: loss=" + std::to_string(loss_g) + ", time(s)=" + std::to_string(time(0) - ts) + ", " + calc_diff());
         done_training = true;
     }
 };

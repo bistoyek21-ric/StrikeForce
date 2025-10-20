@@ -98,31 +98,42 @@ struct MyCNNImpl : torch::nn::Module {
     std::vector<ResidualConvBlock> conv_blocks;
 
     MyCNNImpl(int in_channels, int hidden_size) {
-        conv_layers.push_back(register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(in_channels, 80, 3).stride(1).padding(1))));
         conv_blocks.push_back(register_module("convb1", ResidualConvBlock(80, 1, 4)));//27x87=>19x79
-        conv_layers.push_back(register_module("conv2", torch::nn::Conv2d(torch::nn::Conv2dOptions(80, hidden_size, 3).stride(2).padding(0))));//19x79=>9x39
+        conv_layers.push_back(register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(80, hidden_size, 3).stride(2).padding(0))));//19x79=>9x39
         conv_blocks.push_back(register_module("convb2", ResidualConvBlock(hidden_size, 1, 4)));//9x39=>1x31
         conv_blocks.push_back(register_module("convb3", ResidualConvBlock(hidden_size, 2, 4)));//1x31=>1x1
     }
 
     torch::Tensor forward(torch::Tensor x) {
-        torch::Tensor cropped, out = conv_layers[0]->forward(10000 * x);
+        auto pad = torch::zeros({x.size(0), 24, x.size(2), x.size(3)});
+        torch::Tensor out = torch::cat({pad, x, pad}, 1);
+        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
+        torch::Tensor cropped, residual;
         out = conv_blocks[0]->forward(out);
-        //out = out * out.numel() / (out.norm() + 1e-8);
+        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
         cropped = out.index({
             torch::indexing::Slice(),
             torch::indexing::Slice(),
             torch::indexing::Slice(5, 14),
             torch::indexing::Slice(20, 59)
         });
-        auto pad = torch::zeros({cropped.size(0), 24, cropped.size(2), cropped.size(3)});
-        auto residual = torch::cat({pad, cropped, pad}, 1);
-        out = conv_layers[1]->forward(out);
-        //out = out * out.numel() / (out.norm() + 1e-8);
-        out = conv_blocks[1]->forward(out + residual);
-        //out = out * out.numel() / (out.norm() + 1e-8);
+        pad = torch::zeros({cropped.size(0), 24, cropped.size(2), cropped.size(3)});
+        residual = torch::cat({pad, cropped, pad}, 1);
+        out = conv_layers[0]->forward(out);
+        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
+        out = out + residual;
+        out = conv_blocks[1]->forward(out);
+        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
+        residual = out.index({
+            torch::indexing::Slice(),
+            torch::indexing::Slice(),
+            torch::indexing::Slice(),
+            torch::indexing::Slice(15, 16)
+        });
         out = conv_blocks[2]->forward(out);
-        return out * out.numel() / (out.norm() + 1e-8);
+        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
+        out = out + residual;
+        return out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
     }
 };
 TORCH_MODULE(MyCNN);
@@ -166,14 +177,13 @@ struct RewardModelImpl : torch::nn::Module {
         auto r = gru->forward(feat.view({1, 1, -1}), h_state);
         feat = feat.view({-1});
         auto out_seq = std::get<0>(r).view({-1});
-        out_seq = out_seq / (out_seq.norm() + 1e-8);
+        out_seq = out_seq * std::sqrt(out_seq.numel()) / (out_seq.norm() + 1e-8);
         h_state = std::get<1>(r);
         action_input = action_input * alpha;
         action_input[action] += 1 - alpha;
         auto a_feat = action_processor->forward(action_input).view({-1});
-        a_feat = a_feat / (a_feat.norm() + 1e-8);
-        feat = feat / feat.numel();
-        auto combined = torch::cat({out_seq + feat, a_feat + feat});
+        a_feat = a_feat * std::sqrt(a_feat.numel()) / (a_feat.norm() + 1e-8);
+        auto combined = torch::cat({out_seq + feat, a_feat + feat}) / 2;
         return combined_processor->forward(combined);
     }
 };
@@ -181,7 +191,7 @@ TORCH_MODULE(RewardModel);
 
 class RewardNet {
 public:
-    RewardNet(bool _training = true, int _T = 256, float _learning_rate = 1e-2, float _alpha = 0.9,
+    RewardNet(bool _training = true, int _T = 256, float _learning_rate = 1e-3, float _alpha = 0.9,
         const std::string &_backup_dir = "bots/bot-1/backup/reward_backup")
         : training(_training), T(_T), learning_rate(_learning_rate), alpha(_alpha), backup_dir(_backup_dir){
         model = RewardModel();
@@ -219,7 +229,7 @@ public:
         coor[0].clear();
         for (auto &p: initial)
             coor[0].push_back(p.clone());
-        log("-------\nR total dist: " + calc_diff());
+        log("-------\nR total dist: step=" + std::to_string(calc_diff()));
         log("======================");
         log_file.close();
         if (training && !backup_dir.empty() && std::filesystem::exists(backup_dir)) {
@@ -240,10 +250,10 @@ public:
                 return -2;
         }
         auto output = model->forward(action, state);
-        auto target = compute_target(action, imitate, state);
+        auto target = torch::tensor((float)imitate);
+        auto reward = compute_reward(action, state, (imitate ? target : output)) * 2 - 1;
         update(output, target);
-        float reward = (imitate ? target.item<float>() : output.item<float>()) * 2 - 1;
-        return reward;
+        return reward.item<float>();
     }
 
 private:
@@ -266,7 +276,7 @@ private:
         return params;
     }
 
-    std::string calc_diff(){
+    double calc_diff(){
         coor[1] = snap_shot();
         double diff = 0;
         for (int i = 0; i < coor[0].size(); ++i)
@@ -275,7 +285,7 @@ private:
         for (auto& p: coor[1])
             coor[0].push_back(p.clone());
         coor[1].clear();
-        return "step=" + std::to_string(std::sqrt(diff));
+        return std::sqrt(diff);
     }
 
     template<typename Type>
@@ -286,56 +296,56 @@ private:
         log_file.flush();
     }
 
-    torch::Tensor compute_target(int action, bool imitate, const torch::Tensor &state) {
-        auto target = torch::tensor(imitate ? 0.8f : 0.0f);
+    torch::Tensor compute_reward(int action, const torch::Tensor &state, const torch::Tensor &output) {
+        auto reward = output * 0.6 + 0.2;
         std::vector<float> sit(num_channels);
         for (int k = 0; k < num_channels; ++k)
             sit[k] = state[0][k][grid_x / 2][grid_y / 2].item<float>();
         if (outputs.empty()) {
             prev = sit;
-            return target;
+            return reward;
         }
-        if (prev[11] < sit[11] || prev[30] < sit[30] || prev[31] < sit[31]) {
-            target = torch::tensor(1.0f);// up  | kills, total-damage, total-effect = 1
-            prev = sit;
-            return target;
-        }
-        if (prev[18] > sit[18] || prev[24] > sit[24] || prev[25] > sit[25])
-            target = torch::tensor(0.0f);// down| Hp, attack-damage, attack-effect = 0
+        if (prev[11] < sit[11] || prev[30] < sit[30] || prev[31] < sit[31])
+            reward = torch::tensor(1.0f);// up  | kills, total-damage, total-effect = 1
+        else if (prev[18] > sit[18] || prev[24] > sit[24] || prev[25] > sit[25])
+            reward = torch::tensor(0.0f);// down| Hp, attack-damage, attack-effect = 0
         else if (prev[18] < sit[18] || prev[24] < sit[24] || prev[25] < sit[25] || prev[26] < sit[26])
-            target = torch::tensor(0.9f);// up  | Hp, attack-damage, attack-effect, stamina = 1
+            reward = torch::tensor(0.9f);// up  | Hp, attack-damage, attack-effect, stamina = 0.9
         else if (prev[26] > sit[26])
-            target *= 0.85;// down | stamina *= 0.85
+            reward -= 0.15;// down | stamina -= 0.15
         else if(!action)
-            target *= 0.9;// nothing | stamina *= 0.9 for doing nothing
+            reward -= 0.1;// nothing | stamina -= 0.1 for doing nothing
         prev = sit;
-        return target;
+        return reward;
     }
 
     void train() {
         time_t ts = time(0);
         auto loss = torch::zeros({});
         for (int i = 0; i < T; ++i) {
-            loss += torch::mse_loss(outputs[i], targets[i]);
-            //log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
+            loss += torch::binary_cross_entropy(outputs[i], targets[i]);
+            log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
         }
         loss /= T;
         optimizer->zero_grad();
         loss.backward();
-        /*
         for (const auto &p: model->named_parameters())
             if (p.value().grad().defined()){
-                log(p.key());
-                log(p.value().norm());
-                log(p.value().grad().norm());
-                log(p.value().grad().norm() / (p.value().norm() + 1e-8));
-                log("~~~~~~~~~~~");
+                std::string key = p.key(), k;
+                double v = p.value().norm().item<double>();
+                double g = p.value().grad().norm().item<double>();
+                double coef = g / (v + 1e-8);
+                for(int i = 0; i < 32; ++i)
+                    if(i >= key.size())
+                        k.push_back(' ');
+                    else
+                        k.push_back(key[i]);
+                log(k + " || value-norm: " + std::to_string(v) + " || grad--norm: " + std::to_string(g) + " || grad/value: " + std::to_string(coef));
             }
-        */
         optimizer->step();
         outputs.clear(), targets.clear();
         model->reset_memory();
-        log("R: loss=" + std::to_string(loss.item<float>()) + ", time(s)=" + std::to_string(time(0) - ts) + ", " + calc_diff());
+        log("R: loss=" + std::to_string(loss.item<float>()) + ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff()));
         done_training = true;
     }
 

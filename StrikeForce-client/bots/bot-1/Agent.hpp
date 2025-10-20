@@ -181,8 +181,6 @@ public:
         }
         auto state = torch::tensor(obs, torch::dtype(torch::kFloat32)).view({1, num_channels, grid_x, grid_y});
         states.push_back(state);
-        if(actions.size() >= T)
-            return 0;
         auto output = model->forward(state);
         values.push_back(output[1]);
         log_probs.push_back(torch::log(output[0]));
@@ -196,8 +194,6 @@ public:
         if (is_training || cnt <= T)
             return;
         rewards.push_back(reward_net->get_reward(action, imitate, states.back()));
-        if(actions.size() >= T)
-            states.pop_back();
         if (rewards.back() == -2 && training) {
             log_probs.clear();
             rewards.clear();
@@ -259,8 +255,8 @@ public:
             ++cnt;
         if (actions.size() == T / 2)
             manual = !manual;
-        if (actions.size() >= T)
-            return true;
+        if (actions.size() == T * 3 / 2)
+            manual = !manual;
         return manual;
     }
 #endif
@@ -353,7 +349,7 @@ private:
                 auto adv = returns[i] - values[i];
                 p_loss -= torch::min(ratio * adv, clipped * adv);
             }
-            auto loss = (p_loss + 0.25 * v_loss) / (T * num_epochs);
+            auto loss = (p_loss + 0.5 * v_loss) / T;
             optimizer->zero_grad();
             loss.backward();
             for (const auto &p: model->named_parameters())

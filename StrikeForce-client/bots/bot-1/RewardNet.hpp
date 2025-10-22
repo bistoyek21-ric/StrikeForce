@@ -25,17 +25,54 @@ SOFTWARE.
 #include "basic.hpp"
 #include <torch/torch.h>
 
-struct ResidualBlockImpl : torch::nn::Module {
+struct GamingCNNImpl : torch::nn::Module {
+    torch::nn::Conv2d conv[2] = {{nullptr}, {nullptr}};
+    int cIn, n;
+
+    GamingCNNImpl(int cIn, int n) : cIn(n), n(n){
+        for (int i = 0; i < 2; ++i)
+            conv[i] = register_module("conv" + std::to_string(i), torch::nn::Conv2d(
+                torch::nn::Conv2dOptions(cIn, n, /*kernel_size=*/1).stride(1).padding(0).bias(true)
+            ));
+    }
+    // forward: A shape (B, cIn, H, W) -> output (B, 5n, H-2, W-2)
+    torch::Tensor forward(torch::Tensor x) {
+        //TORCH_CHECK(x.dim() == 4, "input must be 4D (B,C,H,W)");
+        int64_t B = x.size(0), C_in = x.size(1), H = x.size(2), W = x.size(3);
+        //TORCH_CHECK(C_in == cIn, "input channels mismatch");
+        //TORCH_CHECK(H >= 3 && W >= 3, "height and width must be >= 3 to produce neighbors");
+        // y[0] and y[1]: shapes (B, n, H(-2 for y[0]), W(-2 for y[0]))
+        torch::Tensor y[2];
+        // crop indices: we want final spatial size (H-2, W-2).
+        // mapping: target (t_i, t_j) corresponds to original (i = t_i+1, j = t_j+1)
+        // so we slice accordingly.
+        // center from y[0]: conv[0]->forward(x[:, :, 1:-1, 1:-1])
+        y[0] = conv[0]->forward(x.index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(1, H-1), torch::indexing::Slice(1, W-1)}));
+        auto center = y[0]; // (B, n, H-2, W-2)
+        y[1] = conv[1]->forward(x);
+        // y[1] shifts:
+        auto up = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(0, H-2), torch::indexing::Slice(1, W-1)}); // i-1
+        auto down = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(2, H),   torch::indexing::Slice(1, W-1)}); // i+1
+        auto left = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(1, H-1), torch::indexing::Slice(0, W-2)}); // j-1
+        auto right = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(1, H-1), torch::indexing::Slice(2, W)});   // j+1
+        auto out = torch::cat({center, up, left, down, right}, /*dim=*/1); // (B, 5n, H-2, W-2)
+        return out;
+    }
+};
+TORCH_MODULE(GamingCNN);
+
+struct ResBImpl : torch::nn::Module {
     std::vector<torch::nn::Linear> layers;
     int num_layers;
 
-    ResidualBlockImpl(int hidden_size, int n_layers = 2) : num_layers(n_layers) {
-        for (int i = 0; i < n_layers; ++i) {
-            int in_dim  = (i % 2 ? hidden_size / 2 : hidden_size);
-            int out_dim = (i % 2 ? hidden_size : hidden_size / 2);
-            auto lin = torch::nn::Linear(in_dim, out_dim);
-            layers.push_back(register_module("lin" + std::to_string(i), lin));
-        }
+    ResBImpl(int hidden_size, int num_layers) : num_layers(num_layers) {
+        for (int i = 0; i < num_layers; ++i)
+            layers.push_back(register_module("lin" + std::to_string(i), torch::nn::Linear(hidden_size, hidden_size)));
     }
 
     torch::Tensor forward(torch::Tensor X) {
@@ -49,24 +86,17 @@ struct ResidualBlockImpl : torch::nn::Module {
         return x;
     }
 };
-TORCH_MODULE(ResidualBlock);
+TORCH_MODULE(ResB);
 
-struct ResidualConvBlockImpl : torch::nn::Module {
-    std::vector<torch::nn::Conv2d> layers;
-    int type, num_layers;
+struct ResGameCNNImpl : torch::nn::Module {
+    std::vector<GamingCNN> layers;
+    int num_layers, cIn, filters;
 
-    ResidualConvBlockImpl(int filters, int type = 1, int n_layers = 2) 
-        : type(type), num_layers(n_layers) {
-        for (int i = 0; i < n_layers; ++i) {
-            int in_ch  = (i % 2 ? filters / 2 : filters);
-            int out_ch = (i % 2 ? filters : filters / 2);
-            torch::nn::Conv2d conv{nullptr};
-            if (type == 1)
-                conv = torch::nn::Conv2d(torch::nn::Conv2dOptions(in_ch, out_ch, 3).stride(1).padding(0));
-            else
-                conv = torch::nn::Conv2d(torch::nn::Conv2dOptions(in_ch, out_ch, {1, 3}).stride({1, 2}).padding(0));
-            layers.push_back(register_module("conv" + std::to_string(i), conv));
-        }
+    ResGameCNNImpl(int cIn, int filters, int num_layers): cIn(cIn), filters(filters), num_layers(num_layers) {
+        //TORCH_CHECK(filters % 5 == 0, "filters must be devidsible by 5");
+        layers.push_back(register_module("gamecnn0", GamingCNN(cIn, filters / 5)));
+        for (int i = 1; i < num_layers; ++i)
+            layers.push_back(register_module("gamecnn" + std::to_string(i), GamingCNN(filters, filters / 5)));
     }
 
     torch::Tensor forward(torch::Tensor X) {
@@ -74,8 +104,12 @@ struct ResidualConvBlockImpl : torch::nn::Module {
         for (int i = 0; i < num_layers; ++i) {
             if (i % 2) {
                 auto out = layers[i]->forward(y);
-                int h = (int)x.size(2), w = (int)x.size(3);
-                int h1 = (int)out.size(2), w1 = (int)out.size(3);
+                if (i == 1 && cIn != filters) {
+                    x = out;
+                    continue;
+                }
+                int h = x.size(2), w = x.size(3);
+                int h1 = out.size(2), w1 = out.size(3);
                 int k = (w - w1) / 2, m = (h - h1) / 2;
                 auto cropped = x.index({
                     torch::indexing::Slice(),
@@ -91,55 +125,10 @@ struct ResidualConvBlockImpl : torch::nn::Module {
         return x;
     }
 };
-TORCH_MODULE(ResidualConvBlock);
-
-struct MyCNNImpl : torch::nn::Module {
-    std::vector<torch::nn::Conv2d> conv_layers;
-    std::vector<ResidualConvBlock> conv_blocks;
-
-    MyCNNImpl(int in_channels, int hidden_size) {
-        conv_blocks.push_back(register_module("convb1", ResidualConvBlock(80, 1, 4)));//27x87=>19x79
-        conv_layers.push_back(register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(80, hidden_size, 3).stride(2).padding(0))));//19x79=>9x39
-        conv_blocks.push_back(register_module("convb2", ResidualConvBlock(hidden_size, 1, 4)));//9x39=>1x31
-        conv_blocks.push_back(register_module("convb3", ResidualConvBlock(hidden_size, 2, 4)));//1x31=>1x1
-    }
-
-    torch::Tensor forward(torch::Tensor x) {
-        auto pad = torch::zeros({x.size(0), 24, x.size(2), x.size(3)});
-        torch::Tensor out = torch::cat({pad, x, pad}, 1);
-        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
-        torch::Tensor cropped, residual;
-        out = conv_blocks[0]->forward(out);
-        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
-        cropped = out.index({
-            torch::indexing::Slice(),
-            torch::indexing::Slice(),
-            torch::indexing::Slice(5, 14),
-            torch::indexing::Slice(20, 59)
-        });
-        pad = torch::zeros({cropped.size(0), 24, cropped.size(2), cropped.size(3)});
-        residual = torch::cat({pad, cropped, pad}, 1);
-        out = conv_layers[0]->forward(out);
-        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
-        out = out + residual;
-        out = conv_blocks[1]->forward(out);
-        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
-        residual = out.index({
-            torch::indexing::Slice(),
-            torch::indexing::Slice(),
-            torch::indexing::Slice(),
-            torch::indexing::Slice(15, 16)
-        });
-        out = conv_blocks[2]->forward(out);
-        out = out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
-        out = out + residual;
-        return out * std::sqrt(out.numel()) / (out.norm() + 1e-8);
-    }
-};
-TORCH_MODULE(MyCNN);
+TORCH_MODULE(ResGameCNN);
 
 struct RewardModelImpl : torch::nn::Module {
-    MyCNN cnn{nullptr};
+    ResGameCNN cnn{nullptr};
     torch::nn::GRU gru{nullptr};
     torch::nn::Sequential action_processor{nullptr};
     torch::nn::Sequential combined_processor{nullptr};
@@ -149,16 +138,13 @@ struct RewardModelImpl : torch::nn::Module {
 
     torch::Tensor action_input, h_state;
  
-    RewardModelImpl(int n_channels = 32, int hidden = 128, int n_actions = 9, float alpha_ = 0.9f)
-        : num_channels(n_channels), hidden_size(hidden), num_actions(n_actions), alpha(alpha_){
-        cnn = register_module("cnn", MyCNN(num_channels, hidden_size));
+    RewardModelImpl(int num_channels = 32, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
+        : num_channels(num_channels), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
+        cnn = register_module("cnn", ResGameCNN(num_channels, hidden_size, 40));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
-        action_processor = register_module("action_proc", torch::nn::Sequential(
-            torch::nn::Linear(num_actions, hidden_size), torch::nn::ReLU(), ResidualBlock(hidden_size, 2)
-        ));
         combined_processor = register_module("combined_proc", torch::nn::Sequential(
-            torch::nn::Linear(2 * hidden_size, hidden_size), torch::nn::ReLU(),
-            ResidualBlock(hidden_size, 6), torch::nn::Linear(hidden_size, 1),
+            torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU(),
+            ResB(hidden_size, 3), torch::nn::Linear(hidden_size, 1),
             torch::nn::Sigmoid()
         ));
         action_input = register_buffer("a_input", torch::zeros({num_actions}));
@@ -174,6 +160,7 @@ struct RewardModelImpl : torch::nn::Module {
 
     torch::Tensor forward(int action, const torch::Tensor &state) {
         auto feat = cnn->forward(state);
+        feat = feat * std::sqrt(feat.numel()) / (feat.norm() + 1e-8);
         auto r = gru->forward(feat.view({1, 1, -1}), h_state);
         feat = feat.view({-1});
         auto out_seq = std::get<0>(r).view({-1});
@@ -181,9 +168,7 @@ struct RewardModelImpl : torch::nn::Module {
         h_state = std::get<1>(r);
         action_input = action_input * alpha;
         action_input[action] += 1 - alpha;
-        auto a_feat = action_processor->forward(action_input).view({-1});
-        a_feat = a_feat * std::sqrt(a_feat.numel()) / (a_feat.norm() + 1e-8);
-        auto combined = torch::cat({out_seq + feat, a_feat + feat}) / 2;
+        auto combined = torch::cat({out_seq, feat, action_input});
         return combined_processor->forward(combined);
     }
 };
@@ -193,7 +178,7 @@ class RewardNet {
 public:
     RewardNet(bool _training = true, int _T = 256, float _learning_rate = 1e-3, float _alpha = 0.9,
         const std::string &_backup_dir = "bots/bot-1/backup/reward_backup")
-        : training(_training), T(_T), learning_rate(_learning_rate), alpha(_alpha), backup_dir(_backup_dir){
+        : training(_training), T(_T), learning_rate(_learning_rate), alpha(_alpha), backup_dir(_backup_dir) {
         model = RewardModel();
         if (!backup_dir.empty()) {
             if (std::filesystem::exists(backup_dir)) {
@@ -207,8 +192,12 @@ public:
             }
         }
         coor[0] = snap_shot();
-        for (auto &p: coor[0])
+        int param_count = 0;
+        for (auto &p: coor[0]) {
             initial.push_back(p.clone());
+            param_count += p.numel();
+        }
+        //log("RewardNet's parameters: " + std::to_string(param_count));
         model->to(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
         if (!training)
             model->eval();
@@ -261,7 +250,7 @@ private:
     std::thread trainThread;
     float learning_rate, alpha;
     int T;
-    const int num_actions = 10, num_channels = 32, grid_x = 27, grid_y = 87, hidden_size = 128;
+    const int num_actions = 10, num_channels = 32, grid_x = 81, grid_y = 81, hidden_size = 160;
     std::string backup_dir;
     RewardModel model{nullptr};
     std::unique_ptr<torch::optim::AdamW> optimizer{nullptr};
@@ -324,11 +313,14 @@ private:
         auto loss = torch::zeros({});
         for (int i = 0; i < T; ++i) {
             loss += torch::binary_cross_entropy(outputs[i], targets[i]);
+            /////////////////////////////////////////////////////
             log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
+            /////////////////////////////////////////////////////
         }
         loss /= T;
         optimizer->zero_grad();
         loss.backward();
+        /////////////////////////////////////////////////////
         for (const auto &p: model->named_parameters())
             if (p.value().grad().defined()){
                 std::string key = p.key(), k;
@@ -342,6 +334,7 @@ private:
                         k.push_back(key[i]);
                 log(k + " || value-norm: " + std::to_string(v) + " || grad--norm: " + std::to_string(g) + " || grad/value: " + std::to_string(coef));
             }
+        /////////////////////////////////////////////////////
         optimizer->step();
         outputs.clear(), targets.clear();
         model->reset_memory();

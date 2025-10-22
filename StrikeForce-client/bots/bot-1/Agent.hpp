@@ -28,7 +28,7 @@ SOFTWARE.
 const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
 
 struct AgentModelImpl : torch::nn::Module {
-    MyCNN cnn{nullptr};
+    ResGameCNN cnn{nullptr};
     torch::nn::GRU gru{nullptr};
     torch::nn::Sequential action_processor{nullptr};
     torch::nn::Sequential policy_head{nullptr}, value_head{nullptr}, gate{nullptr};
@@ -38,23 +38,19 @@ struct AgentModelImpl : torch::nn::Module {
 
     torch::Tensor action_input, h_state;
 
-    AgentModelImpl(int n_channels = 32, int hidden = 128, int n_actions = 9, float alpha_ = 0.9f)
-        : num_channels(n_channels), hidden_size(hidden), num_actions(n_actions), alpha(alpha_){
-        cnn = register_module("cnn", MyCNN(num_channels, hidden_size));
+    AgentModelImpl(int num_channels = 32, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
+        : num_channels(num_channels), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
+        cnn = register_module("cnn", ResGameCNN(num_channels, hidden_size, 40));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
-        action_processor = register_module("action_proc", torch::nn::Sequential(
-            torch::nn::Linear(num_actions, hidden_size), torch::nn::ReLU(),
-            ResidualBlock(hidden_size, 2)
-        ));
         gate = register_module("gate", torch::nn::Sequential(
-            torch::nn::Linear(2 * hidden_size, hidden_size), torch::nn::ReLU()
+            torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU()
         ));
         value_head = register_module("value", torch::nn::Sequential(
-            ResidualBlock(hidden_size, 6), torch::nn::Linear(hidden_size, 1),
+            ResB(hidden_size, 3), torch::nn::Linear(hidden_size, 1),
             torch::nn::Sigmoid()
         ));
         policy_head = register_module("policy", torch::nn::Sequential(
-            ResidualBlock(hidden_size, 6), torch::nn::Linear(hidden_size, num_actions)
+            ResB(hidden_size, 3), torch::nn::Linear(hidden_size, num_actions)
         ));
         action_input = register_buffer("a_input", torch::zeros({num_actions}));
         h_state = register_buffer("h_state", torch::zeros({2, 1, hidden_size}));
@@ -74,14 +70,13 @@ struct AgentModelImpl : torch::nn::Module {
 
     std::vector<torch::Tensor> forward(const torch::Tensor &state) {
         auto feat = cnn->forward(state);
+        feat = feat * std::sqrt(feat.numel()) / (feat.norm() + 1e-8);
         auto r = gru->forward(feat.view({1, 1, -1}), h_state);
         feat = feat.view({-1});
         auto out_seq = std::get<0>(r).view({-1});
         out_seq = out_seq * std::sqrt(out_seq.numel()) / (out_seq.norm() + 1e-8);
         h_state = std::get<1>(r);
-        auto a_feat = action_processor->forward(action_input);
-        a_feat = a_feat * std::sqrt(a_feat.numel()) / (a_feat.norm() + 1e-8);
-        auto gate_input = torch::cat({out_seq + feat, a_feat + feat}) / 2;
+        auto gate_input = torch::cat({out_seq, feat, action_input});
         auto gated = gate->forward(gate_input);
         auto logits = policy_head->forward(gated);
         auto p = torch::softmax(logits, -1) + 1e-8;
@@ -96,7 +91,7 @@ public:
     Agent(bool _training = true, int _T = 256, int _num_epochs = 4, float _gamma = 0.98, float _learning_rate = 1e-3,
          float _ppo_clip = 0.2, float _alpha = 0.9, const std::string &_backup_dir = "bots/bot-1/backup/agent_backup")
         : training(_training), T(_T), num_epochs(_num_epochs), gamma(_gamma), learning_rate(_learning_rate),
-        ppo_clip(_ppo_clip), alpha(_alpha), backup_dir(_backup_dir){
+        ppo_clip(_ppo_clip), alpha(_alpha), backup_dir(_backup_dir) {
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "loading backup ..." << std::endl;
         request_and_extract_backup(backup_path, bot_code);
@@ -104,7 +99,7 @@ public:
         std::cout << "press space to continue" << std::endl;
         while (getch() != ' ');
 #endif
-        reward_net = new RewardNet();
+        reward_net = new RewardNet(false);
         model = AgentModel();
         if (!backup_dir.empty()) {
             if (std::filesystem::exists(backup_dir)) {
@@ -118,8 +113,12 @@ public:
             }
         }
         coor[0] = snap_shot();
-        for (auto &p: coor[0])
+        int param_count = 0;
+        for (auto &p: coor[0]) {
             initial.push_back(p.clone());
+            param_count += p.numel();
+        }
+        //log("Agent's parameters: " + std::to_string(param_count));
         model->to(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
         for (auto &p : model->parameters())
             p.set_requires_grad(true);
@@ -208,14 +207,6 @@ public:
                 is_training = true;
                 done_training = false;
                 trainThread = std::thread(&Agent::train, this);
-                ///////////////////////
-                if (trainThread.joinable()){
-                    std::cout << "model is training..." << std::endl;
-                    trainThread.join();
-                    std::cout << "done! press space button to continue" << std::endl;
-                    while(getch() != ' ');
-                }
-                ///////////////////////
             }
             else {
                 actions.clear();
@@ -232,6 +223,14 @@ public:
         if (!is_training && cnt <= T)
             ++cnt;
         if (is_training) {
+            ///////////////////////
+            if (trainThread.joinable()){
+                std::cout << "model is training..." << std::endl;
+                trainThread.join();
+                std::cout << "done! press space button to continue" << std::endl;
+                while(getch() != ' ');
+            }
+            ///////////////////////
             if (done_training) {
                 is_training = false;
                 if (trainThread.joinable())
@@ -239,6 +238,12 @@ public:
                 std::mt19937 gen(std::random_device{}());
                 std::uniform_int_distribution<> dist(0, 1);
                 manual = dist(gen);
+                /////////////////////////////
+                if (manual) {
+                    std::cout << "manual part! press space button to continue" << std::endl;
+                    while(getch() != ' ');
+                }
+                ////////////////////////////
             }
             else
                return true;
@@ -250,13 +255,24 @@ public:
             std::uniform_int_distribution<> dist(0, 1);
             manual = dist(gen);
             ++cnt;
+            /////////////////////////////
+            if (manual) {
+                std::cout << "manual part! press space button to continue" << std::endl;
+                while(getch() != ' ');
+            }
+            ////////////////////////////
         }
         else if (cnt == T + 2)
             ++cnt;
-        if (actions.size() == T / 2)
+        if (actions.size() == T / 2 || actions.size() == T * 3 / 2) {
             manual = !manual;
-        if (actions.size() == T * 3 / 2)
-            manual = !manual;
+            /////////////////////////////
+            if (manual) {
+                std::cout << "manual part! press space button to continue" << std::endl;
+                while(getch() != ' ');
+            }
+            ////////////////////////////
+        }
         return manual;
     }
 #endif
@@ -270,7 +286,7 @@ private:
     std::thread trainThread;
     float learning_rate, alpha, gamma, ppo_clip;
     int T, num_epochs, cnt = 0;
-    const int num_actions = 10, num_channels = 32, grid_x = 27, grid_y = 87, hidden_size = 128;
+    const int num_actions = 10, num_channels = 32, grid_x = 81, grid_y = 81, hidden_size = 160;
     std::string backup_dir;
     AgentModel model{nullptr};
     RewardNet* reward_net;
@@ -352,6 +368,7 @@ private:
             auto loss = (p_loss + 0.5 * v_loss) / T;
             optimizer->zero_grad();
             loss.backward();
+            /////////////////////////////////////////////////////
             for (const auto &p: model->named_parameters())
                 if (p.value().grad().defined()) {
                     std::string key = p.key(), k;
@@ -365,6 +382,7 @@ private:
                             k.push_back(key[i]);
                     log(k + " || value-norm: " + std::to_string(v) + " || grad--norm: " + std::to_string(g) + " || grad/value: " + std::to_string(coef));
                 }
+            /////////////////////////////////////////////////////
             optimizer->step();
             log("A: loss=" + std::to_string(loss.item<float>()) + "| p_loss=" + std::to_string(p_loss.item<float>() / (T * num_epochs)) + "| v_loss=" + std::to_string(0.25 * v_loss.item<float>() / (T * num_epochs)) + ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff()));
         }

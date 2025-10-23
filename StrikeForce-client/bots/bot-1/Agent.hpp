@@ -40,7 +40,7 @@ struct AgentModelImpl : torch::nn::Module {
 
     AgentModelImpl(int num_channels = 32, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
         : num_channels(num_channels), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
-        cnn = register_module("cnn", ResGameCNN(num_channels, hidden_size, 40));
+        cnn = register_module("cnn", ResGameCNN(num_channels, hidden_size, 18));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
         gate = register_module("gate", torch::nn::Sequential(
             torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU()
@@ -99,7 +99,7 @@ public:
         std::cout << "press space to continue" << std::endl;
         while (getch() != ' ');
 #endif
-        reward_net = new RewardNet(false);
+        reward_net = new RewardNet(true);
         model = AgentModel();
         if (!backup_dir.empty()) {
             if (std::filesystem::exists(backup_dir)) {
@@ -118,7 +118,7 @@ public:
             initial.push_back(p.clone());
             param_count += p.numel();
         }
-        //log("Agent's parameters: " + std::to_string(param_count));
+        log("Agent's parameters: " + std::to_string(param_count));
         model->to(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
         for (auto &p : model->parameters())
             p.set_requires_grad(true);
@@ -286,7 +286,7 @@ private:
     std::thread trainThread;
     float learning_rate, alpha, gamma, ppo_clip;
     int T, num_epochs, cnt = 0;
-    const int num_actions = 10, num_channels = 32, grid_x = 81, grid_y = 81, hidden_size = 160;
+    const int num_actions = 10, num_channels = 32, grid_x = 37, grid_y = 37, hidden_size = 160;
     std::string backup_dir;
     AgentModel model{nullptr};
     RewardNet* reward_net;

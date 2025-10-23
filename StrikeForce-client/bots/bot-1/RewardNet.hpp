@@ -26,41 +26,59 @@ SOFTWARE.
 #include <torch/torch.h>
 
 struct GamingCNNImpl : torch::nn::Module {
-    torch::nn::Conv2d conv[2] = {{nullptr}, {nullptr}};
-    int cIn, n;
+    std::vector<torch::nn::Conv2d> conv;
+    int cIn;
+    std::vector<int> n; // n[0] + 4 * (n[1] + n[2])
 
-    GamingCNNImpl(int cIn, int n) : cIn(n), n(n){
-        for (int i = 0; i < 2; ++i)
-            conv[i] = register_module("conv" + std::to_string(i), torch::nn::Conv2d(
-                torch::nn::Conv2dOptions(cIn, n, /*kernel_size=*/1).stride(1).padding(0).bias(true)
-            ));
+    GamingCNNImpl(int cIn, std::vector<int> n) : cIn(cIn), n(n) {
+        //if (n.size() != 3) exit(1);
+        for (int i = 0; i < 3; ++i)
+            conv.push_back( 
+                register_module("conv" + std::to_string(i), torch::nn::Conv2d(
+                torch::nn::Conv2dOptions(cIn, n[i], /*kernel_size=*/1).stride(1).padding(0).bias(false)
+            )));
     }
-    // forward: A shape (B, cIn, H, W) -> output (B, 5n, H-2, W-2)
+    
     torch::Tensor forward(torch::Tensor x) {
-        //TORCH_CHECK(x.dim() == 4, "input must be 4D (B,C,H,W)");
         int64_t B = x.size(0), C_in = x.size(1), H = x.size(2), W = x.size(3);
-        //TORCH_CHECK(C_in == cIn, "input channels mismatch");
-        //TORCH_CHECK(H >= 3 && W >= 3, "height and width must be >= 3 to produce neighbors");
-        // y[0] and y[1]: shapes (B, n, H(-2 for y[0]), W(-2 for y[0]))
-        torch::Tensor y[2];
-        // crop indices: we want final spatial size (H-2, W-2).
-        // mapping: target (t_i, t_j) corresponds to original (i = t_i+1, j = t_j+1)
-        // so we slice accordingly.
-        // center from y[0]: conv[0]->forward(x[:, :, 1:-1, 1:-1])
+        torch::Tensor y[3];
+        /*
+        ###
+        #0#
+        ###
+        */
         y[0] = conv[0]->forward(x.index({torch::indexing::Slice(), torch::indexing::Slice(),
             torch::indexing::Slice(1, H-1), torch::indexing::Slice(1, W-1)}));
-        auto center = y[0]; // (B, n, H-2, W-2)
+        auto c = y[0];
+        /*
+        #0# | ### | ### | ###
+        ### | ##0 | ### | 0## 
+        ### | ### | #0# | ###
+        */
         y[1] = conv[1]->forward(x);
-        // y[1] shifts:
-        auto up = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(0, H-2), torch::indexing::Slice(1, W-1)}); // i-1
-        auto down = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(2, H),   torch::indexing::Slice(1, W-1)}); // i+1
-        auto left = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(1, H-1), torch::indexing::Slice(0, W-2)}); // j-1
-        auto right = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(1, H-1), torch::indexing::Slice(2, W)});   // j+1
-        auto out = torch::cat({center, up, left, down, right}, /*dim=*/1); // (B, 5n, H-2, W-2)
+        auto u = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(0, H-2), torch::indexing::Slice(1, W-1)});
+        auto r = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(1, H-1), torch::indexing::Slice(2, W)});
+        auto d = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(2, H),   torch::indexing::Slice(1, W-1)});
+        auto l = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(1, H-1), torch::indexing::Slice(0, W-2)});
+        /*
+        ##0 | ### | ### | 0##
+        ### | ### | ### | ### 
+        ### | ##0 | 0## | ###
+        */
+        y[2] = conv[2]->forward(x);
+        auto ur = y[2].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(0, H-2), torch::indexing::Slice(2, W)});
+        auto dr = y[2].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(2, H),   torch::indexing::Slice(2, W)});
+        auto dl = y[2].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(2, H), torch::indexing::Slice(0, W-2)});
+        auto ul = y[2].index({torch::indexing::Slice(), torch::indexing::Slice(),
+            torch::indexing::Slice(0, H-2), torch::indexing::Slice(0, W-2)});
+        auto out = torch::cat({c, u, ur, r, dr, d, dl, l, ul}, /*dim=*/1);
         return out;
     }
 };
@@ -94,9 +112,10 @@ struct ResGameCNNImpl : torch::nn::Module {
 
     ResGameCNNImpl(int cIn, int filters, int num_layers): cIn(cIn), filters(filters), num_layers(num_layers) {
         //TORCH_CHECK(filters % 5 == 0, "filters must be devidsible by 5");
-        layers.push_back(register_module("gamecnn0", GamingCNN(cIn, filters / 5)));
+        std::vector<int> n = {filters / 5, filters / 5 -  filters / 15, filters / 15};
+        layers.push_back(register_module("gamecnn0", GamingCNN(cIn, n)));
         for (int i = 1; i < num_layers; ++i)
-            layers.push_back(register_module("gamecnn" + std::to_string(i), GamingCNN(filters, filters / 5)));
+            layers.push_back(register_module("gamecnn" + std::to_string(i), GamingCNN(filters, n)));
     }
 
     torch::Tensor forward(torch::Tensor X) {
@@ -105,7 +124,7 @@ struct ResGameCNNImpl : torch::nn::Module {
             if (i % 2) {
                 auto out = layers[i]->forward(y);
                 if (i == 1 && cIn != filters) {
-                    x = out;
+                    x = torch::relu(out);
                     continue;
                 }
                 int h = x.size(2), w = x.size(3);
@@ -140,7 +159,7 @@ struct RewardModelImpl : torch::nn::Module {
  
     RewardModelImpl(int num_channels = 32, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
         : num_channels(num_channels), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
-        cnn = register_module("cnn", ResGameCNN(num_channels, hidden_size, 40));
+        cnn = register_module("cnn", ResGameCNN(num_channels, hidden_size, 18));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
         combined_processor = register_module("combined_proc", torch::nn::Sequential(
             torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU(),
@@ -197,7 +216,7 @@ public:
             initial.push_back(p.clone());
             param_count += p.numel();
         }
-        //log("RewardNet's parameters: " + std::to_string(param_count));
+        log("RewardNet's parameters: " + std::to_string(param_count));
         model->to(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
         if (!training)
             model->eval();
@@ -250,7 +269,7 @@ private:
     std::thread trainThread;
     float learning_rate, alpha;
     int T;
-    const int num_actions = 10, num_channels = 32, grid_x = 81, grid_y = 81, hidden_size = 160;
+    const int num_actions = 10, num_channels = 32, grid_x = 37, grid_y = 37, hidden_size = 160;
     std::string backup_dir;
     RewardModel model{nullptr};
     std::unique_ptr<torch::optim::AdamW> optimizer{nullptr};

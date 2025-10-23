@@ -140,8 +140,8 @@ namespace Environment::Field{
 		std::vector<int> v = player.get_cor();
 		std::vector<float> obs;
 		std::vector<std::vector<float>> ch(32);
-		for(int i = v[1] - 40; i <= v[1] + 40; ++i)
-			for(int j = v[2] - 40; j <= v[2] + 40; ++j){
+		for(int i = v[1] - 18; i <= v[1] + 18; ++i)
+			for(int j = v[2] - 18; j <= v[2] + 18; ++j){
 				std::vector<float> vec;
 				if(i < 0 || j < 0 || N <= i || M <= j)
 					vec = describe(nd, player);
@@ -151,18 +151,18 @@ namespace Environment::Field{
 					ch[k].push_back(vec[k]);
 			}
 		for(int k = 0; k < 32; ++k)
-			for(int i = 0; i < 81; ++i)
-				for(int j = 0; j < 81; ++j)
-					if(ch[k][i * 81 + j] < 0) 
-						obs.push_back(-std::pow(-ch[k][i * 81 + j] / 10, 0.2));
+			for(int i = 0; i < 37; ++i)
+				for(int j = 0; j < 37; ++j)
+					if(ch[k][i * 37 + j] < 0) 
+						obs.push_back(-std::pow(-ch[k][i * 37 + j] / 10, 0.2));
 					else 
-						obs.push_back(std::pow(ch[k][i * 81 + j] / 10, 0.2));
+						obs.push_back(std::pow(ch[k][i * 37 + j] / 10, 0.2));
 		return action[player.agent->predict(obs)];
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+xp`1awsd";
-		player.agent = new Agent(false);
+		player.agent = new Agent(true);
 		player.set_agent_active();
 	}
 

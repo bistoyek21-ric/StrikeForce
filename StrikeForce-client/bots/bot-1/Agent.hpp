@@ -23,6 +23,7 @@ SOFTWARE.
 
 */
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
+//sudo nice -n -20 ./app
 #include "RewardNet.hpp"
 
 const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";

@@ -107,18 +107,28 @@ struct ResBImpl : torch::nn::Module {
 TORCH_MODULE(ResB);
 
 struct ResGameCNNImpl : torch::nn::Module {
-    std::vector<GamingCNN> layers;
+    //std::vector<GamingCNN> layers;
+    std::vector<torch::nn::Conv2d> layers;
     int num_layers, cIn, filters;
 
     ResGameCNNImpl(int cIn, int filters, int num_layers): cIn(cIn), filters(filters), num_layers(num_layers) {
+        /*
         //TORCH_CHECK(filters % 5 == 0, "filters must be devidsible by 5");
         std::vector<int> n = {filters / 5, filters / 5 -  filters / 15, filters / 15};
         layers.push_back(register_module("gamecnn0", GamingCNN(cIn, n)));
         for (int i = 1; i < num_layers; ++i)
             layers.push_back(register_module("gamecnn" + std::to_string(i), GamingCNN(filters, n)));
+        */
+        layers.push_back(register_module("cnn0", torch::nn::Conv2d(
+            torch::nn::Conv2dOptions(cIn, filters, /*kernel_size=*/3).stride(1).padding(0).bias(false)
+        )));
+        layers.push_back(register_module("cnn1", torch::nn::Conv2d(
+            torch::nn::Conv2dOptions(filters, filters, /*kernel_size=*/3).stride(1).padding(0).bias(false)
+        )));
     }
 
     torch::Tensor forward(torch::Tensor X) {
+        /*
         torch::Tensor y, x = X.clone();
         for (int i = 0; i < num_layers; ++i) {
             if (i % 2) {
@@ -141,6 +151,11 @@ struct ResGameCNNImpl : torch::nn::Module {
             else
                 y = torch::relu(layers[i]->forward(x));
         }
+        return x;
+        */
+        auto x = X.clone();
+        for (int i = 0; i < num_layers; ++i)
+            x = layers[(int)(i != 0)]->forward(x);
         return x;
     }
 };
@@ -330,13 +345,13 @@ private:
     void train() {
         time_t ts = time(0);
         auto loss = torch::zeros({});
-        for (int i = 0; i < T; ++i) {
+        for (int i = 0; i < 2 * T; ++i) {
             loss += torch::binary_cross_entropy(outputs[i], targets[i]);
             /////////////////////////////////////////////////////
             log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
             /////////////////////////////////////////////////////
         }
-        loss /= T;
+        loss /= 2 * T;
         optimizer->zero_grad();
         loss.backward();
         /////////////////////////////////////////////////////
@@ -364,7 +379,7 @@ private:
     void update(const torch::Tensor &output, const torch::Tensor &target) {
         outputs.push_back(output);
         targets.push_back(target);
-        if (outputs.size() == T)
+        if (outputs.size() == 2 * T)
             if (training) {
                 is_training = true;
                 done_training = false;

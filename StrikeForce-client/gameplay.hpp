@@ -1004,8 +1004,8 @@ namespace Environment::Field{
 			printer.print(" R : increase hight, T : decrease hight\n");
 			printer.print("-------------------------------------\n");
 			printer.print("[1]: its location on the standardized keyboards is the key below Esc.\n");
-			printer.print("[2]: you can enable NumLock and then use the arrows!.\n");
-			printer.print("note: if you do an invalid move nothing will happen\n");
+			printer.print("[2]: you can enable NumLock and then use the arrows!\n");
+			printer.print("note: if you do an invalid move nothing will happen.\n");
 #if !defined(CROWDSOURCED_TRAINING)
 			printer.print("* If you selected Automate you can press the space key to disable rendering.\n");
 #endif

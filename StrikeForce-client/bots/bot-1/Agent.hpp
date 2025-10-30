@@ -23,25 +23,24 @@ SOFTWARE.
 
 */
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
-//sudo nice -n -20 ./app
 #include "RewardNet.hpp"
 
 const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
 
 struct AgentModelImpl : torch::nn::Module {
-    ResGameCNN cnn{nullptr};
+    GameAtt att{nullptr};
     torch::nn::GRU gru{nullptr};
     torch::nn::Sequential action_processor{nullptr};
     torch::nn::Sequential policy_head{nullptr}, value_head{nullptr}, gate{nullptr};
 
-    int num_channels, hidden_size, num_actions;
+    int num_channels, grid_x, grid_y, hidden_size, num_actions;
     const float alpha;
 
     torch::Tensor action_input, h_state;
 
-    AgentModelImpl(int num_channels = 32, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
-        : num_channels(num_channels), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
-        cnn = register_module("cnn", ResGameCNN(num_channels, hidden_size, 18));
+    AgentModelImpl(int num_channels = 32, int grid_x = 37, int grid_y = 37, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
+        : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
+        att = register_module("att", GameAtt(hidden_size / num_channels, grid_x * grid_y, num_channels));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
         gate = register_module("gate", torch::nn::Sequential(
             torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU()
@@ -53,13 +52,11 @@ struct AgentModelImpl : torch::nn::Module {
         policy_head = register_module("policy", torch::nn::Sequential(
             ResB(hidden_size, 3), torch::nn::Linear(hidden_size, num_actions)
         ));
-        action_input = register_buffer("a_input", torch::zeros({num_actions}));
-        h_state = register_buffer("h_state", torch::zeros({2, 1, hidden_size}));
+        action_input = torch::zeros({num_actions});
+        h_state = torch::zeros({2, 1, hidden_size});
     }
 
     void reset_memory() {
-        action_input = action_input.detach();
-        h_state = h_state.detach();
         action_input = torch::zeros({num_actions});
         h_state = torch::zeros({2, 1, hidden_size});
     }
@@ -70,7 +67,7 @@ struct AgentModelImpl : torch::nn::Module {
     }
 
     std::vector<torch::Tensor> forward(const torch::Tensor &state) {
-        auto feat = cnn->forward(state);
+        auto feat = att->forward(state);
         feat = feat * std::sqrt(feat.numel()) / (feat.norm() + 1e-8);
         auto r = gru->forward(feat.view({1, 1, -1}), h_state);
         feat = feat.view({-1});
@@ -89,10 +86,10 @@ TORCH_MODULE(AgentModel);
 
 class Agent {
 public:
-    Agent(bool _training = true, int _T = 256, int _num_epochs = 4, float _gamma = 0.98, float _learning_rate = 1e-3,
-         float _ppo_clip = 0.2, float _alpha = 0.9, const std::string &_backup_dir = "bots/bot-1/backup/agent_backup")
-        : training(_training), T(_T), num_epochs(_num_epochs), gamma(_gamma), learning_rate(_learning_rate),
-        ppo_clip(_ppo_clip), alpha(_alpha), backup_dir(_backup_dir) {
+    Agent(bool training = true, int T = 256, int num_epochs = 4, float gamma = 0.98, float learning_rate = 1e-3,
+         float ppo_clip = 0.2, float alpha = 0.9, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
+        : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
+        ppo_clip(ppo_clip), alpha(alpha), backup_dir(backup_dir) {
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "loading backup ..." << std::endl;
         request_and_extract_backup(backup_path, bot_code);
@@ -116,18 +113,19 @@ public:
         coor[0] = snap_shot();
         int param_count = 0;
         for (auto &p: coor[0]) {
-            initial.push_back(p.clone());
+            initial.push_back(p.detach().clone());
             param_count += p.numel();
         }
         log("Agent's parameters: " + std::to_string(param_count));
-        model->to(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
         for (auto &p : model->parameters())
             p.set_requires_grad(true);
         if (!training)
             model->eval();
-        else
+        else {
+            model->train();
             optimizer = std::make_unique<torch::optim::AdamW>(model->parameters(), torch::optim::AdamWOptions(learning_rate));
-        auto dummy = torch::zeros({1, num_channels, grid_x, grid_y});
+        }
+        auto dummy = torch::zeros({num_channels, grid_x * grid_y});
         model->forward(dummy);
         model->reset_memory();
     }
@@ -142,13 +140,12 @@ public:
             }
         coor[0].clear();
         for (auto &p: initial)
-            coor[0].push_back(p.clone());
+            coor[0].push_back(p.detach().clone());
         log("-------\nA total dist: step=" + std::to_string(calc_diff()));
         log("======================");
         log_file.close();
         if (training && !backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             model->reset_memory();
-            model->to(torch::kCPU);
             torch::save(model, backup_dir + "/model.pt");
         }
 #if defined(CROWDSOURCED_TRAINING)
@@ -179,7 +176,7 @@ public:
             return 0;
 #endif
         }
-        auto state = torch::tensor(obs, torch::dtype(torch::kFloat32)).view({1, num_channels, grid_x, grid_y});
+        auto state = torch::tensor(obs, torch::dtype(torch::kFloat32)).view({num_channels, -1});
         states.push_back(state);
         auto output = model->forward(state);
         values.push_back(output[1]);
@@ -207,7 +204,15 @@ public:
             if (training) {
                 is_training = true;
                 done_training = false;
-                trainThread = std::thread(&Agent::train, this);
+                //trainThread = std::thread(&Agent::train, this);
+                ///////////////////////////////////////////////
+                std::cout << "model is training..." << std::endl;
+                train();
+                is_training = false;
+                std::cout << "done! press space button to continue" << std::endl;
+                while(getch() != ' ');
+                std::cout << "space button pressed!" << std::endl;
+                /////////////////////////////////////////////
             }
             else {
                 actions.clear();
@@ -224,53 +229,35 @@ public:
         if (!is_training && cnt <= T)
             ++cnt;
         if (is_training) {
-            ///////////////////////
-            if (trainThread.joinable()){
-                std::cout << "model is training..." << std::endl;
-                trainThread.join();
-                std::cout << "done! press space button to continue" << std::endl;
-                while(getch() != ' ');
-            }
-            ///////////////////////
             if (done_training) {
                 is_training = false;
                 if (trainThread.joinable())
                     trainThread.join();
-                std::mt19937 gen(std::random_device{}());
-                std::uniform_int_distribution<> dist(0, 1);
-                manual = dist(gen);
-                /////////////////////////////
-                if (manual) {
-                    std::cout << "manual part! press space button to continue" << std::endl;
-                    while(getch() != ' ');
-                }
-                ////////////////////////////
             }
             else
                return true;
         }
         if (cnt <= T)
             manual = true;
-        if (cnt == T + 1) {
+        else if (actions.empty()) {
             std::mt19937 gen(std::random_device{}());
             std::uniform_int_distribution<> dist(0, 1);
             manual = dist(gen);
-            ++cnt;
             /////////////////////////////
             if (manual) {
                 std::cout << "manual part! press space button to continue" << std::endl;
                 while(getch() != ' ');
+                std::cout << "space button pressed!" << std::endl;
             }
             ////////////////////////////
         }
-        else if (cnt == T + 2)
-            ++cnt;
         if (actions.size() == T / 2 || actions.size() == T * 3 / 2) {
             manual = !manual;
             /////////////////////////////
             if (manual) {
                 std::cout << "manual part! press space button to continue" << std::endl;
                 while(getch() != ' ');
+                std::cout << "space button pressed!" << std::endl;
             }
             ////////////////////////////
         }
@@ -312,7 +299,7 @@ private:
             diff += (coor[1][i] - coor[0][i]).pow(2).sum().item<float>();
         coor[0].clear();
         for (auto& p: coor[1])
-            coor[0].push_back(p.clone());
+            coor[0].push_back(p.detach().clone());
         coor[1].clear();
         return std::sqrt(diff);
     }

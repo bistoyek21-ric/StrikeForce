@@ -25,65 +25,6 @@ SOFTWARE.
 #include "basic.hpp"
 #include <torch/torch.h>
 
-struct GamingCNNImpl : torch::nn::Module {
-    std::vector<torch::nn::Conv2d> conv;
-    int cIn;
-    std::vector<int> n; // n[0] + 4 * (n[1] + n[2])
-
-    GamingCNNImpl(int cIn, std::vector<int> n) : cIn(cIn), n(n) {
-        //if (n.size() != 3) exit(1);
-        for (int i = 0; i < 3; ++i)
-            conv.push_back( 
-                register_module("conv" + std::to_string(i), torch::nn::Conv2d(
-                torch::nn::Conv2dOptions(cIn, n[i], /*kernel_size=*/1).stride(1).padding(0).bias(false)
-            )));
-    }
-    
-    torch::Tensor forward(torch::Tensor x) {
-        int64_t B = x.size(0), C_in = x.size(1), H = x.size(2), W = x.size(3);
-        torch::Tensor y[3];
-        /*
-        ###
-        #0#
-        ###
-        */
-        y[0] = conv[0]->forward(x.index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(1, H-1), torch::indexing::Slice(1, W-1)}));
-        auto c = y[0];
-        /*
-        #0# | ### | ### | ###
-        ### | ##0 | ### | 0## 
-        ### | ### | #0# | ###
-        */
-        y[1] = conv[1]->forward(x);
-        auto u = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(0, H-2), torch::indexing::Slice(1, W-1)});
-        auto r = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(1, H-1), torch::indexing::Slice(2, W)});
-        auto d = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(2, H),   torch::indexing::Slice(1, W-1)});
-        auto l = y[1].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(1, H-1), torch::indexing::Slice(0, W-2)});
-        /*
-        ##0 | ### | ### | 0##
-        ### | ### | ### | ### 
-        ### | ##0 | 0## | ###
-        */
-        y[2] = conv[2]->forward(x);
-        auto ur = y[2].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(0, H-2), torch::indexing::Slice(2, W)});
-        auto dr = y[2].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(2, H),   torch::indexing::Slice(2, W)});
-        auto dl = y[2].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(2, H), torch::indexing::Slice(0, W-2)});
-        auto ul = y[2].index({torch::indexing::Slice(), torch::indexing::Slice(),
-            torch::indexing::Slice(0, H-2), torch::indexing::Slice(0, W-2)});
-        auto out = torch::cat({c, u, ur, r, dr, d, dl, l, ul}, /*dim=*/1);
-        return out;
-    }
-};
-TORCH_MODULE(GamingCNN);
-
 struct ResBImpl : torch::nn::Module {
     std::vector<torch::nn::Linear> layers;
     int num_layers;
@@ -106,94 +47,66 @@ struct ResBImpl : torch::nn::Module {
 };
 TORCH_MODULE(ResB);
 
-struct ResGameCNNImpl : torch::nn::Module {
-    //std::vector<GamingCNN> layers;
-    std::vector<torch::nn::Conv2d> layers;
-    int num_layers, cIn, filters;
+struct GameAttImpl : torch::nn::Module {
+    std::vector<torch::nn::Linear> w_q, w_k, w_v, lin;
+    int heads, n, cIn;
+    float sq_cIn;
 
-    ResGameCNNImpl(int cIn, int filters, int num_layers): cIn(cIn), filters(filters), num_layers(num_layers) {
-        /*
-        //TORCH_CHECK(filters % 5 == 0, "filters must be devidsible by 5");
-        std::vector<int> n = {filters / 5, filters / 5 -  filters / 15, filters / 15};
-        layers.push_back(register_module("gamecnn0", GamingCNN(cIn, n)));
-        for (int i = 1; i < num_layers; ++i)
-            layers.push_back(register_module("gamecnn" + std::to_string(i), GamingCNN(filters, n)));
-        */
-        layers.push_back(register_module("cnn0", torch::nn::Conv2d(
-            torch::nn::Conv2dOptions(cIn, filters, /*kernel_size=*/3).stride(1).padding(0).bias(false)
-        )));
-        layers.push_back(register_module("cnn1", torch::nn::Conv2d(
-            torch::nn::Conv2dOptions(filters, filters, /*kernel_size=*/3).stride(1).padding(0).bias(false)
-        )));
+    GameAttImpl(int heads, int n, int cIn): heads(heads), n(n), cIn(cIn){
+        sq_cIn = std::sqrt(cIn);
+        for (int i = 0; i < heads; ++i) {
+            w_q.push_back(register_module("w_q" + std::to_string(i), torch::nn::Linear(n, cIn)));
+            w_k.push_back(register_module("w_k" + std::to_string(i), torch::nn::Linear(n, cIn)));
+            w_v.push_back(register_module("w_v" + std::to_string(i), torch::nn::Linear(n, 1)));
+        }
     }
 
-    torch::Tensor forward(torch::Tensor X) {
-        /*
-        torch::Tensor y, x = X.clone();
-        for (int i = 0; i < num_layers; ++i) {
-            if (i % 2) {
-                auto out = layers[i]->forward(y);
-                if (i == 1 && cIn != filters) {
-                    x = torch::relu(out);
-                    continue;
-                }
-                int h = x.size(2), w = x.size(3);
-                int h1 = out.size(2), w1 = out.size(3);
-                int k = (w - w1) / 2, m = (h - h1) / 2;
-                auto cropped = x.index({
-                    torch::indexing::Slice(),
-                    torch::indexing::Slice(),
-                    torch::indexing::Slice(m, h - m),
-                    torch::indexing::Slice(k, w - k)
-                });
-                x = torch::relu(out + cropped);
-            }
-            else
-                y = torch::relu(layers[i]->forward(x));
+    torch::Tensor forward(torch::Tensor x) {
+        std::vector<torch::Tensor> out;
+        for (int i = 0; i < heads; ++i) {
+            auto q = w_q[i]->forward(x);
+            auto kt = w_k[i]->forward(x).transpose(0, -1);
+            auto v = w_v[i]->forward(x);
+            out.push_back(
+                torch::matmul(torch::softmax(torch::matmul(q, kt) / sq_cIn, -1), v)
+            );
         }
-        return x;
-        */
-        auto x = X.clone();
-        for (int i = 0; i < num_layers; ++i)
-            x = layers[(int)(i != 0)]->forward(x);
-        return x;
+        return torch::stack(out).view({-1});
     }
 };
-TORCH_MODULE(ResGameCNN);
+TORCH_MODULE(GameAtt);
 
 struct RewardModelImpl : torch::nn::Module {
-    ResGameCNN cnn{nullptr};
+    GameAtt att{nullptr};
     torch::nn::GRU gru{nullptr};
     torch::nn::Sequential action_processor{nullptr};
     torch::nn::Sequential combined_processor{nullptr};
 
-    int num_channels, hidden_size, num_actions;
+    int num_channels, grid_x, grid_y, hidden_size, num_actions;
     const float alpha;
 
     torch::Tensor action_input, h_state;
  
-    RewardModelImpl(int num_channels = 32, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
-        : num_channels(num_channels), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
-        cnn = register_module("cnn", ResGameCNN(num_channels, hidden_size, 18));
+    RewardModelImpl(int num_channels = 32, int grid_x = 37, int grid_y = 37, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
+        : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
+        att = register_module("att", GameAtt(hidden_size / num_channels, grid_x * grid_y, num_channels));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
         combined_processor = register_module("combined_proc", torch::nn::Sequential(
             torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU(),
             ResB(hidden_size, 3), torch::nn::Linear(hidden_size, 1),
             torch::nn::Sigmoid()
         ));
-        action_input = register_buffer("a_input", torch::zeros({num_actions}));
-        h_state = register_buffer("h_state", torch::zeros({2, 1, hidden_size}));
+        action_input = torch::zeros({num_actions});
+        h_state = torch::zeros({2, 1, hidden_size});
     }
 
     void reset_memory() {
-        action_input = action_input.detach();
-        h_state = h_state.detach();
         action_input = torch::zeros({num_actions});
         h_state = torch::zeros({2, 1, hidden_size});
     }
 
     torch::Tensor forward(int action, const torch::Tensor &state) {
-        auto feat = cnn->forward(state);
+        auto feat = att->forward(state);
         feat = feat * std::sqrt(feat.numel()) / (feat.norm() + 1e-8);
         auto r = gru->forward(feat.view({1, 1, -1}), h_state);
         feat = feat.view({-1});
@@ -228,16 +141,17 @@ public:
         coor[0] = snap_shot();
         int param_count = 0;
         for (auto &p: coor[0]) {
-            initial.push_back(p.clone());
+            initial.push_back(p.detach().clone());
             param_count += p.numel();
         }
         log("RewardNet's parameters: " + std::to_string(param_count));
-        model->to(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
         if (!training)
             model->eval();
-        else
+        else {
+            model->train();
             optimizer = std::make_unique<torch::optim::AdamW>(model->parameters(), torch::optim::AdamWOptions(learning_rate));
-        auto dummy = torch::zeros({1, num_channels, grid_x, grid_y});
+        }
+        auto dummy = torch::zeros({num_channels, grid_x * grid_y});
         model->forward(0, dummy);
         model->reset_memory();
     }
@@ -251,13 +165,12 @@ public:
             }
         coor[0].clear();
         for (auto &p: initial)
-            coor[0].push_back(p.clone());
+            coor[0].push_back(p.detach().clone());
         log("-------\nR total dist: step=" + std::to_string(calc_diff()));
         log("======================");
         log_file.close();
         if (training && !backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             model->reset_memory();
-            model->to(torch::kCPU);
             torch::save(model, backup_dir + "/model.pt");
         }
     }
@@ -306,7 +219,7 @@ private:
             diff += (coor[1][i] - coor[0][i]).pow(2).sum().item<float>();
         coor[0].clear();
         for (auto& p: coor[1])
-            coor[0].push_back(p.clone());
+            coor[0].push_back(p.detach().clone());
         coor[1].clear();
         return std::sqrt(diff);
     }
@@ -321,9 +234,10 @@ private:
 
     torch::Tensor compute_reward(int action, const torch::Tensor &state, const torch::Tensor &output) {
         auto reward = output * 0.6 + 0.2;
+        auto st = state.view({1, num_channels, grid_x, grid_y});
         std::vector<float> sit(num_channels);
         for (int k = 0; k < num_channels; ++k)
-            sit[k] = state[0][k][grid_x / 2][grid_y / 2].item<float>();
+            sit[k] = st[0][k][grid_x / 2][grid_y / 2].item<float>();
         if (outputs.empty()) {
             prev = sit;
             return reward;
@@ -348,7 +262,7 @@ private:
         for (int i = 0; i < 2 * T; ++i) {
             loss += torch::binary_cross_entropy(outputs[i], targets[i]);
             /////////////////////////////////////////////////////
-            log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
+            //log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
             /////////////////////////////////////////////////////
         }
         loss /= 2 * T;
@@ -383,7 +297,15 @@ private:
             if (training) {
                 is_training = true;
                 done_training = false;
-                trainThread = std::thread(&RewardNet::train, this);
+                //trainThread = std::thread(&RewardNet::train, this);
+                ///////////////////////////////////////////////
+                std::cout << "model is training..." << std::endl;
+                train();
+                is_training = false;
+                std::cout << "done! press space button to continue" << std::endl;
+                while(getch() != ' ');
+                std::cout << "space button pressed!" << std::endl;
+                /////////////////////////////////////////////
             }
             else
                 outputs.clear(), targets.clear();

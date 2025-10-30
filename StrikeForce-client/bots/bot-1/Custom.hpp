@@ -153,10 +153,10 @@ namespace Environment::Field{
 		for(int k = 0; k < 32; ++k)
 			for(int i = 0; i < 37; ++i)
 				for(int j = 0; j < 37; ++j)
-					if(ch[k][i * 37 + j] < 0) 
-						obs.push_back(-std::pow(-ch[k][i * 37 + j] / 10, 0.2));
-					else 
-						obs.push_back(std::pow(ch[k][i * 37 + j] / 10, 0.2));
+					if(ch[k][i * 37 + j] < 0)
+						obs.push_back(std::pow(-ch[k][i * 37 + j] / 10, 0.2) * 26 + 1);
+					else
+						obs.push_back(std::pow(ch[k][i * 37 + j] / 10, 0.2) * 26 + 1);
 		return action[player.agent->predict(obs)];
     }
 

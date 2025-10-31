@@ -47,8 +47,27 @@ struct ResBImpl : torch::nn::Module {
 };
 TORCH_MODULE(ResB);
 
+struct MultiLinImpl : torch::nn::Module {
+    std::vector<torch::nn::Linear> layers;
+    int num_layers;
+
+    MultiLinImpl(int hidden_size, int num_layers) : num_layers(num_layers) {
+        for (int i = 0; i < num_layers; ++i)
+            layers.push_back(register_module("lin" + std::to_string(i), torch::nn::Linear(hidden_size, 1)));
+    }
+
+    torch::Tensor forward(torch::Tensor x) {
+        std::vector<torch::Tensor> out;
+        for (int i = 0; i < num_layers; ++i)
+            out.push_back(layers[i]->forward(x[i].view({1, -1})));
+        return torch::stack(out).view({-1, 1});
+    }
+};
+TORCH_MODULE(MultiLin);
+
 struct GameAttImpl : torch::nn::Module {
-    std::vector<torch::nn::Linear> w_q, w_k, w_v, lin;
+    std::vector<torch::nn::Linear> w_q, w_k;
+    std::vector<torch::nn::Linear> w_v;
     int heads, n, cIn;
     float sq_cIn;
 
@@ -123,9 +142,9 @@ TORCH_MODULE(RewardModel);
 
 class RewardNet {
 public:
-    RewardNet(bool _training = true, int _T = 256, float _learning_rate = 1e-3, float _alpha = 0.9,
-        const std::string &_backup_dir = "bots/bot-1/backup/reward_backup")
-        : training(_training), T(_T), learning_rate(_learning_rate), alpha(_alpha), backup_dir(_backup_dir) {
+    RewardNet(bool training = true, int T = 256, float learning_rate = 1e-3, float alpha = 0.9,
+        const std::string &backup_dir = "bots/bot-1/backup/reward_backup")
+        : training(training), T(T), learning_rate(learning_rate), alpha(alpha), backup_dir(backup_dir) {
         model = RewardModel();
         if (!backup_dir.empty()) {
             if (std::filesystem::exists(backup_dir)) {
@@ -234,10 +253,10 @@ private:
 
     torch::Tensor compute_reward(int action, const torch::Tensor &state, const torch::Tensor &output) {
         auto reward = output * 0.6 + 0.2;
-        auto st = state.view({1, num_channels, grid_x, grid_y});
+        auto st = state.view({num_channels, grid_x, grid_y});
         std::vector<float> sit(num_channels);
         for (int k = 0; k < num_channels; ++k)
-            sit[k] = st[0][k][grid_x / 2][grid_y / 2].item<float>();
+            sit[k] = st[k][grid_x / 2][grid_y / 2].item<float>();
         if (outputs.empty()) {
             prev = sit;
             return reward;
@@ -269,19 +288,21 @@ private:
         optimizer->zero_grad();
         loss.backward();
         /////////////////////////////////////////////////////
+        /*
         for (const auto &p: model->named_parameters())
             if (p.value().grad().defined()){
                 std::string key = p.key(), k;
                 double v = p.value().norm().item<double>();
                 double g = p.value().grad().norm().item<double>();
                 double coef = g / (v + 1e-8);
-                for(int i = 0; i < 32; ++i)
+                for(int i = 0; i < 30; ++i)
                     if(i >= key.size())
                         k.push_back(' ');
                     else
                         k.push_back(key[i]);
                 log(k + " || value-norm: " + std::to_string(v) + " || grad--norm: " + std::to_string(g) + " || grad/value: " + std::to_string(coef));
             }
+        */
         /////////////////////////////////////////////////////
         optimizer->step();
         outputs.clear(), targets.clear();
@@ -299,12 +320,10 @@ private:
                 done_training = false;
                 //trainThread = std::thread(&RewardNet::train, this);
                 ///////////////////////////////////////////////
-                std::cout << "model is training..." << std::endl;
+                std::cout << "RewardNet is training..." << std::endl;
                 train();
                 is_training = false;
-                std::cout << "done! press space button to continue" << std::endl;
-                while(getch() != ' ');
-                std::cout << "space button pressed!" << std::endl;
+                std::cout << "done!" << std::endl;
                 /////////////////////////////////////////////
             }
             else

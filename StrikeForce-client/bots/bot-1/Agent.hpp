@@ -206,12 +206,10 @@ public:
                 done_training = false;
                 //trainThread = std::thread(&Agent::train, this);
                 ///////////////////////////////////////////////
-                std::cout << "model is training..." << std::endl;
+                std::cout << "Agent is training..." << std::endl;
                 train();
                 is_training = false;
-                std::cout << "done! press space button to continue" << std::endl;
-                while(getch() != ' ');
-                std::cout << "space button pressed!" << std::endl;
+                std::cout << "done!" << std::endl;
                 /////////////////////////////////////////////
             }
             else {
@@ -357,22 +355,24 @@ private:
             optimizer->zero_grad();
             loss.backward();
             /////////////////////////////////////////////////////
+            /*
             for (const auto &p: model->named_parameters())
                 if (p.value().grad().defined()) {
                     std::string key = p.key(), k;
                     double v = p.value().norm().item<double>();
                     double g = p.value().grad().norm().item<double>();
                     double coef = g / (v + 1e-8);
-                    for(int i = 0; i < 32; ++i)
+                    for(int i = 0; i < 30; ++i)
                         if(i >= key.size())
                             k.push_back(' ');
                         else
                             k.push_back(key[i]);
                     log(k + " || value-norm: " + std::to_string(v) + " || grad--norm: " + std::to_string(g) + " || grad/value: " + std::to_string(coef));
                 }
+            */
             /////////////////////////////////////////////////////
             optimizer->step();
-            log("A: loss=" + std::to_string(loss.item<float>()) + "| p_loss=" + std::to_string(p_loss.item<float>() / (T * num_epochs)) + "| v_loss=" + std::to_string(0.25 * v_loss.item<float>() / (T * num_epochs)) + ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff()));
+            log("A: loss=" + std::to_string(loss.item<float>()) + "| p_loss=" + std::to_string(p_loss.item<float>() / T) + "| v_loss=" + std::to_string(v_loss.item<float>() / T) + ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff()));
         }
         actions.clear(), rewards.clear(), log_probs.clear();
         states.clear(), values.clear();

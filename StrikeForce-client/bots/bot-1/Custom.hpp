@@ -89,7 +89,7 @@ namespace Environment::Field{
 			sit[cell.human->get_way() - 1] = 1;
 			auto v = cell.human->get_damage_effect();
 			damage = v[0] / 1000.0;
-			effect = v[1] / 1000.0;
+			effect = -v[1] / 1000.0;
 			estamina = cell.human->get_stamina() / 1000.0;
 		}
 		else if(cell.s[1]){
@@ -103,11 +103,11 @@ namespace Environment::Field{
 			int dist_traveled = abs(c[1] - dc[1]) + abs(c[2] - dc[2]);
 			sit[cell.bullet->get_way() - 1] = (cell.bullet->get_range() - dist_traveled) / 100.0;
 			damage = cell.bullet->get_damage() / 1000.0;
-			effect = cell.bullet->get_effect() / 1000.0;
+			effect = -cell.bullet->get_effect() / 1000.0;
 		}
 		else if(cell.s[7]){
 			damage = 20 / 1000.0;
-			effect = -10 / 1000.0;
+			effect = 10 / 1000.0;
 		}
 		res.push_back(is_bull);
 		for(int i = 0; i < 4; ++i)
@@ -125,7 +125,7 @@ namespace Environment::Field{
 		// damage effect   [0, inf)^2                                                     | 2
 		if(cell.s[0]){
 			res.push_back(cell.human->get_damage() / 1000.0);
-			res.push_back(cell.human->get_effect() / 1000.0);
+			res.push_back(-cell.human->get_effect() / 1000.0);
 		}
 		else{
 			res.push_back(0);
@@ -154,9 +154,9 @@ namespace Environment::Field{
 			for(int i = 0; i < 37; ++i)
 				for(int j = 0; j < 37; ++j)
 					if(ch[k][i * 37 + j] < 0)
-						obs.push_back(std::pow(-ch[k][i * 37 + j] / 10, 0.2) * 26 + 1);
+						obs.push_back(std::exp(-std::pow(-ch[k][i * 37 + j] / 10, 0.2)));
 					else
-						obs.push_back(std::pow(ch[k][i * 37 + j] / 10, 0.2) * 26 + 1);
+						obs.push_back(std::exp(std::pow(ch[k][i * 37 + j] / 10, 0.2)));
 		return action[player.agent->predict(obs)];
     }
 

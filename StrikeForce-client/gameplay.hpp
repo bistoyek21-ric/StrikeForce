@@ -1787,7 +1787,7 @@ namespace Environment::Field{
 		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1); 
 		//v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1); // for back to origin uncomment this line
 		for(int i = v[1] - _H; i <= v[1] + _H; ++i, res.push_back('\n'))
-			for(int j = v[2] - 18; j <= v[2] + 18; ++j){ // for back to origin replace 18 with W
+			for(int j = v[2] - 19; j <= v[2] + 19; ++j){ // for back to origin replace 18 with W
 				//cell = temp_map[i][j].showit(); // for back to origin uncomment this line
 				cell = ((j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit()); // for back to origin remove this line
 				color = "";

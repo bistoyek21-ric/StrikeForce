@@ -47,56 +47,35 @@ struct ResBImpl : torch::nn::Module {
 };
 TORCH_MODULE(ResB);
 
-struct MultiLinImpl : torch::nn::Module {
-    std::vector<torch::nn::Linear> layers;
-    int num_layers;
+struct GameCNNImpl : torch::nn::Module {
+    std::vector<torch::nn::Conv2d> conv;
+    torch::nn::Linear lin{nullptr};
+    int channels, d_out, layers, n;
 
-    MultiLinImpl(int hidden_size, int num_layers) : num_layers(num_layers) {
-        for (int i = 0; i < num_layers; ++i)
-            layers.push_back(register_module("lin" + std::to_string(i), torch::nn::Linear(hidden_size, 1)));
-    }
-
-    torch::Tensor forward(torch::Tensor x) {
-        std::vector<torch::Tensor> out;
-        for (int i = 0; i < num_layers; ++i)
-            out.push_back(layers[i]->forward(x[i].view({1, -1})));
-        return torch::stack(out).view({-1, 1});
-    }
-};
-TORCH_MODULE(MultiLin);
-
-struct GameAttImpl : torch::nn::Module {
-    std::vector<torch::nn::Linear> w_q, w_k;
-    std::vector<torch::nn::Linear> w_v;
-    int heads, n, cIn;
-    float sq_cIn;
-
-    GameAttImpl(int heads, int n, int cIn): heads(heads), n(n), cIn(cIn){
-        sq_cIn = std::sqrt(cIn);
-        for (int i = 0; i < heads; ++i) {
-            w_q.push_back(register_module("w_q" + std::to_string(i), torch::nn::Linear(n, cIn)));
-            w_k.push_back(register_module("w_k" + std::to_string(i), torch::nn::Linear(n, cIn)));
-            w_v.push_back(register_module("w_v" + std::to_string(i), torch::nn::Linear(n, 1)));
-        }
-    }
-
-    torch::Tensor forward(torch::Tensor x) {
-        std::vector<torch::Tensor> out;
-        for (int i = 0; i < heads; ++i) {
-            auto q = w_q[i]->forward(x);
-            auto kt = w_k[i]->forward(x).transpose(0, -1);
-            auto v = w_v[i]->forward(x);
-            out.push_back(
-                torch::matmul(torch::softmax(torch::matmul(q, kt) / sq_cIn, -1), v)
+    GameCNNImpl(int channels, int d_out, int layers, int n): channels(channels), d_out(d_out), layers(layers), n(n) {
+        for (int i = 0; i < channels; ++i)
+            conv.push_back(
+                register_module("conv" + std::to_string(i),
+                torch::nn::Conv2d(torch::nn::Conv2dOptions(9, 9, 3).stride(1).padding(0).bias(true)))
             );
+        int m = (n + 2) / 3 - 2 * layers;
+        lin = register_module("lin", torch::nn::Linear(9 * channels * m * m, d_out));
+    }
+
+    torch::Tensor forward(torch::Tensor x) {
+        std::vector<torch::Tensor> out;
+        for (int i = 0; i < channels; ++i) {
+            out.push_back(x[i].clone());
+            for (int j = 0; j < layers; ++j)
+                out[i] = conv[i]->forward(out[i]);
         }
-        return torch::stack(out).view({-1});
+        return lin->forward(torch::stack(out).view({-1}));
     }
 };
-TORCH_MODULE(GameAtt);
+TORCH_MODULE(GameCNN);
 
 struct RewardModelImpl : torch::nn::Module {
-    GameAtt att{nullptr};
+    GameCNN cnn{nullptr};
     torch::nn::GRU gru{nullptr};
     torch::nn::Sequential action_processor{nullptr};
     torch::nn::Sequential combined_processor{nullptr};
@@ -106,9 +85,9 @@ struct RewardModelImpl : torch::nn::Module {
 
     torch::Tensor action_input, h_state;
  
-    RewardModelImpl(int num_channels = 32, int grid_x = 37, int grid_y = 37, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
+    RewardModelImpl(int num_channels = 32, int grid_x = 39, int grid_y = 39, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
         : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
-        att = register_module("att", GameAtt(hidden_size / num_channels, grid_x * grid_y, num_channels));
+        cnn = register_module("cnn", GameCNN(num_channels, hidden_size, 6, grid_x));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
         combined_processor = register_module("combined_proc", torch::nn::Sequential(
             torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU(),
@@ -124,8 +103,8 @@ struct RewardModelImpl : torch::nn::Module {
         h_state = torch::zeros({2, 1, hidden_size});
     }
 
-    torch::Tensor forward(int action, const torch::Tensor &state) {
-        auto feat = att->forward(state);
+    torch::Tensor forward(int action, torch::Tensor x) {
+        auto feat = cnn->forward(x);
         feat = feat * std::sqrt(feat.numel()) / (feat.norm() + 1e-8);
         auto r = gru->forward(feat.view({1, 1, -1}), h_state);
         feat = feat.view({-1});
@@ -170,7 +149,7 @@ public:
             model->train();
             optimizer = std::make_unique<torch::optim::AdamW>(model->parameters(), torch::optim::AdamWOptions(learning_rate));
         }
-        auto dummy = torch::zeros({num_channels, grid_x * grid_y});
+        auto dummy = torch::zeros({num_channels, 1, 9, (grid_x + 2) / 3, (grid_y + 2) / 3});
         model->forward(0, dummy);
         model->reset_memory();
     }
@@ -216,7 +195,7 @@ private:
     std::thread trainThread;
     float learning_rate, alpha;
     int T;
-    const int num_actions = 10, num_channels = 32, grid_x = 37, grid_y = 37, hidden_size = 160;
+    const int num_actions = 10, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
     std::string backup_dir;
     RewardModel model{nullptr};
     std::unique_ptr<torch::optim::AdamW> optimizer{nullptr};
@@ -253,10 +232,10 @@ private:
 
     torch::Tensor compute_reward(int action, const torch::Tensor &state, const torch::Tensor &output) {
         auto reward = output * 0.6 + 0.2;
-        auto st = state.view({num_channels, grid_x, grid_y});
         std::vector<float> sit(num_channels);
+        int x = (grid_x + 2) / 6, y = (grid_y + 2) / 6;
         for (int k = 0; k < num_channels; ++k)
-            sit[k] = st[k][grid_x / 2][grid_y / 2].item<float>();
+            sit[k] = state[k][0][4][x][y].item<float>();
         if (outputs.empty()) {
             prev = sit;
             return reward;
@@ -264,9 +243,9 @@ private:
         if (prev[11] < sit[11] || prev[30] < sit[30] || prev[31] < sit[31])
             reward = torch::tensor(1.0f);// up  | kills, total-damage, total-effect = 1
         else if (prev[18] > sit[18] || prev[24] > sit[24] || prev[25] > sit[25])
-            reward = torch::tensor(0.0f);// down| Hp, attack-damage, attack-effect = 0
+            reward = torch::tensor(0.0f);// down| Hp, cnnack-damage, cnnack-effect = 0
         else if (prev[18] < sit[18] || prev[24] < sit[24] || prev[25] < sit[25] || prev[26] < sit[26])
-            reward = torch::tensor(0.9f);// up  | Hp, attack-damage, attack-effect, stamina = 0.9
+            reward = torch::tensor(0.9f);// up  | Hp, cnnack-damage, cnnack-effect, stamina = 0.9
         else if (prev[26] > sit[26])
             reward -= 0.15;// down | stamina -= 0.15
         else if(!action)

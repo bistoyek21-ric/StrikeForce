@@ -28,7 +28,7 @@ SOFTWARE.
 const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
 
 struct AgentModelImpl : torch::nn::Module {
-    GameAtt att{nullptr};
+    GameCNN cnn{nullptr};
     torch::nn::GRU gru{nullptr};
     torch::nn::Sequential action_processor{nullptr};
     torch::nn::Sequential policy_head{nullptr}, value_head{nullptr}, gate{nullptr};
@@ -38,9 +38,9 @@ struct AgentModelImpl : torch::nn::Module {
 
     torch::Tensor action_input, h_state;
 
-    AgentModelImpl(int num_channels = 32, int grid_x = 37, int grid_y = 37, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
+    AgentModelImpl(int num_channels = 32, int grid_x = 39, int grid_y = 39, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
         : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
-        att = register_module("att", GameAtt(hidden_size / num_channels, grid_x * grid_y, num_channels));
+        cnn = register_module("cnn", GameCNN(num_channels, hidden_size, 6, grid_x));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
         gate = register_module("gate", torch::nn::Sequential(
             torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU()
@@ -66,8 +66,8 @@ struct AgentModelImpl : torch::nn::Module {
         action_input[action] += 1 - alpha;
     }
 
-    std::vector<torch::Tensor> forward(const torch::Tensor &state) {
-        auto feat = att->forward(state);
+    std::vector<torch::Tensor> forward(torch::Tensor x) {
+        auto feat = cnn->forward(x);
         feat = feat * std::sqrt(feat.numel()) / (feat.norm() + 1e-8);
         auto r = gru->forward(feat.view({1, 1, -1}), h_state);
         feat = feat.view({-1});
@@ -125,7 +125,7 @@ public:
             model->train();
             optimizer = std::make_unique<torch::optim::AdamW>(model->parameters(), torch::optim::AdamWOptions(learning_rate));
         }
-        auto dummy = torch::zeros({num_channels, grid_x * grid_y});
+        auto dummy = torch::zeros({num_channels, 1, 9, (grid_x + 2) / 3, (grid_y + 2) / 3});
         model->forward(dummy);
         model->reset_memory();
     }
@@ -176,7 +176,7 @@ public:
             return 0;
 #endif
         }
-        auto state = torch::tensor(obs, torch::dtype(torch::kFloat32)).view({num_channels, -1});
+        auto state = torch::tensor(obs, torch::dtype(torch::kFloat32)).view({num_channels, 1, 9, (grid_x + 2) / 3, (grid_y + 2) / 3});
         states.push_back(state);
         auto output = model->forward(state);
         values.push_back(output[1]);
@@ -272,7 +272,7 @@ private:
     std::thread trainThread;
     float learning_rate, alpha, gamma, ppo_clip;
     int T, num_epochs, cnt = 0;
-    const int num_actions = 10, num_channels = 32, grid_x = 37, grid_y = 37, hidden_size = 160;
+    const int num_actions = 10, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
     std::string backup_dir;
     AgentModel model{nullptr};
     RewardNet* reward_net;

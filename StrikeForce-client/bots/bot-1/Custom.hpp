@@ -59,7 +59,6 @@ namespace Environment::Field{
 				res.push_back(0);
 		}
 		// it can't be passed through by human, bullet; can it destroyed by shooting, Hp {0, 1}^3 [0, inf)| 4
-		char obj = cell.showit();
 		sit = {0, 0, 0};
 		float hp = 0;
 		if(cell.s[3] || cell.s[5] || cell.s[6] || cell.s[0] || cell.s[1]){
@@ -141,8 +140,8 @@ namespace Environment::Field{
 		std::vector<int> v = player.get_cor();
 		std::vector<float> obs;
 		std::vector<std::vector<float>> ch(32);
-		for(int i = v[1] - 13; i <= v[1] + 13; ++i)
-			for(int j = v[2] - 43; j <= v[2] + 43; ++j){
+		for(int i = v[1] - 19; i <= v[1] + 19; ++i)
+			for(int j = v[2] - 19; j <= v[2] + 19; ++j){
 				std::vector<float> vec;
 				if(i < 0 || j < 0 || N <= i || M <= j)
 					vec = describe(nd, player);
@@ -152,15 +151,20 @@ namespace Environment::Field{
 					ch[k].push_back(vec[k]);
 			}
 		for(int k = 0; k < 32; ++k)
-			for(int i = 0; i < 27; ++i)
-				for(int j = 0; j < 87; ++j)
-					obs.push_back(ch[k][i * 27 + j]);
+			for(int i = 0; i < 39; i += 3)
+				for(int j = 0; j < 39; j += 3)
+					for(int i1 = 0; i1 < 3; ++i1)
+						for(int j1 = 0; j1 < 3; ++j1)
+							if(std::max(i + i1, j + j1) < 39 && ch[k][(i + i1) * 39 + (j + j1)] < 0)
+								obs.push_back(-std::pow(-ch[k][(i + i1) * 39 + (j + j1)] / 10, 0.2));
+							else
+								obs.push_back(std::pow(ch[k][(i + i1) * 39 + (j + j1)] / 10, 0.2));
 		return action[player.agent->predict(obs)];
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
-		action = "+`1upxawsd";
-		player.agent = new Agent(true, 256, 4, 0.99, 1e-2, 0.2, 0.9);
+		action = "+xp`1awsd";
+		player.agent = new Agent(true);
 		player.set_agent_active();
 	}
 

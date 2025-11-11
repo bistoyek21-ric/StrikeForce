@@ -105,15 +105,15 @@ struct RewardModelImpl : torch::nn::Module {
 
     torch::Tensor forward(int action, torch::Tensor x) {
         auto feat = cnn->forward(x);
-        feat = feat * std::sqrt(feat.numel()) / (feat.norm() + 1e-8);
+        feat = feat * hidden_size / (feat.abs().sum().detach() + 1e-8);
         auto r = gru->forward(feat.view({1, 1, -1}), h_state);
         feat = feat.view({-1});
         auto out_seq = std::get<0>(r).view({-1});
-        out_seq = out_seq * std::sqrt(out_seq.numel()) / (out_seq.norm() + 1e-8);
+        out_seq = out_seq * hidden_size / (out_seq.abs().sum().detach() + 1e-8);
         h_state = std::get<1>(r);
         action_input = action_input * alpha;
         action_input[action] += 1 - alpha;
-        auto combined = torch::cat({out_seq, feat, action_input});
+        auto combined = torch::cat({out_seq, feat, action_input * hidden_size / (action_input.abs().sum().detach() + 1e-8)});
         return combined_processor->forward(combined);
     }
 };
@@ -148,6 +148,11 @@ public:
         else {
             model->train();
             optimizer = std::make_unique<torch::optim::AdamW>(model->parameters(), torch::optim::AdamWOptions(learning_rate));
+            if (!backup_dir.empty() && std::filesystem::exists(backup_dir + "/optimizer.pt")) {
+                try {
+                    torch::load(*optimizer, backup_dir + "/optimizer.pt");
+                } catch (...) {}
+            }
         }
         auto dummy = torch::zeros({num_channels, 1, 9, (grid_x + 2) / 3, (grid_y + 2) / 3});
         model->forward(0, dummy);
@@ -170,6 +175,7 @@ public:
         if (training && !backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             model->reset_memory();
             torch::save(model, backup_dir + "/model.pt");
+            torch::save(*optimizer, backup_dir + "/optimizer.pt");
         }
     }
 
@@ -185,9 +191,9 @@ public:
         }
         auto output = model->forward(action, state);
         auto target = torch::tensor((float)imitate);
-        auto reward = compute_reward(action, state, (imitate ? target : output)) * 2 - 1;
+        auto reward = compute_reward(action, state, (imitate ? target : output / 2));
         update(output, target);
-        return reward.item<float>();
+        return reward.item<float>() * 2 - 1;
     }
 
 private:

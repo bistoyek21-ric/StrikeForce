@@ -1000,8 +1000,8 @@ namespace Environment::Field{
 			printer.print("-------------------------------------\n");
 			printer.print("How to turn on and off full mode and change width and hight:\n");
 			printer.print(" F: on, O: off\n");
-			printer.print(" W : increase width, E : decrease width\n");
-			printer.print(" R : increase hight, T : decrease hight\n");
+			printer.print(" W : increase width, E : decrease width (not availabel in crowdsourced training)\n");
+			printer.print(" R : increase hight, T : decrease hight (not availabel in crowdsourced training)\n");
 			printer.print("-------------------------------------\n");
 			printer.print("[1]: its location on the standardized keyboards is the key below Esc.\n");
 			printer.print("[2]: you can enable NumLock and then use the arrows!\n");

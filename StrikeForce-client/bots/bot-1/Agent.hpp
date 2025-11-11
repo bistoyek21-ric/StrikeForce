@@ -43,7 +43,8 @@ struct AgentModelImpl : torch::nn::Module {
         cnn = register_module("cnn", GameCNN(num_channels, hidden_size, 6, grid_x));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
         gate = register_module("gate", torch::nn::Sequential(
-            torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU()
+            torch::nn::Linear(2 * hidden_size + num_actions, hidden_size),
+            torch::nn::ReLU()
         ));
         value_head = register_module("value", torch::nn::Sequential(
             ResB(hidden_size, 3), torch::nn::Linear(hidden_size, 1),
@@ -68,13 +69,13 @@ struct AgentModelImpl : torch::nn::Module {
 
     std::vector<torch::Tensor> forward(torch::Tensor x) {
         auto feat = cnn->forward(x);
-        feat = feat * std::sqrt(feat.numel()) / (feat.norm() + 1e-8);
+        feat = feat * hidden_size / (feat.abs().sum().detach() + 1e-8);
         auto r = gru->forward(feat.view({1, 1, -1}), h_state);
         feat = feat.view({-1});
         auto out_seq = std::get<0>(r).view({-1});
-        out_seq = out_seq * std::sqrt(out_seq.numel()) / (out_seq.norm() + 1e-8);
+        out_seq = out_seq * hidden_size / (out_seq.abs().sum().detach() + 1e-8);
         h_state = std::get<1>(r);
-        auto gate_input = torch::cat({out_seq, feat, action_input});
+        auto gate_input = torch::cat({out_seq, feat, action_input * hidden_size / (action_input.abs().sum().detach() + 1e-8)});
         auto gated = gate->forward(gate_input);
         auto logits = policy_head->forward(gated);
         auto p = torch::softmax(logits, -1) + 1e-8;
@@ -87,9 +88,9 @@ TORCH_MODULE(AgentModel);
 class Agent {
 public:
     Agent(bool training = true, int T = 256, int num_epochs = 4, float gamma = 0.98, float learning_rate = 1e-3,
-         float ppo_clip = 0.2, float alpha = 0.9, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
+         float ppo_ratio_clip = 2, float alpha = 0.9, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
         : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
-        ppo_clip(ppo_clip), alpha(alpha), backup_dir(backup_dir) {
+        ppo_ratio_clip(ppo_ratio_clip), alpha(alpha), backup_dir(backup_dir) {
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "loading backup ..." << std::endl;
         request_and_extract_backup(backup_path, bot_code);
@@ -97,7 +98,7 @@ public:
         std::cout << "press space to continue" << std::endl;
         while (getch() != ' ');
 #endif
-        reward_net = new RewardNet(true);
+        reward_net = new RewardNet();
         model = AgentModel();
         if (!backup_dir.empty()) {
             if (std::filesystem::exists(backup_dir)) {
@@ -117,13 +118,16 @@ public:
             param_count += p.numel();
         }
         log("Agent's parameters: " + std::to_string(param_count));
-        for (auto &p : model->parameters())
-            p.set_requires_grad(true);
         if (!training)
             model->eval();
         else {
             model->train();
             optimizer = std::make_unique<torch::optim::AdamW>(model->parameters(), torch::optim::AdamWOptions(learning_rate));
+            if (!backup_dir.empty() && std::filesystem::exists(backup_dir + "/optimizer.pt")) {
+                try {
+                    torch::load(*optimizer, backup_dir + "/optimizer.pt");
+                } catch (...) {}
+            }
         }
         auto dummy = torch::zeros({num_channels, 1, 9, (grid_x + 2) / 3, (grid_y + 2) / 3});
         model->forward(dummy);
@@ -147,6 +151,7 @@ public:
         if (training && !backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             model->reset_memory();
             torch::save(model, backup_dir + "/model.pt");
+            torch::save(*optimizer, backup_dir + "/optimizer.pt");
         }
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "Do you want to submit your backup into our server?\n(y:yes/any other key:no)" << std::endl;
@@ -192,10 +197,9 @@ public:
             return;
         rewards.push_back(reward_net->get_reward(action, imitate, states.back()));
         if (rewards.back() == -2 && training) {
-            log_probs.clear();
-            rewards.clear();
-            states.clear();
-            values.clear();
+            actions.clear(), rewards.clear(), log_probs.clear();
+            states.clear(), values.clear();
+            model->reset_memory();
             return;
         }
         model->update_actions(action);
@@ -270,7 +274,7 @@ public:
 private:
     bool is_training = false, logging = true, training, done_training, manual;
     std::thread trainThread;
-    float learning_rate, alpha, gamma, ppo_clip;
+    float learning_rate, alpha, gamma, ppo_ratio_clip;
     int T, num_epochs, cnt = 0;
     const int num_actions = 10, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
     std::string backup_dir;
@@ -324,8 +328,8 @@ private:
         auto returns = computeReturns();
         for (int epoch = 0; epoch < num_epochs; ++epoch) {
             time_t ts = time(0);
-            torch::Tensor p_loss = torch::zeros({});
-            torch::Tensor v_loss = torch::zeros({});
+            auto p_loss = torch::zeros({});
+            auto v_loss = torch::zeros({});
             model->reset_memory();
             for (int i = 0; i < T; ++i) {
                 torch::Tensor current_logp;
@@ -347,8 +351,8 @@ private:
                     v_loss += torch::mse_loss(output[1], returns[i]);
                 auto diff = torch::clamp(current_logp - log_probs[i][actions[i]], -100, 10);
                 auto ratio = torch::exp(diff);
-                auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
                 auto adv = returns[i] - values[i];
+                auto clipped = torch::clamp(ratio, 1 / ppo_ratio_clip, 1 * ppo_ratio_clip);
                 p_loss -= torch::min(ratio * adv, clipped * adv);
             }
             auto loss = (p_loss + 0.5 * v_loss) / T;

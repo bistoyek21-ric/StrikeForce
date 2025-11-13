@@ -88,9 +88,9 @@ TORCH_MODULE(AgentModel);
 class Agent {
 public:
     Agent(bool training = true, int T = 256, int num_epochs = 4, float gamma = 0.98, float learning_rate = 1e-3,
-         float ppo_ratio_clip = 2, float alpha = 0.9, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
+         float ppo_ratio_clip = 2, float alpha = 0.9, float cv = 0.5, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
         : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
-        ppo_ratio_clip(ppo_ratio_clip), alpha(alpha), backup_dir(backup_dir) {
+        ppo_ratio_clip(ppo_ratio_clip), alpha(alpha), cv(cv), backup_dir(backup_dir) {
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "loading backup ..." << std::endl;
         request_and_extract_backup(backup_path, bot_code);
@@ -274,9 +274,9 @@ public:
 private:
     bool is_training = false, logging = true, training, done_training, manual;
     std::thread trainThread;
-    float learning_rate, alpha, gamma, ppo_ratio_clip;
+    float learning_rate, alpha, gamma, ppo_ratio_clip, cv;
     int T, num_epochs, cnt = 0;
-    const int num_actions = 10, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
+    const int num_actions = 9, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
     std::string backup_dir;
     AgentModel model{nullptr};
     RewardNet* reward_net;

@@ -155,10 +155,8 @@ namespace Environment::Field{
 				for(int j = 0; j < 39; j += 3)
 					for(int i1 = 0; i1 < 3; ++i1)
 						for(int j1 = 0; j1 < 3; ++j1)
-							if(std::max(i + i1, j + j1) < 39 && ch[k][(i + i1) * 39 + (j + j1)] < 0)
-								obs.push_back(-std::pow(-ch[k][(i + i1) * 39 + (j + j1)] / 10, 0.2));
-							else
-								obs.push_back(std::pow(ch[k][(i + i1) * 39 + (j + j1)] / 10, 0.2));
+							if(std::max(i + i1, j + j1) < 39)
+								obs.push_back(std::pow(std::abs(ch[k][(i + i1) * 39 + (j + j1)]) / 10, 0.2));
 		return action[player.agent->predict(obs)];
     }
 

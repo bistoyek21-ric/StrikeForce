@@ -1822,7 +1822,11 @@ namespace Environment::Field{
 			res += color;
 		printer.render(res);
 		auto end_ = std::chrono::steady_clock::now();
+		#if defined(CROWDSOURCED_TRAINING)
+		int k = (lim.count() * 1.5 - (end_ - start1).count()) / 1000;
+		#else
 		int k = (lim.count() - (end_ - start1).count()) / 1000;
+		#endif
 		usleep(std::max(k, 0));
 		return;
 	}

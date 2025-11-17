@@ -87,10 +87,10 @@ TORCH_MODULE(AgentModel);
 
 class Agent {
 public:
-    Agent(bool training = true, int T = 256, int num_epochs = 4, float gamma = 0.98, float learning_rate = 1e-3,
-         float ppo_ratio_clip = 2, float alpha = 0.9, float cv = 0.5, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
+    Agent(bool training = true, int T = 512, int num_epochs = 4, float gamma = 0.99, float learning_rate = 1e-3,
+         float ppo_clip = 0.2, float alpha = 0.9, float cv = 0.5, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
         : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
-        ppo_ratio_clip(ppo_ratio_clip), alpha(alpha), cv(cv), backup_dir(backup_dir) {
+        ppo_clip(ppo_clip), alpha(alpha), cv(cv), backup_dir(backup_dir) {
 #if defined(CROWDSOURCED_TRAINING)
         std::cout << "loading backup ..." << std::endl;
         request_and_extract_backup(backup_path, bot_code);
@@ -117,7 +117,7 @@ public:
             initial.push_back(p.detach().clone());
             param_count += p.numel();
         }
-        log("Agent's parameters: " + std::to_string(param_count));
+        //log("Agent's parameters: " + std::to_string(param_count));
         if (!training)
             model->eval();
         else {
@@ -253,7 +253,7 @@ public:
             }
             ////////////////////////////
         }
-        if (actions.size() == T / 2 || actions.size() == T * 3 / 2) {
+        else if (actions.size() == T / 2 || actions.size() == T * 3 / 2) {
             manual = !manual;
             /////////////////////////////
             if (manual) {
@@ -274,7 +274,7 @@ public:
 private:
     bool is_training = false, logging = true, training, done_training, manual;
     std::thread trainThread;
-    float learning_rate, alpha, gamma, ppo_ratio_clip, cv;
+    float learning_rate, alpha, gamma, ppo_clip, cv;
     int T, num_epochs, cnt = 0;
     const int num_actions = 9, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
     std::string backup_dir;
@@ -352,10 +352,10 @@ private:
                 auto diff = torch::clamp(current_logp - log_probs[i][actions[i]], -100, 10);
                 auto ratio = torch::exp(diff);
                 auto adv = returns[i] - values[i];
-                auto clipped = torch::clamp(ratio, 1 / ppo_ratio_clip, 1 * ppo_ratio_clip);
+                auto clipped = torch::clamp(ratio, 1 - (epoch + 1) * ppo_clip, 1 + (epoch + 1) * ppo_clip);
                 p_loss -= torch::min(ratio * adv, clipped * adv);
             }
-            auto loss = (p_loss + 0.5 * v_loss) / T;
+            auto loss = (p_loss + cv * v_loss) / T;
             optimizer->zero_grad();
             loss.backward();
             /////////////////////////////////////////////////////

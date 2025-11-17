@@ -56,7 +56,7 @@ struct GameCNNImpl : torch::nn::Module {
         for (int i = 0; i < channels; ++i)
             conv.push_back(
                 register_module("conv" + std::to_string(i),
-                torch::nn::Conv2d(torch::nn::Conv2dOptions(9, 9, 3).stride(1).padding(0).bias(true)))
+                torch::nn::Conv2d(torch::nn::Conv2dOptions(9, 9, 3).stride(1).padding(0).bias(false)))
             );
         int m = (n + 2) / 3 - 2 * layers;
         lin = register_module("lin", torch::nn::Linear(9 * channels * m * m, d_out));
@@ -121,7 +121,7 @@ TORCH_MODULE(RewardModel);
 
 class RewardNet {
 public:
-    RewardNet(bool training = true, int T = 256, float learning_rate = 1e-3, float alpha = 0.9,
+    RewardNet(bool training = true, int T = 512, float learning_rate = 1e-3, float alpha = 0.9,
         const std::string &backup_dir = "bots/bot-1/backup/reward_backup")
         : training(training), T(T), learning_rate(learning_rate), alpha(alpha), backup_dir(backup_dir) {
         model = RewardModel();
@@ -142,7 +142,7 @@ public:
             initial.push_back(p.detach().clone());
             param_count += p.numel();
         }
-        log("RewardNet's parameters: " + std::to_string(param_count));
+        //log("RewardNet's parameters: " + std::to_string(param_count));
         if (!training)
             model->eval();
         else {
@@ -201,7 +201,7 @@ private:
     std::thread trainThread;
     float learning_rate, alpha;
     int T;
-    const int num_actions = 10, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
+    const int num_actions = 9, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
     std::string backup_dir;
     RewardModel model{nullptr};
     std::unique_ptr<torch::optim::AdamW> optimizer{nullptr};

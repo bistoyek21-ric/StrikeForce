@@ -166,7 +166,7 @@ public:
     }
 
     int predict(const std::vector<float>& obs) {
-        if (cnt <= T)
+        if (cnt <= T_initial)
             return 0;
         if (is_training) {
 #if !defined(CROWDSOURCED_TRAINING)
@@ -193,7 +193,7 @@ public:
     }
 
     void update(int action, bool imitate) {
-        if (is_training || cnt <= T)
+        if (is_training || cnt <= T_initial)
             return;
         rewards.push_back(reward_net->get_reward(action, imitate, states.back()));
         if (rewards.back() == -2 && training) {
@@ -228,7 +228,7 @@ public:
 
 #if defined(CROWDSOURCED_TRAINING)
     bool is_manual() {
-        if (!is_training && cnt <= T)
+        if (!is_training && cnt <= T_initial)
             ++cnt;
         if (is_training) {
             if (done_training) {
@@ -239,7 +239,7 @@ public:
             else
                return true;
         }
-        if (cnt <= T)
+        if (cnt <= T_initial)
             manual = true;
         else if (actions.empty()) {
             std::mt19937 gen(std::random_device{}());
@@ -275,7 +275,7 @@ private:
     bool is_training = false, logging = true, training, done_training, manual;
     std::thread trainThread;
     float learning_rate, alpha, gamma, ppo_clip, cv;
-    int T, num_epochs, cnt = 0;
+    int T, num_epochs, cnt = 0, T_initial = 128;
     const int num_actions = 9, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
     std::string backup_dir;
     AgentModel model{nullptr};

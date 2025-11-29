@@ -26,7 +26,7 @@ SOFTWARE.
 #include "RewardNet.hpp"
 
 //#define TL_IMPORT_REWARDNET
-//#define FREEZE_TL_BLOCK
+#define FREEZE_TL_BLOCK
 
 const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
 
@@ -65,19 +65,18 @@ struct AgentModelImpl : torch::nn::Module {
         h_state = torch::zeros({2, 1, hidden_size});
     }
 
-    void import_from_rewardnet(torch::nn::Module& reward_cnn, torch::nn::Module& reward_gru) {
-        // Copy CNN weights
-        for (auto& p : cnn->named_parameters()) {
-            auto name = p.key();
-            if (reward_cnn.named_parameters().contains(name))
-                p.value().data().copy_(reward_cnn.named_parameters()[name].data());
-        }
-        // Copy GRU weights
-        for (auto& p : gru->named_parameters()) {
-            auto name = p.key();
-            if (reward_gru.named_parameters().contains(name))
-                p.value().data().copy_(reward_gru.named_parameters()[name].data());
-        }
+    void import_tl_block_rewardnet(const RewardModel& reward_model) {
+        for (auto& p : reward_model->cnn->named_parameters())
+            cnn->named_parameters()[p.key()] = p.value().detach().clone();
+        for (auto& p : reward_model->gru->named_parameters())
+            gru->named_parameters()[p.key()] = p.value().detach().clone();
+    }
+
+    void freeze_tl_block(){
+        for (auto& p : cnn->parameters())
+            p.set_requires_grad(false);
+        for (auto& p : gru->parameters())
+            p.set_requires_grad(false);
     }
 
     void update_actions(int action) {
@@ -105,7 +104,7 @@ TORCH_MODULE(AgentModel);
 
 class Agent {
 public:
-    Agent(bool training = true, int T = 512, int num_epochs = 4, float gamma = 0.99, float learning_rate = 1e-3,
+    Agent(bool training = true, int T = 1024, int num_epochs = 4, float gamma = 0.99, float learning_rate = 1e-3,
          float ppo_clip = 0.2, float alpha = 0.9, float cv = 0.5, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
         : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
         ppo_clip(ppo_clip), alpha(alpha), cv(cv), backup_dir(backup_dir) {
@@ -129,6 +128,10 @@ public:
                 log_file.open(backup_dir + "/agent_log.log", std::ios::app);
             }
         }
+#if defined(TL_IMPORT_REWARDNET)
+        model->import_tl_block_rewardnet(reward_net->get_model());
+        log("Imported TL block from Reward Network.");
+#endif
         coor[0] = snap_shot();
         int param_count = 0;
         for (auto &p: coor[0]) {
@@ -141,25 +144,16 @@ public:
         else {
             model->train();
             optimizer = std::make_unique<torch::optim::AdamW>(model->parameters(), torch::optim::AdamWOptions(learning_rate));
+#if defined(FREEZE_TL_BLOCK)
+            model->freeze_tl_block();
+            log("Frozen TL block parameters.");
+#endif
             if (!backup_dir.empty() && std::filesystem::exists(backup_dir + "/optimizer.pt")) {
                 try {
                     torch::load(*optimizer, backup_dir + "/optimizer.pt");
                 } catch (...) {}
             }
         }
-        #if defined(TL_IMPORT_REWARDNET)
-        auto reward_model = reward_net->get_model();
-        model->import_from_rewardnet(
-            reward_model->cnn,
-            reward_model->gru
-        );
-        #endif
-        #if defined(FREEZE_TL_BLOCK)
-        for (auto& param : model->cnn->parameters())
-            param.requires_grad_(false);
-        for (auto& param : model->gru->parameters())
-            param.requires_grad_(false);
-        #endif
         auto dummy = torch::zeros({num_channels, 1, 9, (grid_x + 2) / 3, (grid_y + 2) / 3});
         model->forward(dummy);
         model->reset_memory();
@@ -173,11 +167,13 @@ public:
                 trainThread.join();
                 std::cout << "done!" << std::endl;
             }
-        coor[0].clear();
-        for (auto &p: initial)
-            coor[0].push_back(p.detach().clone());
-        log("-------\nA total dist: step=" + std::to_string(calc_diff()));
-        log("======================");
+        if (training) {
+            coor[0].clear();
+            for (auto &p: initial)
+                coor[0].push_back(p.detach().clone());
+            log("-------\nA total dist: step=" + std::to_string(calc_diff()));
+            log("======================");
+        }
         log_file.close();
         if (training && !backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             model->reset_memory();
@@ -235,7 +231,7 @@ public:
         }
         model->update_actions(action);
         actions.push_back(action);
-        if (actions.size() == 2 * T) {
+        if (actions.size() == T) {
             if (training) {
                 is_training = true;
                 done_training = false;
@@ -284,7 +280,7 @@ public:
             }
             ////////////////////////////
         }
-        else if (actions.size() == T / 2 || actions.size() == T * 3 / 2) {
+        else if (actions.size() == T / 2) {
             manual = !manual;
             /////////////////////////////
             if (manual) {
@@ -306,7 +302,7 @@ private:
     bool is_training = false, logging = true, training, done_training, manual;
     std::thread trainThread;
     float learning_rate, alpha, gamma, ppo_clip, cv;
-    int T, num_epochs, cnt = 0, T_initial = 128;
+    int T, num_epochs, cnt = 0, T_initial = 512;
     const int num_actions = 9, num_channels = 32, grid_x = 39, grid_y = 39, hidden_size = 160;
     std::string backup_dir;
     AgentModel model{nullptr};
@@ -346,9 +342,9 @@ private:
     }
 
     std::vector<torch::Tensor> computeReturns() {
-        std::vector<torch::Tensor> returns(2 * T);
+        std::vector<torch::Tensor> returns(T);
         auto ret = torch::zeros({});
-        for (int i = 2 * T - 1; i >= 0; --i) {
+        for (int i = T - 1; i >= 0; --i) {
             ret = rewards[i] + gamma * ret;
             returns[i] = ret * (1 - gamma);
         }
@@ -362,7 +358,7 @@ private:
             auto p_loss = torch::zeros({});
             auto v_loss = torch::zeros({});
             model->reset_memory();
-            for (int i = 0; i < T; ++i) {
+            for (int i = 0; i < T * 3 / 4; ++i) {
                 torch::Tensor current_logp;
                 std::vector<torch::Tensor> output;
                 if (!epoch) {
@@ -386,7 +382,7 @@ private:
                 auto clipped = torch::clamp(ratio, 1 - (epoch + 1) * ppo_clip, 1 + (epoch + 1) * ppo_clip);
                 p_loss -= torch::min(ratio * adv, clipped * adv);
             }
-            auto loss = (p_loss + cv * v_loss) / T;
+            auto loss = (p_loss + cv * v_loss) / (T * 3 / 4);
             optimizer->zero_grad();
             loss.backward();
             /////////////////////////////////////////////////////
@@ -407,7 +403,9 @@ private:
             */
             /////////////////////////////////////////////////////
             optimizer->step();
-            log("A: loss=" + std::to_string(loss.item<float>()) + "| p_loss=" + std::to_string(p_loss.item<float>() / T) + "| v_loss=" + std::to_string(v_loss.item<float>() / T) + ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff()));
+            log("A: loss=" + std::to_string(loss.item<float>()) + "| p_loss=" + std::to_string(p_loss.item<float>() / T) + 
+            "| v_loss=" + std::to_string(v_loss.item<float>() / T) + 
+            ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff()));
         }
         actions.clear(), rewards.clear(), log_probs.clear();
         states.clear(), values.clear();

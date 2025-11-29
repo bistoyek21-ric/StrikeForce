@@ -121,7 +121,7 @@ TORCH_MODULE(RewardModel);
 
 class RewardNet {
 public:
-    RewardNet(bool training = true, int T = 512, float learning_rate = 1e-3, float alpha = 0.9,
+    RewardNet(bool training = true, int T = 1024, float learning_rate = 1e-3, float alpha = 0.9,
         const std::string &backup_dir = "bots/bot-1/backup/reward_backup")
         : training(training), T(T), learning_rate(learning_rate), alpha(alpha), backup_dir(backup_dir) {
         model = RewardModel();
@@ -166,21 +166,19 @@ public:
                 trainThread.join();
                 std::cout << "done!" << std::endl;
             }
-        coor[0].clear();
-        for (auto &p: initial)
-            coor[0].push_back(p.detach().clone());
-        log("-------\nR total dist: step=" + std::to_string(calc_diff()));
-        log("======================");
+        if (training) {
+            coor[0].clear();
+            for (auto &p: initial)
+                coor[0].push_back(p.detach().clone());
+            log("-------\nR total dist: step=" + std::to_string(calc_diff()));
+            log("======================");
+        }
         log_file.close();
         if (training && !backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             model->reset_memory();
             torch::save(model, backup_dir + "/model.pt");
             torch::save(*optimizer, backup_dir + "/optimizer.pt");
         }
-    }
-
-    RewardModel get_model(){
-        return model;
     }
 
     float get_reward(int action, bool imitate, const torch::Tensor &state) {
@@ -198,6 +196,10 @@ public:
         auto reward = compute_reward(action, state, (imitate ? target : output / 2));
         update(output, target);
         return reward.item<float>() * 2 - 1;
+    }
+
+    RewardModel get_model() {
+        return model;
     }
 
 private:
@@ -266,14 +268,18 @@ private:
 
     void train() {
         time_t ts = time(0);
-        auto loss = torch::zeros({});
-        for (int i = 0; i < 2 * T; ++i) {
+        auto loss = torch::zeros({}), human = torch::zeros({1}), agent = torch::zeros({1});
+        for (int i = 0; i < T; ++i) {
             loss += torch::binary_cross_entropy(outputs[i], targets[i]);
+            if (targets[i].item<float>() == 1)
+                human += outputs[i];
+            else
+                agent += outputs[i];
             /////////////////////////////////////////////////////
             //log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
             /////////////////////////////////////////////////////
         }
-        loss /= 2 * T;
+        loss /= T;
         optimizer->zero_grad();
         loss.backward();
         /////////////////////////////////////////////////////
@@ -296,14 +302,15 @@ private:
         optimizer->step();
         outputs.clear(), targets.clear();
         model->reset_memory();
-        log("R: loss=" + std::to_string(loss.item<float>()) + ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff()));
+        log("R: loss=" + std::to_string(loss.item<float>()) + ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff())
+         + "|| human_avg=" + std::to_string(human.item<float>() / (T / 2)) + ", agent_avg=" + std::to_string(agent.item<float>() / (T / 2)));
         done_training = true;
     }
 
     void update(const torch::Tensor &output, const torch::Tensor &target) {
         outputs.push_back(output);
         targets.push_back(target);
-        if (outputs.size() == 2 * T)
+        if (outputs.size() == T)
             if (training) {
                 is_training = true;
                 done_training = false;

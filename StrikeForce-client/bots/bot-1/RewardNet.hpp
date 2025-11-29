@@ -302,8 +302,9 @@ private:
         optimizer->step();
         outputs.clear(), targets.clear();
         model->reset_memory();
-        log("R: loss=" + std::to_string(loss.item<float>()) + ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff())
-         + "|| human_avg=" + std::to_string(human.item<float>() / (T / 2)) + ", agent_avg=" + std::to_string(agent.item<float>() / (T / 2)));
+        log("R: loss=" + std::to_string(loss.item<float>()) + "| human_avg=" + std::to_string(human.item<float>() / (T / 2)) +
+         "| agent_avg=" + std::to_string(agent.item<float>() / (T / 2)) + ", time(s)=" + std::to_string(time(0) - ts) + 
+         ", step=" + std::to_string(calc_diff()));
         done_training = true;
     }
 

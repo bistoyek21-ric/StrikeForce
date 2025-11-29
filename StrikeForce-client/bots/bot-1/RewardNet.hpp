@@ -209,6 +209,10 @@ private:
     std::ofstream log_file;
     std::vector<float> prev;
 
+    RewardModel get_model(){
+        return model.detach().clone();
+    }
+
     std::vector<torch::Tensor> snap_shot(){
         std::vector<torch::Tensor> params;
         for (auto& p : model->parameters())

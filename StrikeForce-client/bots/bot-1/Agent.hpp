@@ -25,6 +25,9 @@ SOFTWARE.
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
 #include "RewardNet.hpp"
 
+//#define TL_IMPORT_REWARDNET
+//#define FREEZE_TL_BLOCK
+
 const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
 
 struct AgentModelImpl : torch::nn::Module {
@@ -60,6 +63,21 @@ struct AgentModelImpl : torch::nn::Module {
     void reset_memory() {
         action_input = torch::zeros({num_actions});
         h_state = torch::zeros({2, 1, hidden_size});
+    }
+
+    void import_from_rewardnet(torch::nn::Module& reward_cnn, torch::nn::Module& reward_gru) {
+        // Copy CNN weights
+        for (auto& p : cnn->named_parameters()) {
+            auto name = p.key();
+            if (reward_cnn.named_parameters().contains(name))
+                p.value().data().copy_(reward_cnn.named_parameters()[name].data());
+        }
+        // Copy GRU weights
+        for (auto& p : gru->named_parameters()) {
+            auto name = p.key();
+            if (reward_gru.named_parameters().contains(name))
+                p.value().data().copy_(reward_gru.named_parameters()[name].data());
+        }
     }
 
     void update_actions(int action) {
@@ -129,6 +147,19 @@ public:
                 } catch (...) {}
             }
         }
+        #if defined(TL_IMPORT_REWARDNET)
+        auto reward_model = reward_net->get_model();
+        model->import_from_rewardnet(
+            reward_model->cnn,
+            reward_model->gru
+        );
+        #endif
+        #if defined(FREEZE_TL_BLOCK)
+        for (auto& param : model->cnn->parameters())
+            param.requires_grad_(false);
+        for (auto& param : model->gru->parameters())
+            param.requires_grad_(false);
+        #endif
         auto dummy = torch::zeros({num_channels, 1, 9, (grid_x + 2) / 3, (grid_y + 2) / 3});
         model->forward(dummy);
         model->reset_memory();

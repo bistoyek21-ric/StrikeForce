@@ -179,6 +179,10 @@ public:
         }
     }
 
+    RewardModel get_model(){
+        return model;
+    }
+
     float get_reward(int action, bool imitate, const torch::Tensor &state) {
         if (is_training) {
             if (done_training) {
@@ -208,10 +212,6 @@ private:
     std::vector<torch::Tensor> outputs, targets, coor[2], initial;
     std::ofstream log_file;
     std::vector<float> prev;
-
-    RewardModel get_model(){
-        return model.detach().clone();
-    }
 
     std::vector<torch::Tensor> snap_shot(){
         std::vector<torch::Tensor> params;

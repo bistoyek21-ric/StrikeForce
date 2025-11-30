@@ -349,6 +349,11 @@ private:
     }
 
     void train() {
+        float sum_rewards[2] = {};
+        for (int i = 0; i < T; ++i)
+            sum_rewards[i / (T / 2)] += rewards[i];
+        log("A: reward_avg0=" + std::to_string(sum_rewards[0] / T) +
+            "| reward_avg1=" + std::to_string(sum_rewards[1] / T));
         auto returns = computeReturns();
         auto tmp_a_i = model->action_input.detach().clone();
         auto tmp_h_s = model->h_state.detach().clone();

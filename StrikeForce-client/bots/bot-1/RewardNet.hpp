@@ -201,7 +201,7 @@ public:
         }
         auto output = model->forward(action, state);
         auto target = torch::tensor((float)imitate);
-        auto reward = compute_reward(action, state, (imitate ? target : output / 2));
+        auto reward = compute_reward(action, state, target);
         update(output, target);
         return reward.item<float>() * 2 - 1;
     }

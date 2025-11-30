@@ -26,7 +26,7 @@ SOFTWARE.
 #include "RewardNet.hpp"
 
 //#define TL_IMPORT_REWARDNET
-#define FREEZE_TL_BLOCK
+//#define FREEZE_TL_BLOCK
 
 const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
 

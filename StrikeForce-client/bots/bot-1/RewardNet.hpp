@@ -25,6 +25,8 @@ SOFTWARE.
 #include "basic.hpp"
 #include <torch/torch.h>
 
+//#define FREEZE_REWARDNET_BLOCK
+
 struct ResBImpl : torch::nn::Module {
     std::vector<torch::nn::Linear> layers;
     int num_layers;
@@ -143,6 +145,10 @@ public:
             param_count += p.numel();
         }
         //log("RewardNet's parameters: " + std::to_string(param_count));
+#if defined(FREEZE_REWARDNET_BLOCK)
+        log("Freezing Reward Network parameters.");
+        training = flase;
+#endif
         if (!training)
             model->eval();
         else {

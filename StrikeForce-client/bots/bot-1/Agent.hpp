@@ -25,9 +25,6 @@ SOFTWARE.
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
 #include "RewardNet.hpp"
 
-//#define TL_IMPORT_REWARDNET
-//#define FREEZE_TL_BLOCK
-
 const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
 
 struct AgentModelImpl : torch::nn::Module {
@@ -353,6 +350,8 @@ private:
 
     void train() {
         auto returns = computeReturns();
+        auto tmp_a_i = model->action_input.detach().clone();
+        auto tmp_h_s = model->h_state.detach().clone();
         for (int epoch = 0; epoch < num_epochs; ++epoch) {
             time_t ts = time(0);
             auto p_loss = torch::zeros({});
@@ -383,6 +382,8 @@ private:
                 p_loss -= torch::min(ratio * adv, clipped * adv);
             }
             auto loss = (p_loss + cv * v_loss) / (T * 3 / 4);
+            p_loss = p_loss / (T * 3 / 4);
+            v_loss = v_loss / (T * 3 / 4);
             optimizer->zero_grad();
             loss.backward();
             /////////////////////////////////////////////////////
@@ -403,13 +404,17 @@ private:
             */
             /////////////////////////////////////////////////////
             optimizer->step();
-            log("A: loss=" + std::to_string(loss.item<float>()) + "| p_loss=" + std::to_string(p_loss.item<float>() / T) + 
-            "| v_loss=" + std::to_string(v_loss.item<float>() / T) + 
-            ", time(s)=" + std::to_string(time(0) - ts) + ", step=" + std::to_string(calc_diff()));
+            log("A: loss=" + std::to_string(loss.item<float>()) +
+             "| p_loss=" + std::to_string(p_loss.item<float>()) + 
+             "| v_loss=" + std::to_string(v_loss.item<float>()) + 
+             ", time(s)=" + std::to_string(time(0) - ts) +
+             ", step=" + std::to_string(calc_diff()));
         }
         actions.clear(), rewards.clear(), log_probs.clear();
         states.clear(), values.clear();
         model->reset_memory();
+        model->action_input = tmp_a_i;
+        model->h_state = tmp_h_s;
         done_training = true;
     }
 };

@@ -25,8 +25,6 @@ SOFTWARE.
 #include "basic.hpp"
 #include <torch/torch.h>
 
-//#define FREEZE_REWARDNET_BLOCK
-
 struct ResBImpl : torch::nn::Module {
     std::vector<torch::nn::Linear> layers;
     int num_layers;
@@ -138,6 +136,10 @@ public:
                 log_file.open(backup_dir + "/reward_log.log", std::ios::app);
             }
         }
+#if defined(FREEZE_REWARDNET_BLOCK)
+        this->training = training = false;
+        log("Freezing Reward Network parameters.");
+#endif
         coor[0] = snap_shot();
         int param_count = 0;
         for (auto &p: coor[0]) {
@@ -145,10 +147,6 @@ public:
             param_count += p.numel();
         }
         //log("RewardNet's parameters: " + std::to_string(param_count));
-#if defined(FREEZE_REWARDNET_BLOCK)
-        log("Freezing Reward Network parameters.");
-        training = false;
-#endif
         if (!training)
             model->eval();
         else {
@@ -177,6 +175,10 @@ public:
             for (auto &p: initial)
                 coor[0].push_back(p.detach().clone());
             log("-------\nR total dist: step=" + std::to_string(calc_diff()));
+            log("======================");
+        }
+        else {
+            log("-------\nR total dist: step=0.000000");
             log("======================");
         }
         log_file.close();
@@ -275,17 +277,20 @@ private:
     void train() {
         time_t ts = time(0);
         auto loss = torch::zeros({}), human = torch::zeros({1}), agent = torch::zeros({1});
+        int hum_cnt = 0, agent_cnt = 0;
+        auto tmp_a_i = model->action_input.detach().clone();
+        auto tmp_h_s = model->h_state.detach().clone();
         for (int i = 0; i < T; ++i) {
             loss += torch::binary_cross_entropy(outputs[i], targets[i]);
             if (targets[i].item<float>() == 1)
-                human += outputs[i];
+                human += outputs[i], ++hum_cnt;
             else
-                agent += outputs[i];
+                agent += outputs[i], ++agent_cnt;
             /////////////////////////////////////////////////////
             //log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
             /////////////////////////////////////////////////////
         }
-        loss /= T;
+        loss /= T, human /= hum_cnt, agent /= agent_cnt;
         optimizer->zero_grad();
         loss.backward();
         /////////////////////////////////////////////////////
@@ -308,8 +313,12 @@ private:
         optimizer->step();
         outputs.clear(), targets.clear();
         model->reset_memory();
-        log("R: loss=" + std::to_string(loss.item<float>()) + "| human_avg=" + std::to_string(human.item<float>() / (T / 2)) +
-         "| agent_avg=" + std::to_string(agent.item<float>() / (T / 2)) + ", time(s)=" + std::to_string(time(0) - ts) + 
+        model->action_input = tmp_a_i;
+        model->h_state = tmp_h_s;
+        log("R: loss=" + std::to_string(loss.item<float>()) +
+         "| human_avg=" + std::to_string(human.item<float>()) +
+         "| agent_avg=" + std::to_string(agent.item<float>()) +
+         ", time(s)=" + std::to_string(time(0) - ts) +
          ", step=" + std::to_string(calc_diff()));
         done_training = true;
     }
@@ -329,7 +338,21 @@ private:
                 std::cout << "done!" << std::endl;
                 /////////////////////////////////////////////
             }
-            else
+            else {
+                auto loss = torch::zeros({}), human = torch::zeros({1}), agent = torch::zeros({1});
+                int hum_cnt = 0, agent_cnt = 0;
+                for (int i = 0; i < T; ++i) {
+                    loss += torch::binary_cross_entropy(outputs[i], targets[i]);
+                    if (targets[i].item<float>() == 1)
+                        human += outputs[i], ++hum_cnt;
+                    else
+                        agent += outputs[i], ++agent_cnt;
+                }
+                loss /= T, human /= hum_cnt, agent /= agent_cnt;
+                log("R: loss=" + std::to_string(loss.item<float>()) +
+                 "| human_avg=" + std::to_string(human.item<float>()) +
+                 "| agent_avg=" + std::to_string(agent.item<float>()));
                 outputs.clear(), targets.clear();
+            }
     }
 };

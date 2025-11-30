@@ -42,6 +42,8 @@ SOFTWARE.
 
 #define CROWDSOURCED_TRAINING
 
+#include "macros.hpp"
+
 bool during_battle = false;
 
 void usleep(int x){

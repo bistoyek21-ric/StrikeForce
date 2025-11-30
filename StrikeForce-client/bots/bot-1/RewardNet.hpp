@@ -147,7 +147,7 @@ public:
         //log("RewardNet's parameters: " + std::to_string(param_count));
 #if defined(FREEZE_REWARDNET_BLOCK)
         log("Freezing Reward Network parameters.");
-        training = flase;
+        training = false;
 #endif
         if (!training)
             model->eval();

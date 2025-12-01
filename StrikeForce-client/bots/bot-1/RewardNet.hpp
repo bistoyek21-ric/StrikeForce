@@ -286,30 +286,10 @@ private:
                 human += outputs[i], ++hum_cnt;
             else
                 agent += outputs[i], ++agent_cnt;
-            /////////////////////////////////////////////////////
-            //log("output: " + std::to_string(outputs[i].item<float>()) + ", target:" + std::to_string(targets[i].item<float>()));
-            /////////////////////////////////////////////////////
         }
         loss /= T, human /= hum_cnt, agent /= agent_cnt;
         optimizer->zero_grad();
         loss.backward();
-        /////////////////////////////////////////////////////
-        /*
-        for (const auto &p: model->named_parameters())
-            if (p.value().grad().defined()){
-                std::string key = p.key(), k;
-                double v = p.value().norm().item<double>();
-                double g = p.value().grad().norm().item<double>();
-                double coef = g / (v + 1e-8);
-                for(int i = 0; i < 30; ++i)
-                    if(i >= key.size())
-                        k.push_back(' ');
-                    else
-                        k.push_back(key[i]);
-                log(k + " || value-norm: " + std::to_string(v) + " || grad--norm: " + std::to_string(g) + " || grad/value: " + std::to_string(coef));
-            }
-        */
-        /////////////////////////////////////////////////////
         optimizer->step();
         outputs.clear(), targets.clear();
         model->reset_memory();

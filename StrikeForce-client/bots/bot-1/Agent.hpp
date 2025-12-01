@@ -210,7 +210,12 @@ public:
         auto output = model->forward(state);
         values.push_back(output[1]);
         log_probs.push_back(torch::log(output[0]));
-        std::vector<float> v(log_probs.back().data_ptr<float>(), log_probs.back().data_ptr<float>() + log_probs.back().numel());
+        std::vector<float> v;
+        for (int i = 0; i < num_actions; ++i)
+            v.push_back(output[0][i].item<float>());
+        for (int i = 1; i < num_actions; ++i)
+            v[i] *= 0.5f / (1 - v[0] + 1e-5f);
+        v[0] = 0.5f;
         std::mt19937 gen(std::random_device{}());
         std::discrete_distribution<> dist(v.begin(), v.end());
         return dist(gen);
@@ -269,23 +274,19 @@ public:
             std::mt19937 gen(std::random_device{}());
             std::uniform_int_distribution<> dist(0, 1);
             manual = dist(gen);
-            /////////////////////////////
             if (manual) {
                 std::cout << "manual part! press space button to continue" << std::endl;
                 while(getch() != ' ');
                 std::cout << "space button pressed!" << std::endl;
             }
-            ////////////////////////////
         }
         else if (actions.size() == T / 2) {
             manual = !manual;
-            /////////////////////////////
             if (manual) {
                 std::cout << "manual part! press space button to continue" << std::endl;
                 while(getch() != ' ');
                 std::cout << "space button pressed!" << std::endl;
             }
-            ////////////////////////////
         }
         return manual;
     }
@@ -349,11 +350,15 @@ private:
     }
 
     void train() {
-        float sum_rewards[2] = {};
-        for (int i = 0; i < T; ++i)
+        float sum_rewards[2] = {}, nothing[2] = {};
+        for (int i = 0; i < T; ++i){
             sum_rewards[i / (T / 2)] += rewards[i];
-        log("A: reward_avg0=" + std::to_string(sum_rewards[0] / T) +
-            "| reward_avg1=" + std::to_string(sum_rewards[1] / T));
+            nothing[i / (T / 2)] += (int)(!actions[i]);
+        }
+        log("A stats: r_avg0=" + std::to_string(sum_rewards[0] / T) +
+            "| r_avg1=" + std::to_string(sum_rewards[1] / T) +
+            "| n_avg0=" + std::to_string(nothing[0] / (T / 2)) +
+            "| n_avg1=" + std::to_string(nothing[1] / (T / 2)));
         auto returns = computeReturns();
         auto tmp_a_i = model->action_input.detach().clone();
         auto tmp_h_s = model->h_state.detach().clone();
@@ -375,39 +380,22 @@ private:
                     current_logp = torch::log(output[0][actions[i]]);
                 }
                 if (!epoch) {
-                    v_loss += torch::mse_loss(values[i], returns[i]);
+                    v_loss += torch::mse_loss(values[i], returns[i]) * (1 + i / (T / 2));
                     values[i] = values[i].detach();
                 }
                 else
-                    v_loss += torch::mse_loss(output[1], returns[i]);
+                    v_loss += torch::mse_loss(output[1], returns[i]) * (1 + i / (T / 2));
                 auto diff = torch::clamp(current_logp - log_probs[i][actions[i]], -100, 10);
                 auto ratio = torch::exp(diff);
                 auto adv = returns[i] - values[i];
                 auto clipped = torch::clamp(ratio, 1 - (epoch + 1) * ppo_clip, 1 + (epoch + 1) * ppo_clip);
-                p_loss -= torch::min(ratio * adv, clipped * adv);
+                p_loss -= torch::min(ratio * adv, clipped * adv) * (1 + i / (T / 2));
             }
-            auto loss = (p_loss + cv * v_loss) / (T * 3 / 4);
-            p_loss = p_loss / (T * 3 / 4);
-            v_loss = v_loss / (T * 3 / 4);
+            p_loss = p_loss / T;
+            v_loss = v_loss / T;
+            auto loss = p_loss + cv * v_loss;
             optimizer->zero_grad();
             loss.backward();
-            /////////////////////////////////////////////////////
-            /*
-            for (const auto &p: model->named_parameters())
-                if (p.value().grad().defined()) {
-                    std::string key = p.key(), k;
-                    double v = p.value().norm().item<double>();
-                    double g = p.value().grad().norm().item<double>();
-                    double coef = g / (v + 1e-8);
-                    for(int i = 0; i < 30; ++i)
-                        if(i >= key.size())
-                            k.push_back(' ');
-                        else
-                            k.push_back(key[i]);
-                    log(k + " || value-norm: " + std::to_string(v) + " || grad--norm: " + std::to_string(g) + " || grad/value: " + std::to_string(coef));
-                }
-            */
-            /////////////////////////////////////////////////////
             optimizer->step();
             log("A: loss=" + std::to_string(loss.item<float>()) +
              "| p_loss=" + std::to_string(p_loss.item<float>()) + 

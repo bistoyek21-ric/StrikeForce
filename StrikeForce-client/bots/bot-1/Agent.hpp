@@ -125,6 +125,10 @@ public:
                 log_file.open(backup_dir + "/agent_log.log", std::ios::app);
             }
         }
+#if defined(FREEZE_AGENT_BLOCK)
+        this->training = training = false;
+        log("Freezing Agent Network parameters.");
+#endif
 #if defined(TL_IMPORT_REWARDNET)
         model->import_tl_block_rewardnet(reward_net->get_model());
         log("Imported TL block from Reward Network.");
@@ -250,6 +254,24 @@ public:
                 /////////////////////////////////////////////
             }
             else {
+                float sum_rewards[2] = {}, nothing[2] = {};
+                for (int i = 0; i < T; ++i){
+                    sum_rewards[i / (T / 2)] += rewards[i];
+                    nothing[i / (T / 2)] += (int)(!actions[i]);
+                }
+                log("A stats: r_avg0=" + std::to_string(sum_rewards[0] / T) +
+                    "|r_avg1=" + std::to_string(sum_rewards[1] / T) +
+                    "|n_avg0=" + std::to_string(nothing[0] / (T / 2)) +
+                    "|n_avg1=" + std::to_string(nothing[1] / (T / 2)));
+                auto sum = torch::exp(log_probs[0].detach().clone());
+                for (int i = 1; i < T; ++i)
+                    sum += torch::exp(log_probs[i].detach().clone());
+                sum /= T;
+                log("A prefferance:");
+                std::string pref;
+                for (int i = 0; i < num_actions; ++i)
+                    pref += std::to_string(sum[i].item<float>()) + "|";
+                log(pref);
                 actions.clear();
                 rewards.clear();
                 log_probs.clear();
@@ -367,14 +389,19 @@ private:
         for (int i = 1; i < T; ++i)
             sum += torch::exp(log_probs[i].detach().clone());
         sum /= T;
-        std::string pref = "A prefferance: ";
+        log("A prefferance:");
+        std::string pref;
         for (int i = 0; i < num_actions; ++i)
             pref += std::to_string(sum[i].item<float>()) + "|";
         log(pref);
         auto returns = computeReturns();
         auto tmp_a_i = model->action_input.detach().clone();
         auto tmp_h_s = model->h_state.detach().clone();
-        for (int epoch = 0; epoch < num_epochs; ++epoch) {
+        int times = 1;
+#if defined(FREEZE_TL_BLOCK)
+        times = 2;
+#endif
+        for (int epoch = 0; epoch < num_epochs * times; ++epoch) {
             time_t ts = time(0);
             auto p_loss = torch::zeros({});
             auto v_loss = torch::zeros({});
@@ -399,8 +426,10 @@ private:
                     v_loss += torch::mse_loss(output[1], returns[i]) * (1 + i / (T / 2));
                 auto diff = torch::clamp(current_logp - log_probs[i][actions[i]], -100, 10);
                 auto ratio = torch::exp(diff);
+                float lb = std::max(0.5f, 1 - (epoch + 1) * ppo_clip);
+                float ub = std::min(2.0f, 1 + (epoch + 1) * ppo_clip);
+                auto clipped = torch::clamp(ratio, lb, ub);
                 auto adv = returns[i] - values[i];
-                auto clipped = torch::clamp(ratio, 1 - (epoch + 1) * ppo_clip, 1 + (epoch + 1) * ppo_clip);
                 p_loss -= torch::min(ratio * adv, clipped * adv) * (1 + i / (T / 2));
             }
             p_loss = p_loss / T;

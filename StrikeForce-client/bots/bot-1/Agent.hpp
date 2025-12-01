@@ -267,7 +267,7 @@ public:
                 for (int i = 1; i < T; ++i)
                     sum += torch::exp(log_probs[i].detach().clone());
                 sum /= T;
-                log("A prefferance:");
+                log("A probs:");
                 std::string pref;
                 for (int i = 0; i < num_actions; ++i)
                     pref += std::to_string(sum[i].item<float>()) + "|";
@@ -389,7 +389,7 @@ private:
         for (int i = 1; i < T; ++i)
             sum += torch::exp(log_probs[i].detach().clone());
         sum /= T;
-        log("A prefferance:");
+        log("A probs:");
         std::string pref;
         for (int i = 0; i < num_actions; ++i)
             pref += std::to_string(sum[i].item<float>()) + "|";

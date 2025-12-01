@@ -171,6 +171,10 @@ public:
             log("-------\nA total dist: step=" + std::to_string(calc_diff()));
             log("======================");
         }
+        else {
+            log("-------\nA total dist: step=0.000000");
+            log("======================");
+        }
         log_file.close();
         if (training && !backup_dir.empty() && std::filesystem::exists(backup_dir)) {
             model->reset_memory();
@@ -356,9 +360,17 @@ private:
             nothing[i / (T / 2)] += (int)(!actions[i]);
         }
         log("A stats: r_avg0=" + std::to_string(sum_rewards[0] / T) +
-            "| r_avg1=" + std::to_string(sum_rewards[1] / T) +
-            "| n_avg0=" + std::to_string(nothing[0] / (T / 2)) +
-            "| n_avg1=" + std::to_string(nothing[1] / (T / 2)));
+            "|r_avg1=" + std::to_string(sum_rewards[1] / T) +
+            "|n_avg0=" + std::to_string(nothing[0] / (T / 2)) +
+            "|n_avg1=" + std::to_string(nothing[1] / (T / 2)));
+        auto sum = torch::exp(log_probs[0].detach().clone());
+        for (int i = 1; i < T; ++i)
+            sum += torch::exp(log_probs[i].detach().clone());
+        sum /= T;
+        std::string pref = "A prefferance: ";
+        for (int i = 0; i < num_actions; ++i)
+            pref += std::to_string(sum[i].item<float>()) + "|";
+        log(pref);
         auto returns = computeReturns();
         auto tmp_a_i = model->action_input.detach().clone();
         auto tmp_h_s = model->h_state.detach().clone();
@@ -398,10 +410,10 @@ private:
             loss.backward();
             optimizer->step();
             log("A: loss=" + std::to_string(loss.item<float>()) +
-             "| p_loss=" + std::to_string(p_loss.item<float>()) + 
-             "| v_loss=" + std::to_string(v_loss.item<float>()) + 
-             ", time(s)=" + std::to_string(time(0) - ts) +
-             ", step=" + std::to_string(calc_diff()));
+             "|p_loss=" + std::to_string(p_loss.item<float>()) + 
+             "|v_loss=" + std::to_string(v_loss.item<float>()) + 
+             ",time(s)=" + std::to_string(time(0) - ts) +
+             ",step=" + std::to_string(calc_diff()));
         }
         actions.clear(), rewards.clear(), log_probs.clear();
         states.clear(), values.clear();

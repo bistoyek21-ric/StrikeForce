@@ -201,7 +201,7 @@ public:
         }
         auto output = model->forward(action, state);
         auto target = torch::tensor((float)imitate);
-        auto reward = compute_reward(action, state, target);
+        auto reward = compute_reward(action, state, (imitate ? target : output.pow(3)));
         update(output, target);
         return reward.item<float>() * 2 - 1;
     }
@@ -296,10 +296,10 @@ private:
         model->action_input = tmp_a_i;
         model->h_state = tmp_h_s;
         log("R: loss=" + std::to_string(loss.item<float>()) +
-         "| human_avg=" + std::to_string(human.item<float>()) +
-         "| agent_avg=" + std::to_string(agent.item<float>()) +
-         ", time(s)=" + std::to_string(time(0) - ts) +
-         ", step=" + std::to_string(calc_diff()));
+         "|human_avg=" + std::to_string(human.item<float>()) +
+         "|agent_avg=" + std::to_string(agent.item<float>()) +
+         ",time(s)=" + std::to_string(time(0) - ts) +
+         ",step=" + std::to_string(calc_diff()));
         done_training = true;
     }
 
@@ -330,8 +330,8 @@ private:
                 }
                 loss /= T, human /= hum_cnt, agent /= agent_cnt;
                 log("R: loss=" + std::to_string(loss.item<float>()) +
-                 "| human_avg=" + std::to_string(human.item<float>()) +
-                 "| agent_avg=" + std::to_string(agent.item<float>()));
+                 "|human_avg=" + std::to_string(human.item<float>()) +
+                 "|agent_avg=" + std::to_string(agent.item<float>()));
                 outputs.clear(), targets.clear();
             }
     }

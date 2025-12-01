@@ -841,10 +841,6 @@ namespace Environment::Field{
 						manual = !manual;
 #endif
 					}
-					else if(!manual){
-						command[ind] = '+';
-						return;
-					}
 				}
 				silent = false;
 			}
@@ -988,7 +984,7 @@ namespace Environment::Field{
 			printer.print(" [ : add block\n");
 			printer.print(" ] : add portal\n");
 			printer.print(" (Item's sign)* : change item\n");
-			printer.print(" u : use item(for consumables)\n");
+			printer.print(" u : use item (for consumables)\n");
 			printer.print(" x : attack\n");
 			printer.print(" Q : quit\n");
 			printer.print("-------------------------------------\n");

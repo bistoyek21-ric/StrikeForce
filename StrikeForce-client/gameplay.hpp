@@ -1780,12 +1780,19 @@ namespace Environment::Field{
 			res += "0: command list\n";
 		std::vector<int> v = temp_me.get_cor();
 		std::string last = "", color, cell;
-		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1); 
-		//v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1); // for back to origin uncomment this line
+		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
+		#if !defined(CROWDSOURCED_TRAINING)
+		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
+		#endif
+		int Width;
+		#if defined(CROWDSOURCED_TRAINING)
+		Width = 19;
+		#else
+		Width = W;
+		#endif
 		for(int i = v[1] - _H; i <= v[1] + _H; ++i, res.push_back('\n'))
-			for(int j = v[2] - 19; j <= v[2] + 19; ++j){ // for back to origin replace 18 with W
-				//cell = temp_map[i][j].showit(); // for back to origin uncomment this line
-				cell = ((j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit()); // for back to origin remove this line
+			for(int j = v[2] - Width; j <= v[2] + Width; ++j){
+				cell = ((j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit());
 				color = "";
 				int cnt = 2;
 				for(int k = 0; k < cell.size(); ++k){

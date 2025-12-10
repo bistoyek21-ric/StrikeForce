@@ -55,14 +55,18 @@ Whether you're an AI researcher looking for a challenging RL environment, a stud
 ### Prerequisites
 
 ```bash
+git clone https://github.com/bistoyek21-ric/StrikeForce.git
+
 # Ubuntu/Debian
-sudo apt-get install g++ libsfml-dev libtorch-dev
+sudo apt-get install curl p7zip-full p7zip-rar g++ libsfml-dev libtorch-dev
 
 # macOS
-brew install sfml libtorch
+brew install curl p7zip sfml libtorch
 
-# Windows: Download SFML and LibTorch manually
+# Windows: Download curl, 7zip, SFML and LibTorch manually
 ```
+
+More details are available in `INSTALLDEP.md`.
 
 ### Test Account (Skip Tutorial)
 
@@ -498,7 +502,8 @@ The API server (`server.py`) provides:
 ### Setup
 
 ```bash
-cd StrikeForce-server
+git clone https://github.com/bistoyek21-ric/StrikeForceAPI.git
+cd StrikeForceAPI
 pip install flask pycryptodome
 python server.py
 ```

@@ -429,7 +429,7 @@ Control training behavior in `macros.hpp`:
 #define FREEZE_TL_BLOCK
 ```
 
-### Example: PPO Agent (bot-1)
+### Example: GAIL (bot-1)
 
 The included `bot-1` demonstrates a complete PPO implementation with:
 

@@ -841,10 +841,6 @@ namespace Environment::Field{
 						manual = !manual;
 #endif
 					}
-					else if(!manual){
-						command[ind] = '+';
-						return;
-					}
 				}
 				silent = false;
 			}
@@ -988,7 +984,7 @@ namespace Environment::Field{
 			printer.print(" [ : add block\n");
 			printer.print(" ] : add portal\n");
 			printer.print(" (Item's sign)* : change item\n");
-			printer.print(" u : use item(for consumables)\n");
+			printer.print(" u : use item (for consumables)\n");
 			printer.print(" x : attack\n");
 			printer.print(" Q : quit\n");
 			printer.print("-------------------------------------\n");
@@ -1000,8 +996,8 @@ namespace Environment::Field{
 			printer.print("-------------------------------------\n");
 			printer.print("How to turn on and off full mode and change width and hight:\n");
 			printer.print(" F: on, O: off\n");
-			printer.print(" W : increase width, E : decrease width\n");
-			printer.print(" R : increase hight, T : decrease hight\n");
+			printer.print(" W : increase width, E : decrease width (not availabel in crowdsourced training)\n");
+			printer.print(" R : increase hight, T : decrease hight (not availabel in crowdsourced training)\n");
 			printer.print("-------------------------------------\n");
 			printer.print("[1]: its location on the standardized keyboards is the key below Esc.\n");
 			printer.print("[2]: you can enable NumLock and then use the arrows!\n");
@@ -1784,12 +1780,19 @@ namespace Environment::Field{
 			res += "0: command list\n";
 		std::vector<int> v = temp_me.get_cor();
 		std::string last = "", color, cell;
-		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1); 
-		//v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1); // for back to origin uncomment this line
+		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
+		#if !defined(CROWDSOURCED_TRAINING)
+		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
+		#endif
+		int Width;
+		#if defined(CROWDSOURCED_TRAINING)
+		Width = 19;
+		#else
+		Width = W;
+		#endif
 		for(int i = v[1] - _H; i <= v[1] + _H; ++i, res.push_back('\n'))
-			for(int j = v[2] - 19; j <= v[2] + 19; ++j){ // for back to origin replace 18 with W
-				//cell = temp_map[i][j].showit(); // for back to origin uncomment this line
-				cell = ((j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit()); // for back to origin remove this line
+			for(int j = v[2] - Width; j <= v[2] + Width; ++j){
+				cell = ((j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit());
 				color = "";
 				int cnt = 2;
 				for(int k = 0; k < cell.size(); ++k){
@@ -1822,7 +1825,11 @@ namespace Environment::Field{
 			res += color;
 		printer.render(res);
 		auto end_ = std::chrono::steady_clock::now();
+		#if defined(CROWDSOURCED_TRAINING)
+		int k = (lim.count() * 1.25 - (end_ - start1).count()) / 1000;
+		#else
 		int k = (lim.count() - (end_ - start1).count()) / 1000;
+		#endif
 		usleep(std::max(k, 0));
 		return;
 	}

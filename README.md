@@ -589,8 +589,8 @@ Maps are stored in `StrikeForce-client/map/` as text files. Example from `floor1
 |--------|---------|
 | `#` | Solid wall (impassable) |
 | `.` | Empty floor (walkable) |
-| `O` | Portal entrance |
-| `^ N` | Portal exit (N = portal ID) |
+| `O` | Portal exit |
+| `^ N` | Portal entrance (N = portal ID) |
 | `v N` | Portal entrance with ID |
 
 ### Changing Map Dimensions
@@ -656,7 +656,7 @@ StrikeForce/
 
 ## 📊 Research Context
 
-### StrikeForce in Academic Research
+### StrikeForce/bot-1 in Academic Research
 
 This environment was developed as part of research in **resource-efficient imitation learning**. Key findings:
 
@@ -777,7 +777,7 @@ We welcome contributions!
 
 **Research collaboration?** Email: k4sr405@gmail.com or hamtar693@gmail.com
 
-**Want to play online?** Join our Discord community (link coming soon).
+**Want to play online?** Join our Discord community: [https://discord.gg/4Dmum8Egs](https://discord.gg/4Dmum8Egs).
 
 ---
 

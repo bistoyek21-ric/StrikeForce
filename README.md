@@ -464,10 +464,45 @@ namespace Environment::Field {
 - **Testing**: Play manually first to verify layout quality
 
 ---
+## 🌐 Server & Online Play
+Hosting a Match Server
+```bash
+cd StrikeForce-server
+g++ -std=c++17 server.cpp -o MatchServer
+./MatchServer
+```
 
-## 💾 API Server Usage
+**Configuration:**
+```
+Is it global or local? G/local
+Listening on port: 8080
+Choose password: mypassword123
+Number of players (n): 4
+Number of teams (m): 2
+Team assignments: 1 1 2 2
+```
 
-### What is the API Server?
+### Joining a Match
+
+1. Select **"Join Battle Royale"** from menu
+2. Enter server IP (displayed by host)
+3. Enter port (8080)
+4. Enter password
+5. Wait for all players to connect
+
+### Match Logging
+
+When compiled with `-DLOGGING`, server saves:
+
+```
+<timestamp>_<serial>/
+├── match_log.txt        # Game events
+├── actions-0.txt        # Player 0 actions
+├── actions-1.txt        # Player 1 actions
+└── ...
+```
+---
+## 💾 StrikeForceAPI for Checkpoint Version Control
 
 The API server (`server.py`) provides:
 - **Checkpoint storage**: Save/load model versions
@@ -477,6 +512,7 @@ The API server (`server.py`) provides:
 ### Starting the Server
 
 ```bash
+clone https://github.com/bistoyek21-ric/StrikeForceAPI.git
 cd StrikeForce-server
 pip install flask pycryptodome
 python server.py

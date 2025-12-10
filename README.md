@@ -1,27 +1,42 @@
-# StrikeForce: Comprehensive Environment Documentation & Customization Guide
+# StrikeForce: AI Agent Battle Arena 🎮🤖
+
+> A research-oriented multiplayer battle game where you train AI agents to compete in a zombie-infested arena!
 
 [![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
-[![Paper](https://img.shields.io/badge/arXiv-2501.XXXXX-b31b1b.svg)](https://arxiv.org/)
 
-> **A resource-efficient, crowdsourced framework for training human-like AI agents in tactical environments**
+## 🌟 Overview
+
+**StrikeForce** is not just a game—it's a comprehensive AI training environment disguised as an intense survival shooter! Battle zombies, compete against other players, and most importantly: **train your own AI agent** to master the battlefield.
+
+Whether you're an AI researcher looking for a challenging RL environment, a student learning about neural networks, or just someone who loves competitive games, StrikeForce offers something unique:
+
+- 🧠 **Train custom AI agents** using PyTorch and reinforcement learning
+- 🎯 **Multiple game modes**: Solo, Timer, Squad, and Battle Royale
+- 🌐 **Online multiplayer** support with dedicated server
+- 💾 **Crowdsourced training** - share and improve AI models collaboratively
+- 🎨 **Visual interface** powered by SFML with real-time rendering
+- 🔄 **Version control** for AI checkpoints via centralized API server
 
 ---
 
 ## 📋 Table of Contents
 
 1. [Introduction](#-introduction)
-2. [Environment Overview](#-environment-overview)
-3. [Action Space Reference](#-action-space-reference)
-4. [Creating Custom Agents](#-creating-custom-agents)
+2. [Quick Start](#-quick-start)
+3. [Game Features](#-game-features)
+4. [Creating Custom AI Agents](#-creating-custom-ai-agents)
 5. [Observation Space Design](#-observation-space-design)
-6. [Custom Map Design](#-custom-map-design)
-7. [API Server Usage](#-api-server-usage)
-8. [Complete Workflow Example](#-complete-workflow-example)
-9. [Research Context](#-research-context)
+6. [Training Your Agent](#-training-your-agent)
+7. [Server & Online Play](#-server--online-play)
+8. [API Server for Version Control](#-api-server-for-version-control)
+9. [Custom Map Design](#-custom-map-design)
+10. [Project Structure](#-project-structure)
+11. [Research Context](#-research-context)
+12. [Technical Details](#-technical-details)
 
 ---
 
-## 🌟 Introduction
+## 🎮 Introduction
 
 **StrikeForce** is a tactical 2D environment designed for research in imitation learning, human-AI interaction, and crowdsourced training. This guide focuses on **how to use and customize the environment** for your own research needs.
 
@@ -33,49 +48,64 @@
 - 🌐 **Crowdsourcing-Ready**: Built-in API server for distributed training
 - 📊 **Reproducible**: Deterministic simulation with seed control
 
-### What This Guide Covers
+---
 
-This documentation explains:
-- How to **design custom observation spaces** for your agent
-- How to **implement custom agent architectures** and integrate them
-- How to **create custom maps** and modify environment parameters
-- How to **use the API server** for version control and crowdsourced training
-- The **complete action space** available in the environment
+## 🚀 Quick Start
+
+### Prerequisites
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install g++ libsfml-dev libtorch-dev
+
+# macOS
+brew install sfml libtorch
+
+# Windows: Download SFML and LibTorch manually
+```
+
+### Test Account (Skip Tutorial)
+
+Don't want to start from scratch? Use this pre-configured account:
+
+- **Username**: `1`
+- **Password**: `1`
+
+This account has already progressed through early levels and has some items unlocked!
+
+### Build & Run
+
+```bash
+cd StrikeForce-client
+g++ -std=c++17 main.cpp -o StrikeForce \
+    -lsfml-graphics -lsfml-window -lsfml-system \
+    -ltorch -ltorch_cpu -lc10
+
+./StrikeForce
+```
+
+### First Steps
+
+1. **Create an account** (or use the test account above)
+2. **Try Solo Mode** - Learn the controls manually
+3. **Visit the Shop** - Buy weapons and items
+4. **Play with AI** - Let your agent learn!
 
 ---
 
-## 🎮 Environment Overview
+## 🎮 Game Features
 
-### Design Philosophy
+### Game Modes
 
-StrikeForce uses a **2D top-down tile-based** design to:
-- **Isolate strategic reasoning** from perceptual complexity
-- Enable **efficient execution** on consumer hardware
-- Facilitate **reproducible experiments** with deterministic simulation
-- Support **crowdsourced data collection** at scale
+| Mode | Description | Victory Condition |
+|------|-------------|-------------------|
+| **Solo** | Face increasing waves of zombies | Kill 5×level enemies |
+| **Timer** | Survival against the clock | Stay alive + meet kill quota |
+| **Squad** | 5v5 team battles with NPCs | Eliminate rival team |
+| **Battle Royale** | Online multiplayer chaos | Last team standing |
+| **AI Battle Royale** | Watch AI agents fight! | Spectate mode |
 
-### Core Components
-
-```
-StrikeForce-client/
-├── gameplay.hpp          # Main game loop and environment state
-├── Character.hpp         # Player/NPC logic and inventory
-├── Item.hpp             # Weapons, consumables, and items
-├── bots/
-│   ├── bot-0/           # Minimal template
-│   └── bot-1/           # PPO + GAIL-RT example
-├── map/                 # Level designs (floor1.txt, floor2.txt, etc.)
-└── selected_custom.hpp  # ← Connect your custom integration here
-└── selected_agent.hpp   # ← Connect your agent architecture here
-```
-
----
-
-## 🎯 Action Space Reference
-
-### Default Action Space (30 actions)
-
-The environment supports up to **30 discrete actions**. Here's the complete mapping:
+### Action Space Reference (30 actions)
 
 #### Movement & Orientation (9 actions)
 ```cpp
@@ -110,174 +140,176 @@ The environment supports up to **30 discrete actions**. Here's the complete mapp
 '\'' : Select stinger        (high single-target damage)
 ```
 
-#### Item Selection - Cold Weapons (4 actions)
+#### Item Selection - Weapons (8 actions)
 ```cpp
 'c' : Select push_dagger
 'v' : Select wing_tactic
 'b' : Select F_898
 'n' : Select lochabreask
-```
-
-#### Item Selection - Firearms (4 actions)
-```cpp
 'm' : Select AK_47
 ',' : Select M416
 '.' : Select MOSSBERG
 '/' : Select AWM
 ```
 
-#### Item Usage (1 action)
+#### Item Usage & Tactical (3 actions)
 ```cpp
-'u' : Use/consume selected item (applies consumable effects)
-```
-
-#### Tactical Actions (2 actions)
-```cpp
-'[' : Place block (defensive wall in facing direction)
+'u' : Use/consume selected item
+'[' : Place block (defensive wall)
 ']' : Place portal (teleportation point)
 ```
 
-### Custom Action Spaces
+### Controls Summary
 
-You can define a **subset** of these actions for your agent. For example, `bot-1` uses only 9 actions:
-
-```cpp
-// In bots/bot-1/Custom.hpp
-std::string action = "+xp`1awsd";  // 9-action subset
-// 0: '+' (no-op)
-// 1: 'x' (attack)
-// 2: 'p' (punch)
-// 3: '`' (turn left)
-// 4: '1' (turn right)
-// 5: 'a' (move left)
-// 6: 'w' (move up)
-// 7: 's' (move down)
-// 8: 'd' (move right)
 ```
-
-**How to customize:**
-1. Choose which actions your agent needs
-2. Map them to indices 0, 1, 2, ...
-3. Return the corresponding character in `bot()`
+Movement:  W/A/S/D  or  8/4/2/6 (NumPad)
+Turn:      ` (left), 1 (right)
+Attack:    X (use selected item), P (punch)
+Block:     [ (place block)
+Portal:    ] (place portal)
+Items:     F/G/H/J (consumables)
+           K/L/;/' (throwables)
+           C/V/B/N/M/,/.// (weapons)
+Use:       U (consume selected item)
+UI:        0 (help), - (backpack), F/O (fullscreen)
+Agent:     3 (toggle manual/auto mode)
+           Space (pause rendering in auto mode)
+```
 
 ---
 
-## 🤖 Creating Custom Agents
+## 🤖 Creating Custom AI Agents
 
 ### File Structure
 
+Your custom agent consists of two files:
+
 ```
 StrikeForce-client/bots/
-└── my-agent/
-    ├── Agent.hpp       # Your AI implementation
-    └── Custom.hpp      # Environment integration
+└── bot-X/              # Your bot folder
+    ├── Agent.hpp       # AI implementation
+    └── Custom.hpp      # Game integration
 ```
 
-### Step 1: Implement Agent.hpp
+### Step 1: Create Your Bot Folder
 
-This file contains your **agent architecture**. Minimum required interface:
+```bash
+cd StrikeForce-client/bots
+cp -r bot-0 bot-my-agent  # Start from template
+```
+
+### Step 2: Implement `Agent.hpp`
+
+**Minimum Required Interface:**
 
 ```cpp
-#include "basic.hpp"
-
 class Agent {
 public:
-    Agent(bool training = true) {
-        // Initialize your model
-        // - Load neural networks
-        // - Set up optimizers
-        // - Initialize memory buffers
-    }
+    // Constructor - initialize your AI
+    Agent(bool training = true) { }
     
-    ~Agent() {
-        // Cleanup and save checkpoints
-    }
+    // Destructor - save models, cleanup
+    ~Agent() { }
     
     // Main decision function
-    // obs: game state observation (std::vector<float>)
-    // Returns: action index (0 to num_actions-1)
+    // obs: game state observation (vector<float>)
+    // Returns: action index (0-8 for default 9-action space)
     int predict(const std::vector<float>& obs) {
-        // Your inference logic
+        // Your AI logic here
         return action_index;
     }
     
-    // Called after action execution
-    // action: what was executed
-    // imitate: true if human action, false if agent action
+    // Update after action
+    // action: what was done
+    // imitate: was it manual (human) action?
     void update(int action, bool imitate) {
-        // Store experience
-        // Update models (if training)
+        // Learn from this step
     }
     
-    // Check if training is in progress
+    // Check if currently training
     bool in_training() {
         return is_training;
     }
 };
 ```
 
-### Step 2: Implement Custom.hpp
+**Default Action Mapping (9 actions):**
+```cpp
+// actions: "+xp`1awsd"
+0: '+' Do nothing
+1: 'x' Attack with selected weapon
+2: 'p' Punch
+3: '`' Turn left
+4: '1' Turn right
+5: 'a' Move left
+6: 'w' Move up
+7: 's' Move down
+8: 'd' Move right
+```
 
-This file defines **how the environment interacts** with your agent. It's called **"Custom"** because it's completely customizable based on your needs.
+### Step 3: Implement `Custom.hpp`
+
+**Required Functions:**
 
 ```cpp
-#include "../../gameplay.hpp"
-
 namespace Environment::Field {
-    
-    // Initialize agent before game starts
+    // Initialize agent before game
     void gameplay::prepare(Environment::Character::Human& player) {
-        // Create your agent instance
         player.agent = new Agent(true);  // true = training mode
         player.set_agent_active();
-        
-        // Optional: Initialize action mapping
-        action = "+xp`1awsd";  // Your chosen action subset
     }
     
-    // Get action from agent each frame
+    // Get action from agent
     char gameplay::bot(Environment::Character::Human& player) const {
         if (!player.get_active_agent())
-            return '+';  // Fallback: do nothing
+            return '+';  // Do nothing
         
-        // 1. Extract observation (YOUR CUSTOM LOGIC)
+        // 1. Extract game state
         std::vector<float> obs = extract_observations(player);
         
-        // 2. Get agent decision
-        int action_idx = player.agent->predict(obs);
+        // 2. Get agent's decision
+        int action = player.agent->predict(obs);
         
-        // 3. Map to game action
-        return action[action_idx];
+        // 3. Return corresponding character
+        return action_chars[action];  // "+xp`1awsd"
     }
     
-    // Optional: Custom rendering/debugging
+    // Custom rendering (optional)
     void gameplay::view() const {
-        // Additional visualizations
+        // Additional visual feedback
     }
 }
 ```
 
-### Step 3: Connect Your Agent
+### Step 4: Connect Your Bot
 
 Edit `selected_agent.hpp`:
+
 ```cpp
-#include "./bots/my-agent/Agent.hpp"
+#include "./bots/bot-my-agent/Agent.hpp"
 ```
 
 Edit `selected_custom.hpp`:
+
 ```cpp
-#include "bots/my-agent/Custom.hpp"
+#include "bots/bot-my-agent/Custom.hpp"
+```
+
+### Step 5: Compile & Test
+
+```bash
+g++ -std=c++17 main.cpp -o StrikeForce \
+    -lsfml-graphics -lsfml-window -lsfml-system \
+    -ltorch -ltorch_cpu -lc10
+
+./StrikeForce
 ```
 
 ---
 
 ## 👁️ Observation Space Design
 
-### Understanding Custom.hpp's Role
-
-The **`Custom.hpp`** file is where you define **what information your agent receives**. The environment provides full game state; you decide how to encode it.
-
-### Example: bot-1's Observation Design
+### bot-1's Observation Design
 
 Located in `bots/bot-1/Custom.hpp`, the `describe()` function shows one way to encode observations:
 
@@ -324,90 +356,216 @@ std::vector<float> describe(const node &cell,
 }
 ```
 
-### bot-1's Complete Observation Pipeline
+### Complete Observation Pipeline
+
+The `obs` vector in `predict()` contains a **39×39 grid** around the player, compressed to **13×13** with **32 feature channels**:
+
+**Feature Channels (32 total):**
 
 ```cpp
-char gameplay::bot(Environment::Character::Human& player) const {
-    std::vector<int> v = player.get_cor();  // Player position
-    
-    // Build 39x39 grid with 32 channels per cell
-    std::vector<std::vector<float>> ch(32);
-    for (int i = v[1] - 19; i <= v[1] + 19; ++i) {
-        for (int j = v[2] - 19; j <= v[2] + 19; ++j) {
-            std::vector<float> vec;
-            
-            if (i < 0 || j < 0 || N <= i || M <= j)
-                vec = describe(nd, player);  // Out of bounds
-            else
-                vec = describe(themap[v[0]][i][j], player);
-            
-            // Append each channel
-            for (int k = 0; k < vec.size(); ++k)
-                ch[k].push_back(vec[k]);
-        }
-    }
-    
-    // Downsample to 13x13 by pooling 3x3 blocks
-    std::vector<float> obs;
-    for (int k = 0; k < 32; ++k) {
-        for (int i = 0; i < 39; i += 3) {
-            for (int j = 0; j < 39; j += 3) {
-                for (int i1 = 0; i1 < 3; ++i1) {
-                    for (int j1 = 0; j1 < 3; ++j1) {
-                        if (std::max(i + i1, j + j1) < 39) {
-                            // Power transformation for normalization
-                            obs.push_back(std::pow(
-                                std::abs(ch[k][(i+i1)*39 + (j+j1)]) / 10, 
-                                0.2
-                            ));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    return action[player.agent->predict(obs)];
-}
+// Channels 0-6: Object types
+[0]  = Character or bullet present
+[1]  = Bullet only
+[2]  = Wall
+[3]  = Chest (item pickup)
+[4]  = Portal (in/out)
+[5]  = Temporary object
+[6]  = Empty
+
+// Channels 7-10: Character info
+[7-10] = Team (ally/enemy/NPC/zombie)
+
+// Channels 11-14: Character stats
+[11] = Kill count
+[12] = Blocks available
+[13] = Portals available
+[14] = Portal active
+
+// Channels 15-18: Destructibility & HP
+[15] = Can't pass (human)
+[16] = Can't pass (bullet)
+[17] = Can be destroyed
+[18] = Health points
+
+// Channels 19-26: Attack properties
+[19] = Is bullet
+[20-23] = Attack direction (up/right/down/left)
+[24] = Attack damage
+[25] = Attack effect
+[26] = Stamina
+
+// Channels 27-29: Item properties
+[27] = Stamina boost
+[28] = Effect boost
+[29] = HP boost
+
+// Channels 30-31: Status effects
+[30] = Total damage dealt
+[31] = Total effect dealt
 ```
 
-### Key Design Principles for Custom Observations
+---
 
-1. **Access Full Game State**: The `themap[floor][x][y]` structure gives you complete information
-2. **Encode Semantically**: Extract meaningful features (health, team, item type) rather than raw pixels
-3. **Normalize Values**: Scale features to [0, 1] or [-1, 1] for stable training
-4. **Consider Partial Observability**: bot-1 uses 39×39 local grid (matching human FOV)
-5. **Balance Richness vs Efficiency**: More features = more information, but slower inference
+## 🎓 Training Your Agent
 
-### Your Custom Observation
+### Training Macros
+
+Control training behavior in `macros.hpp`:
 
 ```cpp
-// In bots/my-agent/Custom.hpp
-char gameplay::bot(Environment::Character::Human& player) const {
-    // Example: Simple distance-based observation
-    std::vector<float> obs;
-    std::vector<int> pos = player.get_cor();
-    
-    // Find nearest enemy
-    float min_dist = 1000.0f;
-    for (int i = 0; i < H; ++i) {
-        if (mh[i] && hum[i].get_team() != player.get_team()) {
-            std::vector<int> enemy_pos = hum[i].get_cor();
-            float dist = std::abs(pos[1] - enemy_pos[1]) + 
-                        std::abs(pos[2] - enemy_pos[2]);
-            min_dist = std::min(min_dist, dist);
-        }
-    }
-    obs.push_back(min_dist / 100.0);  // Normalized
-    
-    // Add player stats
-    obs.push_back(player.get_Hp() / 1000.0);
-    obs.push_back(player.get_stamina() / 1000.0);
-    
-    // ... add whatever features you need ...
-    
-    return action[player.agent->predict(obs)];
-}
+// Enable crowdsourced learning (uses API server)
+#define CROWDSOURCED_TRAINING
+
+// Freeze parts of the network
+#define FREEZE_REWARDNET_BLOCK
+#define FREEZE_AGENT_BLOCK
+
+// Transfer learning from reward network
+#define TL_IMPORT_REWARDNET
+#define FREEZE_TL_BLOCK
+```
+
+### Example: PPO Agent (bot-1)
+
+The included `bot-1` demonstrates a complete PPO implementation with:
+
+- **RewardNet**: Learns to score actions (human vs agent)
+- **AgentModel**: Policy + value network with GRU memory
+- **Transfer Learning**: Shares CNN/GRU layers between networks
+- **Crowdsourced Training**: Syncs via API server
+
+```cpp
+// Key components
+AgentModel model;           // Policy network
+RewardNet reward_net;       // Reward learning
+std::vector<float> rewards; // Episode rewards
+std::vector<int> actions;   // Action history
+```
+
+---
+
+## 🌐 Server & Online Play
+
+### Hosting a Match Server
+
+```bash
+cd StrikeForce-server
+g++ -std=c++17 server.cpp -o MatchServer
+./MatchServer
+```
+
+**Configuration:**
+```
+Is it global or local? G/local
+Listening on port: 8080
+Choose password: mypassword123
+Number of players (n): 4
+Number of teams (m): 2
+Team assignments: 1 1 2 2
+```
+
+### Joining a Match
+
+1. Select **"Join Battle Royale"** from menu
+2. Enter server IP (displayed by host)
+3. Enter port (8080)
+4. Enter password
+5. Wait for all players to connect
+
+### Match Logging
+
+When compiled with `-DLOGGING`, server saves:
+```
+<timestamp>_<serial>/
+├── match_log.txt        # Game events
+├── actions-0.txt        # Player 0 actions
+├── actions-1.txt        # Player 1 actions
+└── ...
+```
+
+---
+
+## 💾 API Server for Version Control
+
+### What is the API Server?
+
+The API server (`server.py`) provides:
+
+- **Backup Management**: Store AI model checkpoints
+- **Crowdsourced Training**: Share improvements across users
+- **Version Control**: Track model evolution with parent-child lineage
+
+### Setup
+
+```bash
+cd StrikeForce-server
+pip install flask pycryptodome
+python server.py
+```
+
+Server runs on `http://0.0.0.0:8080` by default.
+
+### API Endpoints
+
+#### Admin Endpoints (Require API Key)
+
+```bash
+# Add a new bot
+curl -X POST "http://SERVER_URL/StrikeForce/admin/add_bot?admin_key=YOUR_KEY&bot=my-bot"
+
+# Upload backup
+curl -X POST -F "file=@backup.zip" \
+  "http://SERVER_URL/StrikeForce/admin/add_backup?admin_key=YOUR_KEY&bot=my-bot"
+
+# Delete backup
+curl -X POST \
+  "http://SERVER_URL/StrikeForce/admin/delete_backup?admin_key=YOUR_KEY&bot=my-bot&serial=abc123"
+
+# Delete a bot (and all backups)
+curl -X POST \
+  "http://SERVER_URL/StrikeForce/admin/delete_bot?admin_key=YOUR_KEY&bot=my-bot"
+```
+
+**Admin Key Hash** (in `server.py`):
+```python
+admin_key_hash = "b18b078c272d0ac43301ec84cea2f61b0c1fb1b961de7d6aa5ced573cb9132aa"
+```
+
+#### Client Endpoints
+
+```bash
+# Request latest backup
+curl -o backup.zip "http://SERVER_URL/StrikeForce/api/request_backup?bot=my-bot"
+
+# Submit trained backup
+curl -X POST -F "file=@backup.zip" \
+  "http://SERVER_URL/StrikeForce/api/return_backup"
+```
+
+### Client Integration
+
+With `CROWDSOURCED_TRAINING` defined:
+
+```cpp
+// At agent startup
+request_and_extract_backup("bots/bot-1/backup", "bot-1");
+
+// At agent shutdown (after training)
+zip_and_return_backup("bots/bot-1/backup");
+```
+
+**Backup Structure:**
+```
+bots/bot-1/backup/
+├── agent_backup/
+│   ├── model.pt
+│   ├── optimizer.pt
+│   └── agent_log.log
+├── reward_backup/
+│   ├── model.pt
+│   ├── optimizer.pt
+│   └── reward_log.log
+└── metadata.enc
 ```
 
 ---
@@ -456,308 +614,42 @@ namespace Environment::Field {
 3. **Update F constant**: Change `F = 3` to `F = 4` in `gameplay.hpp`
 4. **Recompile**: `g++ -std=c++17 main.cpp -o StrikeForce ...`
 
-### Map Design Tips
-
-- **Balance openness**: Too open = no cover, too closed = tedious navigation
-- **Portal placement**: Use for vertical movement and strategic shortcuts
-- **Spawn zones**: Place `O` symbols in corners for balanced starts
-- **Testing**: Play manually first to verify layout quality
-
----
-## 🌐 Server & Online Play
-Hosting a Match Server
-```bash
-cd StrikeForce-server
-g++ -std=c++17 server.cpp -o MatchServer
-./MatchServer
-```
-
-**Configuration:**
-```
-Is it global or local? G/local
-Listening on port: 8080
-Choose password: mypassword123
-Number of players (n): 4
-Number of teams (m): 2
-Team assignments: 1 1 2 2
-```
-
-### Joining a Match
-
-1. Select **"Join Battle Royale"** from menu
-2. Enter server IP (displayed by host)
-3. Enter port (8080)
-4. Enter password
-5. Wait for all players to connect
-
-### Match Logging
-
-When compiled with `-DLOGGING`, server saves:
-
-```
-<timestamp>_<serial>/
-├── match_log.txt        # Game events
-├── actions-0.txt        # Player 0 actions
-├── actions-1.txt        # Player 1 actions
-└── ...
-```
----
-## 💾 StrikeForceAPI for Checkpoint Version Control
-
-The API server (`server.py`) provides:
-- **Checkpoint storage**: Save/load model versions
-- **Crowdsourced training**: Aggregate updates from multiple users
-- **Version control**: Track model evolution with parent-child lineage
-
-### Starting the Server
-
-```bash
-clone https://github.com/bistoyek21-ric/StrikeForceAPI.git
-cd StrikeForce-server
-pip install flask pycryptodome
-python server.py
-```
-
-Server runs on `http://0.0.0.0:8080` by default.
-
-### API Endpoints
-
-#### Admin Endpoints (Require API Key)
-
-**1. Add a new bot**
-```bash
-curl -X POST "http://SERVER_URL/StrikeForce/admin/add_bot?admin_key=YOUR_KEY&bot=my-bot"
-```
-
-**2. Upload a backup**
-```bash
-curl -X POST -F "file=@backup.zip" \
-  "http://SERVER_URL/StrikeForce/admin/add_backup?admin_key=YOUR_KEY&bot=my-bot"
-```
-
-**3. Delete a backup**
-```bash
-curl -X POST \
-  "http://SERVER_URL/StrikeForce/admin/delete_backup?admin_key=YOUR_KEY&bot=my-bot&serial=abc123"
-```
-
-**4. Delete a bot (and all backups)**
-```bash
-curl -X POST \
-  "http://SERVER_URL/StrikeForce/admin/delete_bot?admin_key=YOUR_KEY&bot=my-bot"
-```
-
-**5. Get encryption keys**
-```bash
-curl "http://SERVER_URL/StrikeForce/admin/get_crypto?admin_key=YOUR_KEY"
-```
-
-#### Client Endpoints (No Auth Required)
-
-**1. Request latest backup**
-```bash
-curl -o backup.zip \
-  "http://SERVER_URL/StrikeForce/api/request_backup?bot=my-bot"
-```
-
-**2. Submit trained backup**
-```bash
-curl -X POST -F "file=@backup.zip" \
-  "http://SERVER_URL/StrikeForce/api/return_backup"
-```
-
-### Understanding the API Key
-
-The **admin_key** in `server.py` is a **SHA-256 hash**:
-
-```python
-admin_key_hash = "b18b078c272d0ac43301ec84cea2f61b0c1fb1b961de7d6aa5ced573cb9132aa"
-```
-
-**Purpose**: 
-- Protects admin operations (bot creation/deletion)
-- Prevents unauthorized model modifications
-- Enables secure crowdsourcing setup
-
-**To change it**:
-1. Generate your key: `echo -n "my_secret_key" | sha256sum`
-2. Replace the hash in `server.py`
-3. Restart server
-
-### Crowdsourced Training Flow
-
-```
-1. Player downloads checkpoint:
-   curl -o backup.zip "http://SERVER/api/request_backup?bot=my-bot"
-
-2. Player extracts and plays:
-   7z x backup.zip -obots/my-bot/backup/
-
-3. Agent trains locally during gameplay
-
-4. Player uploads updated checkpoint:
-   cd bots/my-bot/backup/
-   7z a -tzip backup.zip ./*
-   curl -X POST -F "file=@backup.zip" "http://SERVER/api/return_backup"
-
-5. Server aggregates or creates branch
-
-6. Next player gets improved version
-```
-
-### Backup Structure
-
-```
-bots/my-bot/backup/
-├── agent_backup/
-│   ├── model.pt          # PyTorch model
-│   ├── optimizer.pt      # Optimizer state
-│   └── agent_log.log     # Training logs
-├── reward_backup/        # (if using discriminator)
-│   ├── model.pt
-│   ├── optimizer.pt
-│   └── reward_log.log
-└── metadata.enc          # Encrypted session token
-```
-
-### Security Features
-
-- **AES-256 encryption** for session tokens
-- **One-time credentials** embedded in metadata
-- **Path traversal protection** during extraction
-- **File size limits** (100MB default)
-- **Parent-child lineage tracking** for version control
-
 ---
 
-## 🔄 Complete Workflow Example
-
-### Scenario: Training a Simple RL Agent
-
-**Goal**: Create an agent that learns to survive by avoiding enemies
-
-#### 1. Create Agent Architecture
-
-```cpp
-// bots/survival-agent/Agent.hpp
-#include "basic.hpp"
-#include <random>
-
-class Agent {
-private:
-    std::mt19937 rng;
-    std::vector<float> q_values;  // Simple Q-table approximation
-    
-public:
-    Agent(bool training = true) {
-        rng.seed(std::random_device{}());
-        q_values.resize(9, 0.0f);  // 9 actions
-    }
-    
-    int predict(const std::vector<float>& obs) {
-        // Epsilon-greedy
-        if (std::uniform_real_distribution<>(0,1)(rng) < 0.1) {
-            return std::uniform_int_distribution<>(0,8)(rng);
-        }
-        
-        // Greedy action
-        return std::max_element(q_values.begin(), q_values.end()) 
-               - q_values.begin();
-    }
-    
-    void update(int action, bool imitate) {
-        // Simple reward: +1 if human, -1 if agent died
-        float reward = imitate ? 1.0f : -1.0f;
-        
-        // Q-learning update
-        float alpha = 0.01f;
-        q_values[action] += alpha * reward;
-    }
-    
-    bool in_training() { return false; }
-};
-```
-
-#### 2. Define Observation Extraction
-
-```cpp
-// bots/survival-agent/Custom.hpp
-#include "../../gameplay.hpp"
-
-namespace Environment::Field {
-    void gameplay::prepare(Environment::Character::Human& player) {
-        player.agent = new Agent(true);
-        player.set_agent_active();
-        action = "+xp`1awsd";  // 9 actions
-    }
-    
-    char gameplay::bot(Environment::Character::Human& player) const {
-        if (!player.get_active_agent())
-            return '+';
-        
-        std::vector<float> obs;
-        std::vector<int> pos = player.get_cor();
-        
-        // Feature 1: Distance to nearest enemy
-        float min_enemy_dist = 1000.0f;
-        for (int i = 0; i < H; ++i) {
-            if (mh[i] && hum[i].get_team() != player.get_team()) {
-                auto ep = hum[i].get_cor();
-                float d = std::abs(pos[1]-ep[1]) + std::abs(pos[2]-ep[2]);
-                min_enemy_dist = std::min(min_enemy_dist, d);
-            }
-        }
-        obs.push_back(min_enemy_dist / 100.0);
-        
-        // Feature 2: Player health
-        obs.push_back(player.get_Hp() / 1000.0);
-        
-        // Feature 3: Stamina
-        obs.push_back(player.get_stamina() / 1000.0);
-        
-        int action_idx = player.agent->predict(obs);
-        return action[action_idx];
-    }
-    
-    void gameplay::view() const {}
-}
-```
-
-#### 3. Connect and Compile
-
-```cpp
-// selected_agent.hpp
-#include "./bots/survival-agent/Agent.hpp"
-
-// selected_custom.hpp
-#include "bots/survival-agent/Custom.hpp"
-```
-
-```bash
-g++ -std=c++17 main.cpp -o StrikeForce \
-    -lsfml-graphics -lsfml-window -lsfml-system
-./StrikeForce
-```
-
-#### 4. Train Locally
+## 📁 Project Structure
 
 ```
-1. Run StrikeForce
-2. Login (username: 1, password: 1)
-3. Select "Play" → "Solo" → "Level 1"
-4. Choose "Use AI agent? → y"
-5. Play alongside the agent
-6. Agent learns from your actions
-```
-
-#### 5. Share via API (Optional)
-
-```bash
-# Upload your trained agent
-cd bots/survival-agent/backup/
-7z a -tzip backup.zip ./*
-curl -X POST -F "file=@backup.zip" \
-  "http://YOUR_SERVER/StrikeForce/api/return_backup"
+StrikeForce/
+├── StrikeForce-client/
+│   ├── main.cpp                    # Entry point
+│   ├── basic.hpp                   # Core utilities
+│   ├── GraphicPrinter.hpp          # SFML rendering
+│   ├── gameplay.hpp                # Game loop
+│   ├── Character.hpp               # Player/NPC logic
+│   ├── Item.hpp                    # Weapons/items
+│   ├── enter.hpp                   # Auth system
+│   ├── menu.hpp                    # UI menus
+│   ├── random.hpp                  # Deterministic RNG
+│   ├── selected_agent.hpp          # ← YOUR AGENT HERE
+│   ├── selected_custom.hpp         # ← YOUR INTEGRATION HERE
+│   ├── macros.hpp                  # Build flags
+│   ├── bots/
+│   │   ├── bot-0/                  # Dummy agent template
+│   │   │   ├── Agent.hpp
+│   │   │   └── Custom.hpp
+│   │   └── bot-1/                  # PPO example
+│   │       ├── Agent.hpp
+│   │       ├── Custom.hpp
+│   │       └── RewardNet.hpp
+│   ├── Items/                      # Item stats
+│   ├── map/                        # Level designs
+│   ├── character/                  # Character configs
+│   └── accounts/                   # User data
+│
+├── StrikeForce-server/
+│   └── server.cpp                  # Match server
+│
+└── server.py                       # API/backup server
 ```
 
 ---
@@ -779,12 +671,7 @@ The accompanying paper introduces:
 2. **Resource-Optimal Design**: End-to-end efficiency in data, compute, and human effort
 3. **Crowdsourcing Pipeline**: Distributed training without centralized datasets
 
-**Full paper**: Available in `paper.tex` (see repository)
-
-### Citation
-
-If you use StrikeForce in your research:
-
+**Citation:**
 ```bibtex
 @article{fouladi2025strikeforce,
   title={StrikeForce: Crowdsourced Training of Human-Like Agents via Adaptive GAIL},
@@ -796,16 +683,82 @@ If you use StrikeForce in your research:
 
 ---
 
+## 🔧 Technical Details
+
+### Dependencies
+
+- **SFML 2.5+**: Graphics and window management
+- **LibTorch 1.x**: PyTorch C++ API for neural networks
+- **C++17**: Modern C++ features
+- **Python 3.8+**: For API server (optional)
+
+### Performance Notes
+
+- **Frame Rate**: 100 FPS (configurable in `GraphicPrinter.hpp`)
+- **Action Delay**: 40ms between decisions (see `lim` in `Custom.hpp`)
+- **Map Size**: 30×100×3 (floors × width × height)
+
+### Memory Management
+
+⚠️ **Critical**: Agents are created with `new` and must be deleted:
+
+```cpp
+// In gameplay::play()
+hum[ind].deleteAgent();  // Calls delete on agent pointer
+hum[ind].reset();        // Resets player state
+```
+
+### Deterministic Random
+
+For reproducible games:
+
+```cpp
+Environment::Random::_srand(timestamp, serial_number);
+int random_value = Environment::Random::_rand();
+```
+
+---
+
+## 🎉 Why StrikeForce?
+
+### For AI Researchers
+- **Rich observation space** (32 channels × 13×13 grid)
+- **Complex action space** with strategic depth
+- **Partial observability** and fog of war
+- **Multi-agent competition** out of the box
+- **Reward shaping** via human demonstrations
+
+### For Students
+- **Learn by doing**: See RL concepts in action
+- **Gradual difficulty**: Start with Solo, progress to multiplayer
+- **Visual feedback**: Watch your agent learn in real-time
+- **Compare approaches**: bot-0 vs bot-1 vs your own
+
+### For Gamers
+- **Actually fun to play!** Solid shooter mechanics
+- **Progressive unlocks**: Earn weapons and upgrades
+- **Leaderboards**: Compete in Solo/Timer/Squad modes
+- **Online battles**: Test your skills (or your AI's)
+
+---
+
+## 📝 License
+
+MIT License - see LICENSE file for details.
+
+**Created by**: Kasra Fouladi, Hamta Rahmani, bistoyek21 R.I.C.
+
+---
+
 ## 🤝 Contributing
 
 We welcome contributions!
 
-### Areas for Improvement
-
-- **New agent architectures**: Implement transformers, world models, etc.
-- **Environment extensions**: Add new game modes, items, or mechanics
-- **Performance optimizations**: Improve rendering, networking, or training speed
-- **Documentation**: Add tutorials, examples, or translations
+1. **New agents**: Share your bot implementations
+2. **Map designs**: Create new levels in `map/`
+3. **Game modes**: Extend `gameplay.hpp`
+4. **Optimizations**: Improve rendering/networking
+5. **Research extensions**: Add new observation schemes or training protocols
 
 ### Contribution Process
 
@@ -818,23 +771,14 @@ We welcome contributions!
 
 ## 📞 Support
 
-**Questions?**
-- Open an issue on GitHub
-- Email: k4sr405@gmail.com or hamtar693@gmail.com
+**Found a bug?** Open an issue on the repository.
 
-**Want to Collaborate?**
-- We're open to research partnerships
-- Interested in deploying at scale? Contact us
+**Need help with your agent?** Check `bots/bot-1/` for a complete example.
 
----
+**Research collaboration?** Email: k4sr405@gmail.com or hamtar693@gmail.com
 
-## 📝 License
-
-MIT License - See `LICENSE` file for details.
-
-**Created by**: Kasra Fouladi & Hamta Rahmani  
-**Organization**: bistoyek21 R.I.C.
+**Want to play online?** Join our Discord community (link coming soon).
 
 ---
 
-**Ready to train your agent? Let's go! 🚀**
+**Good luck, Commander! May your agents dominate the battlefield! 🎯🤖**

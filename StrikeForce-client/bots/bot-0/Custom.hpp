@@ -26,8 +26,6 @@ SOFTWARE.
 
 namespace Environment::Field{
     
-    auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(40000000LL);
-
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+";
 		player.agent = new Agent();

@@ -25,24 +25,37 @@ SOFTWARE.
 #include "basic.hpp"
 #include <torch/torch.h>
 
+#define LAYER_INDEX 0
+
 struct ResBImpl : torch::nn::Module {
     std::vector<torch::nn::Linear> layers;
     int num_layers;
+    bool freezed_up_to = false;
 
     ResBImpl(int hidden_size, int num_layers) : num_layers(num_layers) {
         for (int i = 0; i < num_layers; ++i)
-            layers.push_back(register_module("lin" + std::to_string(i), torch::nn::Linear(hidden_size, hidden_size)));
+            layers.push_back(
+                register_module("lin" + std::to_string(i), torch::nn::Linear(hidden_size, hidden_size))
+            );
     }
 
     torch::Tensor forward(torch::Tensor X) {
-        torch::Tensor y, x = X.clone();
+        if (!freezed_up_to)
+            freeze_layers_up_to();
+        auto y = X.clone();
+        auto x = y * y.numel() / (y.abs().sum().detach() + 1e-8);
         for (int i = 0; i < num_layers; ++i) {
-            if (i % 2)
-                x = torch::relu(layers[i]->forward(y) + x);
-            else
-                y = torch::relu(layers[i]->forward(x));
+            y = torch::relu(layers[i]->forward(x)) + x;
+            x = y * y.numel() / (y.abs().sum().detach() + 1e-8);
         }
         return x;
+    }
+
+    void freeze_layers_up_to(int layer_index = LAYER_INDEX) {
+        for (int i = 0; i < num_layers; ++i)
+            for (auto& p : layers[i]->parameters())
+                p.set_requires_grad(i < layer_index);
+        freezed_up_to = true;
     }
 };
 TORCH_MODULE(ResB);
@@ -90,9 +103,8 @@ struct RewardModelImpl : torch::nn::Module {
         cnn = register_module("cnn", GameCNN(num_channels, hidden_size, 6, grid_x));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
         combined_processor = register_module("combined_proc", torch::nn::Sequential(
-            torch::nn::Linear(2 * hidden_size + num_actions, hidden_size), torch::nn::ReLU(),
-            ResB(hidden_size, 3), torch::nn::Linear(hidden_size, 1),
-            torch::nn::Sigmoid()
+            torch::nn::Linear(3 * hidden_size + num_actions, hidden_size),
+            ResB(hidden_size, 4), torch::nn::Linear(hidden_size, 1)
         ));
         action_input = torch::zeros({num_actions});
         h_state = torch::zeros({2, 1, hidden_size});
@@ -100,6 +112,7 @@ struct RewardModelImpl : torch::nn::Module {
 
     void reset_memory() {
         action_input = torch::zeros({num_actions});
+        action_input[0] += 1;
         h_state = torch::zeros({2, 1, hidden_size});
     }
 
@@ -113,8 +126,16 @@ struct RewardModelImpl : torch::nn::Module {
         h_state = std::get<1>(r);
         action_input = action_input * alpha;
         action_input[action] += 1 - alpha;
-        auto combined = torch::cat({out_seq, feat, action_input * hidden_size / (action_input.abs().sum().detach() + 1e-8)});
-        return combined_processor->forward(combined);
+        std::vector<torch::Tensor> y;
+        std::vector<int> idx = {1, 3, 4, 5, 7};
+        for (auto i: idx)
+            for (int j = 0; j < num_channels; ++j)
+                y.push_back(
+                    x[j][0][i][(grid_x + 2) / 6][(grid_y + 2) / 6].detach().clone()
+                );
+        auto pov = torch::cat({torch::stack(y).view({-1}), action_input});
+        auto combined = torch::cat({out_seq, feat, pov * hidden_size / (pov.abs().sum().detach() + 1e-8)});
+        return torch::sigmoid(combined_processor->forward(combined));
     }
 };
 TORCH_MODULE(RewardModel);
@@ -201,9 +222,9 @@ public:
         }
         auto output = model->forward(action, state);
         auto target = torch::tensor((float)imitate);
-        auto reward = compute_reward(action, state, (imitate ? target : output.pow(3)));
+        auto reward = compute_reward(action, state, (imitate ? target : output));
         update(output, target);
-        return reward.item<float>() * 2 - 1;
+        return reward.item<float>();
     }
 
     RewardModel get_model() {
@@ -251,7 +272,7 @@ private:
     }
 
     torch::Tensor compute_reward(int action, const torch::Tensor &state, const torch::Tensor &output) {
-        auto reward = output * 0.6 + 0.2;
+        auto reward = output;
         std::vector<float> sit(num_channels);
         int x = (grid_x + 2) / 6, y = (grid_y + 2) / 6;
         for (int k = 0; k < num_channels; ++k)
@@ -265,11 +286,13 @@ private:
         else if (prev[18] > sit[18] || prev[24] > sit[24] || prev[25] > sit[25])
             reward = torch::tensor(0.0f);// down| Hp, cnnack-damage, cnnack-effect = 0
         else if (prev[18] < sit[18] || prev[24] < sit[24] || prev[25] < sit[25] || prev[26] < sit[26])
-            reward = torch::tensor(0.9f);// up  | Hp, cnnack-damage, cnnack-effect, stamina = 0.9
+            reward = torch::tensor(1.0f);// up  | Hp, cnnack-damage, cnnack-effect, stamina = 0.9
         else if (prev[26] > sit[26])
-            reward -= 0.15;// down | stamina -= 0.15
+            reward -= 0.2;// down | stamina -= 0.2
         else if(!action)
-            reward -= 0.1;// nothing | stamina -= 0.1 for doing nothing
+            reward -= 0.1;// nothing -= 0.1 for doing nothing
+        if (reward.item<float>() < 0)
+            reward = torch::tensor(0.0f);
         prev = sit;
         return reward;
     }
@@ -288,11 +311,13 @@ private:
                 agent += outputs[i], ++agent_cnt;
         }
         loss /= T, human /= hum_cnt, agent /= agent_cnt;
-        optimizer->zero_grad();
-        loss.backward();
-        optimizer->step();
+        if (training) {
+            optimizer->zero_grad();
+            loss.backward();
+            optimizer->step();
+        }
         outputs.clear(), targets.clear();
-        model->reset_memory();
+        //model->reset_memory();
         model->action_input = tmp_a_i;
         model->h_state = tmp_h_s;
         log("R: loss=" + std::to_string(loss.item<float>()) +
@@ -306,33 +331,18 @@ private:
     void update(const torch::Tensor &output, const torch::Tensor &target) {
         outputs.push_back(output);
         targets.push_back(target);
-        if (outputs.size() == T)
-            if (training) {
-                is_training = true;
-                done_training = false;
-                //trainThread = std::thread(&RewardNet::train, this);
-                ///////////////////////////////////////////////
+        if (outputs.size() == T) {
+            is_training = true;
+            done_training = false;
+            //trainThread = std::thread(&RewardNet::train, this);
+            ///////////////////////////////////////////////
+            if (training)
                 std::cout << "RewardNet is training..." << std::endl;
-                train();
-                is_training = false;
+            train();
+            is_training = false;
+            if (training)
                 std::cout << "done!" << std::endl;
-                /////////////////////////////////////////////
-            }
-            else {
-                auto loss = torch::zeros({}), human = torch::zeros({1}), agent = torch::zeros({1});
-                int hum_cnt = 0, agent_cnt = 0;
-                for (int i = 0; i < T; ++i) {
-                    loss += torch::binary_cross_entropy(outputs[i], targets[i]);
-                    if (targets[i].item<float>() == 1)
-                        human += outputs[i], ++hum_cnt;
-                    else
-                        agent += outputs[i], ++agent_cnt;
-                }
-                loss /= T, human /= hum_cnt, agent /= agent_cnt;
-                log("R: loss=" + std::to_string(loss.item<float>()) +
-                 "|human_avg=" + std::to_string(human.item<float>()) +
-                 "|agent_avg=" + std::to_string(agent.item<float>()));
-                outputs.clear(), targets.clear();
-            }
+            /////////////////////////////////////////////
+        }
     }
 };

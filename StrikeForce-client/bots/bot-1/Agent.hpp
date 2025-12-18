@@ -43,15 +43,13 @@ struct AgentModelImpl : torch::nn::Module {
         cnn = register_module("cnn", GameCNN(num_channels, hidden_size, 6, grid_x));
         gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
         gate = register_module("gate", torch::nn::Sequential(
-            torch::nn::Linear(2 * hidden_size + num_actions, hidden_size),
-            torch::nn::ReLU()
+            torch::nn::Linear(3 * hidden_size + num_actions, hidden_size)
         ));
         value_head = register_module("value", torch::nn::Sequential(
-            ResB(hidden_size, 3), torch::nn::Linear(hidden_size, 1),
-            torch::nn::Sigmoid()
+            ResB(hidden_size, 4), torch::nn::Linear(hidden_size, 1)
         ));
         policy_head = register_module("policy", torch::nn::Sequential(
-            ResB(hidden_size, 3), torch::nn::Linear(hidden_size, num_actions)
+            ResB(hidden_size, 4), torch::nn::Linear(hidden_size, num_actions)
         ));
         action_input = torch::zeros({num_actions});
         h_state = torch::zeros({2, 1, hidden_size});
@@ -59,6 +57,7 @@ struct AgentModelImpl : torch::nn::Module {
 
     void reset_memory() {
         action_input = torch::zeros({num_actions});
+        action_input[0] += 1;
         h_state = torch::zeros({2, 1, hidden_size});
     }
 
@@ -78,7 +77,7 @@ struct AgentModelImpl : torch::nn::Module {
 
     void update_actions(int action) {
         action_input = action_input * alpha;
-        action_input[action] += 1 - alpha;
+        action_input[action] += (1 - alpha);
     }
 
     std::vector<torch::Tensor> forward(torch::Tensor x) {
@@ -89,11 +88,19 @@ struct AgentModelImpl : torch::nn::Module {
         auto out_seq = std::get<0>(r).view({-1});
         out_seq = out_seq * hidden_size / (out_seq.abs().sum().detach() + 1e-8);
         h_state = std::get<1>(r);
-        auto gate_input = torch::cat({out_seq, feat, action_input * hidden_size / (action_input.abs().sum().detach() + 1e-8)});
-        auto gated = gate->forward(gate_input);
+        std::vector<torch::Tensor> y;
+        std::vector<int> idx = {1, 3, 4, 5, 7};
+        for (auto i: idx)
+            for (int j = 0; j < num_channels; ++j)
+                y.push_back(
+                    x[j][0][i][(grid_x + 2) / 6][(grid_y + 2) / 6]
+                );
+        auto pov = torch::cat({torch::stack(y).view({-1}), action_input});
+        auto combined = torch::cat({out_seq, feat, pov * hidden_size / (pov.abs().sum().detach() + 1e-8)});
+        auto gated = gate->forward(combined);
         auto logits = policy_head->forward(gated);
         auto p = torch::softmax(logits, -1) + 1e-8;
-        auto v = 2 * value_head->forward(gated).squeeze() - 1;
+        auto v = torch::sigmoid(value_head->forward(gated).squeeze());
         return {p, v};
     }
 };
@@ -101,7 +108,7 @@ TORCH_MODULE(AgentModel);
 
 class Agent {
 public:
-    Agent(bool training = true, int T = 1024, int num_epochs = 4, float gamma = 0.99, float learning_rate = 1e-3,
+    Agent(bool training = true, int T = 1024, int num_epochs = 4, float gamma = 0.98, float learning_rate = 1e-3,
          float ppo_clip = 0.2, float alpha = 0.9, float cv = 0.5, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
         : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
         ppo_clip(ppo_clip), alpha(alpha), cv(cv), backup_dir(backup_dir) {
@@ -156,6 +163,8 @@ public:
             }
         }
         auto dummy = torch::zeros({num_channels, 1, 9, (grid_x + 2) / 3, (grid_y + 2) / 3});
+        action_input_checkpoint = model->action_input.clone().detach();
+        h_state_checkpoint = model->h_state.clone().detach();
         model->forward(dummy);
         model->reset_memory();
     }
@@ -232,52 +241,26 @@ public:
     void update(int action, bool imitate) {
         if (is_training || cnt <= T_initial)
             return;
-        rewards.push_back(reward_net->get_reward(action, imitate, states.back()));
+        rewards.push_back(reward_net->get_reward(action, imitate, states.back().detach().clone()));
         if (rewards.back() == -2 && training) {
             actions.clear(), rewards.clear(), log_probs.clear();
             states.clear(), values.clear();
-            model->reset_memory();
             return;
         }
         model->update_actions(action);
         actions.push_back(action);
         if (actions.size() == T) {
-            if (training) {
-                is_training = true;
-                done_training = false;
-                //trainThread = std::thread(&Agent::train, this);
-                ///////////////////////////////////////////////
+            is_training = true;
+            done_training = false;
+            //trainThread = std::thread(&Agent::train, this);
+            ///////////////////////////////////////////////
+            if (training)
                 std::cout << "Agent is training..." << std::endl;
-                train();
-                is_training = false;
+            train();
+            is_training = false;
+            if (training)
                 std::cout << "done!" << std::endl;
-                /////////////////////////////////////////////
-            }
-            else {
-                float sum_rewards[2] = {}, nothing[2] = {};
-                for (int i = 0; i < T; ++i){
-                    sum_rewards[i / (T / 2)] += rewards[i];
-                    nothing[i / (T / 2)] += (int)(!actions[i]);
-                }
-                log("A stats: r_avg0=" + std::to_string(sum_rewards[0] / T) +
-                    "|r_avg1=" + std::to_string(sum_rewards[1] / T) +
-                    "|n_avg0=" + std::to_string(nothing[0] / (T / 2)) +
-                    "|n_avg1=" + std::to_string(nothing[1] / (T / 2)));
-                auto sum = torch::exp(log_probs[0].detach().clone());
-                for (int i = 1; i < T; ++i)
-                    sum += torch::exp(log_probs[i].detach().clone());
-                sum /= T;
-                log("A probs:");
-                std::string pref;
-                for (int i = 0; i < num_actions; ++i)
-                    pref += std::to_string(sum[i].item<float>()) + "|";
-                log(pref);
-                actions.clear();
-                rewards.clear();
-                log_probs.clear();
-                states.clear();
-                values.clear();
-            }
+            /////////////////////////////////////////////
         }
     }
 
@@ -333,6 +316,7 @@ private:
     RewardNet* reward_net;
     std::unique_ptr<torch::optim::AdamW> optimizer{nullptr};
     std::vector<torch::Tensor> states, log_probs, values;
+    torch::Tensor action_input_checkpoint, h_state_checkpoint;
     std::vector<int> actions;
     std::vector<float> rewards;
     std::ofstream log_file;
@@ -369,8 +353,8 @@ private:
         std::vector<torch::Tensor> returns(T);
         auto ret = torch::zeros({});
         for (int i = T - 1; i >= 0; --i) {
-            ret = rewards[i] + gamma * ret;
-            returns[i] = ret * (1 - gamma);
+            ret = gamma * ret + (1 - gamma) * rewards[i];
+            returns[i] = ret.detach().clone();
         }
         return returns;
     }
@@ -384,7 +368,7 @@ private:
         log("A stats: r_avg0=" + std::to_string(sum_rewards[0] / T) +
             "|r_avg1=" + std::to_string(sum_rewards[1] / T) +
             "|n_avg0=" + std::to_string(nothing[0] / (T / 2)) +
-            "|n_avg1=" + std::to_string(nothing[1] / (T / 2)));
+            "|n_avg1=" + std::to_string(nothing[1] / (T / 2)) + "|manual=" + std::to_string(manual));
         auto sum = torch::exp(log_probs[0].detach().clone());
         for (int i = 1; i < T; ++i)
             sum += torch::exp(log_probs[i].detach().clone());
@@ -405,7 +389,9 @@ private:
             time_t ts = time(0);
             auto p_loss = torch::zeros({});
             auto v_loss = torch::zeros({});
-            model->reset_memory();
+            //model->reset_memory();
+            model->action_input = action_input_checkpoint.clone().detach();
+            model->h_state = h_state_checkpoint.clone().detach();
             for (int i = 0; i < T * 3 / 4; ++i) {
                 torch::Tensor current_logp;
                 std::vector<torch::Tensor> output;
@@ -426,8 +412,8 @@ private:
                     v_loss += torch::mse_loss(output[1], returns[i]) * (1 + i / (T / 2));
                 auto diff = torch::clamp(current_logp - log_probs[i][actions[i]], -100, 10);
                 auto ratio = torch::exp(diff);
-                float lb = std::max(0.5f, 1 - (epoch + 1) * ppo_clip);
-                float ub = std::min(2.0f, 1 + (epoch + 1) * ppo_clip);
+                float lb = std::max(0.2f, 1 - (epoch + 1) * ppo_clip);
+                float ub = std::min(1.8f, 1 + (epoch + 1) * ppo_clip);
                 auto clipped = torch::clamp(ratio, lb, ub);
                 auto adv = returns[i] - values[i];
                 p_loss -= torch::min(ratio * adv, clipped * adv) * (1 + i / (T / 2));
@@ -435,9 +421,11 @@ private:
             p_loss = p_loss / T;
             v_loss = v_loss / T;
             auto loss = p_loss + cv * v_loss;
-            optimizer->zero_grad();
-            loss.backward();
-            optimizer->step();
+            if (training) {
+                optimizer->zero_grad();
+                loss.backward();
+                optimizer->step();
+            }
             log("A: loss=" + std::to_string(loss.item<float>()) +
              "|p_loss=" + std::to_string(p_loss.item<float>()) + 
              "|v_loss=" + std::to_string(v_loss.item<float>()) + 
@@ -446,9 +434,11 @@ private:
         }
         actions.clear(), rewards.clear(), log_probs.clear();
         states.clear(), values.clear();
-        model->reset_memory();
-        model->action_input = tmp_a_i;
-        model->h_state = tmp_h_s;
+        //model->reset_memory();
+        action_input_checkpoint = tmp_a_i.clone().detach();
+        h_state_checkpoint = tmp_h_s.clone().detach();
+        model->action_input = action_input_checkpoint.clone().detach();
+        model->h_state = h_state_checkpoint.clone().detach();
         done_training = true;
     }
 };

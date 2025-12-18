@@ -1670,7 +1670,9 @@ namespace Environment::Field{
 				themap[0][1][i + 1].human = &hum[i];
 				themap[0][1][i + 1].s[0] = 1;
 				hum[i].set_team(1);
-				//prepare(hum[i]); optional
+				#if defined(USE_AGENT_IN_SQUAD_NPCS)
+				prepare(hum[i]);
+				#endif
 			}
 			for(int i = 5; i < 10; ++i){
 				mh[i] = true;
@@ -1681,7 +1683,9 @@ namespace Environment::Field{
 				themap[2][1][i + 1].human = &hum[i];
 				themap[2][1][i + 1].s[0] = 1;
 				hum[i].set_team(2);
-				//prepare(hum[i]); optional
+				#if defined(USE_AGENT_IN_SQUAD_NPCS)
+				prepare(hum[i]);
+				#endif
 			}
 		}
 		else if(mode == "Solo" || mode == "Timer"){

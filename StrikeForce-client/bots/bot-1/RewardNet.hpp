@@ -25,12 +25,11 @@ SOFTWARE.
 #include "basic.hpp"
 #include <torch/torch.h>
 
-#define LAYER_INDEX 0
+#define LAYER_INDEX 1
 
 struct ResBImpl : torch::nn::Module {
     std::vector<torch::nn::Linear> layers;
     int num_layers;
-    bool freezed_up_to = false;
 
     ResBImpl(int hidden_size, int num_layers) : num_layers(num_layers) {
         for (int i = 0; i < num_layers; ++i)
@@ -40,8 +39,6 @@ struct ResBImpl : torch::nn::Module {
     }
 
     torch::Tensor forward(torch::Tensor X) {
-        if (!freezed_up_to)
-            freeze_layers_up_to();
         auto y = X.clone();
         auto x = y * y.numel() / (y.abs().sum().detach() + 1e-8);
         for (int i = 0; i < num_layers; ++i) {
@@ -51,12 +48,6 @@ struct ResBImpl : torch::nn::Module {
         return x;
     }
 
-    void freeze_layers_up_to(int layer_index = LAYER_INDEX) {
-        for (int i = 0; i < num_layers; ++i)
-            for (auto& p : layers[i]->parameters())
-                p.set_requires_grad(i < layer_index);
-        freezed_up_to = true;
-    }
 };
 TORCH_MODULE(ResB);
 
@@ -87,64 +78,108 @@ struct GameCNNImpl : torch::nn::Module {
 };
 TORCH_MODULE(GameCNN);
 
-struct RewardModelImpl : torch::nn::Module {
+struct BackboneImpl : torch::nn::Module {
     GameCNN cnn{nullptr};
-    torch::nn::GRU gru{nullptr};
-    torch::nn::Sequential action_processor{nullptr};
+    torch::nn::GRU gru0{nullptr}, gru1{nullptr};
     torch::nn::Sequential combined_processor{nullptr};
 
     int num_channels, grid_x, grid_y, hidden_size, num_actions;
-    const float alpha;
+    torch::Tensor action_input, h_state[2];
 
-    torch::Tensor action_input, h_state;
- 
-    RewardModelImpl(int num_channels = 32, int grid_x = 39, int grid_y = 39, int hidden_size = 160, int num_actions = 9, float alpha = 0.9f)
-        : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y), hidden_size(hidden_size), num_actions(num_actions), alpha(alpha) {
+    BackboneImpl(int num_channels = 32, int grid_x = 39, int grid_y = 39, int hidden_size = 160, int num_actions = 9)
+        : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y),
+          hidden_size(hidden_size), num_actions(num_actions) {
         cnn = register_module("cnn", GameCNN(num_channels, hidden_size, 6, grid_x));
-        gru = register_module("gru", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(2)));
-        combined_processor = register_module("combined_proc", torch::nn::Sequential(
-            torch::nn::Linear(3 * hidden_size + num_actions, hidden_size),
-            ResB(hidden_size, 4), torch::nn::Linear(hidden_size, 1)
+        gru0 = register_module("gru0", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(1)));
+        combined_processor = register_module("combined_processor", torch::nn::Sequential(
+            torch::nn::Linear(2 * hidden_size + num_actions, hidden_size)
         ));
-        action_input = torch::zeros({num_actions});
-        h_state = torch::zeros({2, 1, hidden_size});
+        gru1 = register_module("gru1", torch::nn::GRU(torch::nn::GRUOptions(hidden_size, hidden_size).num_layers(1)));
+        reset_memory();
     }
 
     void reset_memory() {
         action_input = torch::zeros({num_actions});
         action_input[0] += 1;
-        h_state = torch::zeros({2, 1, hidden_size});
+        h_state[0] = torch::zeros({1, 1, hidden_size});
+        h_state[1] = torch::zeros({1, 1, hidden_size});
     }
 
-    torch::Tensor forward(int action, torch::Tensor x) {
+    void update_actions(int action) {
+        action_input = torch::zeros({num_actions});
+        action_input[action] += 1;
+    }
+
+    torch::Tensor forward(const torch::Tensor &x) {
         auto feat = cnn->forward(x);
         feat = feat * hidden_size / (feat.abs().sum().detach() + 1e-8);
-        auto r = gru->forward(feat.view({1, 1, -1}), h_state);
-        feat = feat.view({-1});
-        auto out_seq = std::get<0>(r).view({-1});
+
+        auto r0 = gru0->forward(feat.view({1, 1, -1}), h_state[0]);
+        auto out_seq = std::get<0>(r0).view({-1});
         out_seq = out_seq * hidden_size / (out_seq.abs().sum().detach() + 1e-8);
-        h_state = std::get<1>(r);
-        action_input = action_input * alpha;
-        action_input[action] += 1 - alpha;
+        h_state[0] = std::get<1>(r0);
+
         std::vector<torch::Tensor> y;
         std::vector<int> idx = {1, 3, 4, 5, 7};
         for (auto i: idx)
             for (int j = 0; j < num_channels; ++j)
                 y.push_back(
-                    x[j][0][i][(grid_x + 2) / 6][(grid_y + 2) / 6].detach().clone()
+                    x[j][0][i][(grid_x + 2) / 6][(grid_y + 2) / 6].clone()
                 );
         auto pov = torch::cat({torch::stack(y).view({-1}), action_input});
-        auto combined = torch::cat({out_seq, feat, pov * hidden_size / (pov.abs().sum().detach() + 1e-8)});
-        return torch::sigmoid(combined_processor->forward(combined));
+        auto combined = torch::cat({out_seq + feat.view({-1}), pov * hidden_size / (pov.abs().sum().detach() + 1e-8)});
+
+        auto gated = combined_processor->forward(combined);
+        gated = gated * hidden_size / (gated.abs().sum().detach() + 1e-8);
+
+        auto r1 = gru1->forward(gated.view({1, 1, -1}), h_state[1]);
+        auto out = std::get<0>(r1).view({-1});
+        out = out * hidden_size / (out.abs().sum().detach() + 1e-8) + gated;
+        h_state[1] = std::get<1>(r1);
+
+        return out;
+    }
+};
+TORCH_MODULE(Backbone);
+
+struct RewardModelImpl : torch::nn::Module {
+    Backbone backbone{nullptr};
+    torch::nn::Sequential value_head{nullptr};
+
+    int num_channels, grid_x, grid_y, hidden_size, num_actions;
+
+    RewardModelImpl(int num_channels = 32, int grid_x = 39, int grid_y = 39, int hidden_size = 160, int num_actions = 9)
+        : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y), hidden_size(hidden_size), num_actions(num_actions) {
+        backbone = register_module("backbone", Backbone(num_channels, grid_x, grid_y, hidden_size, num_actions));
+        value_head = register_module("value", torch::nn::Sequential(
+            ResB(hidden_size, LAYER_INDEX), torch::nn::Linear(hidden_size, 1)
+        ));
+        backbone->reset_memory();
+    }
+
+    void reset_memory() {
+        backbone->reset_memory();
+    }
+
+    void update_actions(int action) {
+        backbone->update_actions(action);
+    }
+
+    torch::Tensor forward(int action, torch::Tensor x) {
+        update_actions(action);
+
+        auto gated = backbone->forward(x);
+        auto value = value_head->forward(gated);
+        return torch::sigmoid(value);
     }
 };
 TORCH_MODULE(RewardModel);
 
 class RewardNet {
 public:
-    RewardNet(bool training = true, int T = 1024, float learning_rate = 1e-3, float alpha = 0.9,
+    RewardNet(bool training = true, int T = 1024, float learning_rate = 1e-3, 
         const std::string &backup_dir = "bots/bot-1/backup/reward_backup")
-        : training(training), T(T), learning_rate(learning_rate), alpha(alpha), backup_dir(backup_dir) {
+        : training(training), T(T), learning_rate(learning_rate), backup_dir(backup_dir) {
         model = RewardModel();
         if (!backup_dir.empty()) {
             if (std::filesystem::exists(backup_dir)) {
@@ -167,7 +202,8 @@ public:
             initial.push_back(p.detach().clone());
             param_count += p.numel();
         }
-        //log("RewardNet's parameters: " + std::to_string(param_count));
+        log("RewardNet's parameters: " + std::to_string(param_count));
+        log("LAYER_INDEX=" + std::to_string(LAYER_INDEX));
         if (!training)
             model->eval();
         else {
@@ -221,7 +257,7 @@ public:
                 return -2;
         }
         auto output = model->forward(action, state);
-        auto target = torch::tensor((float)imitate);
+        auto target = torch::tensor(imitate ? 1.0f : 0.0f);
         auto reward = compute_reward(action, state, (imitate ? target : output));
         update(output, target);
         return reward.item<float>();
@@ -272,7 +308,7 @@ private:
     }
 
     torch::Tensor compute_reward(int action, const torch::Tensor &state, const torch::Tensor &output) {
-        auto reward = output;
+        auto reward = output.detach().clone();
         std::vector<float> sit(num_channels);
         int x = (grid_x + 2) / 6, y = (grid_y + 2) / 6;
         for (int k = 0; k < num_channels; ++k)
@@ -301,8 +337,9 @@ private:
         time_t ts = time(0);
         auto loss = torch::zeros({}), human = torch::zeros({1}), agent = torch::zeros({1});
         int hum_cnt = 0, agent_cnt = 0;
-        auto tmp_a_i = model->action_input.detach().clone();
-        auto tmp_h_s = model->h_state.detach().clone();
+        auto tmp_a_i = model->backbone->action_input.detach().clone();
+        torch::Tensor tmp_h_s[2] = {model->backbone->h_state[0].detach().clone(),
+             model->backbone->h_state[1].detach().clone()};
         for (int i = 0; i < T; ++i) {
             loss += torch::binary_cross_entropy(outputs[i], targets[i]);
             if (targets[i].item<float>() == 1)
@@ -310,16 +347,16 @@ private:
             else
                 agent += outputs[i], ++agent_cnt;
         }
-        loss /= T, human /= hum_cnt, agent /= agent_cnt;
+        loss = loss / T, human /= hum_cnt, agent /= agent_cnt;
         if (training) {
             optimizer->zero_grad();
             loss.backward();
             optimizer->step();
         }
         outputs.clear(), targets.clear();
-        //model->reset_memory();
-        model->action_input = tmp_a_i;
-        model->h_state = tmp_h_s;
+        model->backbone->action_input = tmp_a_i;
+        model->backbone->h_state[0] = tmp_h_s[0];
+        model->backbone->h_state[1] = tmp_h_s[1];
         log("R: loss=" + std::to_string(loss.item<float>()) +
          "|human_avg=" + std::to_string(human.item<float>()) +
          "|agent_avg=" + std::to_string(agent.item<float>()) +

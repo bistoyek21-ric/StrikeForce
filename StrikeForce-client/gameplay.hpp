@@ -1473,7 +1473,7 @@ namespace Environment::Field{
 						}
 						break;
 					}
-					if(level >= L || level <= 0)
+					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
@@ -1501,7 +1501,7 @@ namespace Environment::Field{
 						}
 						break;
 					}
-					if(level >= L || level <= 0)
+					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
@@ -1529,7 +1529,7 @@ namespace Environment::Field{
 						}
 						break;
 					}
-					if(level >= L || level <= 0)
+					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');

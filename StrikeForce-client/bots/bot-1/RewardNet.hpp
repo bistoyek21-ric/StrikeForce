@@ -204,6 +204,9 @@ public:
         }
         log("RewardNet's parameters: " + std::to_string(param_count));
         log("LAYER_INDEX=" + std::to_string(LAYER_INDEX));
+#if defined(SLOWMOTION)
+        log("SLOWMOTION");
+#endif
         if (!training)
             model->eval();
         else {

@@ -454,8 +454,8 @@ std::vector<int> actions;   // Action history
 
 ```bash
 cd StrikeForce-server
-g++ -std=c++17 server.cpp -o MatchServer
-./MatchServer
+g++ -std=c++17 server.cpp -pthread -ltbb -o app_server
+./app_server
 ```
 
 **Configuration:**

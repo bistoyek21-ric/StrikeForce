@@ -7,3 +7,5 @@
 
 
 //#define USE_AGENT_IN_SQUAD_NPCS
+
+#define SLOWMOTION

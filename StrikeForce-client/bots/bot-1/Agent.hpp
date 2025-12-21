@@ -118,6 +118,9 @@ public:
         }
         log("Agent's parameters: " + std::to_string(param_count));
         log("LAYER_INDEX=" + std::to_string(LAYER_INDEX));
+#if defined(SLOWMOTION)
+        log("SLOWMOTION");
+#endif
         if (!training)
             model->eval();
         else {
@@ -202,9 +205,11 @@ public:
         std::vector<float> v;
         for (int i = 0; i < num_actions; ++i)
             v.push_back(output[0][i].item<float>());
+#if !defined(SLOWMOTION)
         for (int i = 1; i < num_actions; ++i)
             v[i] *= 0.5f / (1 - v[0] + 1e-5f);
         v[0] = 0.5f;
+#endif
         std::mt19937 gen(std::random_device{}());
         std::discrete_distribution<> dist(v.begin(), v.end());
         return dist(gen);

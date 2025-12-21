@@ -819,7 +819,16 @@ namespace Environment::Field{
 			if(using_an_agent)
 				manual = hum[ind].agent->is_manual();
 #endif
-			if(kbhit()){
+			bool moved;
+#if defined(SLOWMOTION)
+			if(using_an_agent && manual)
+				moved = true;
+			else
+				moved = kbhit();
+#else
+			moved = kbhit();
+#endif
+			if(moved){
 				command[ind] = getch();
 				if(command[ind] == '8')
 					command[ind] = 'w';
@@ -1411,6 +1420,10 @@ namespace Environment::Field{
 			restore_input_buffering();
 			hum[ind].deleteAgent();
 			hum[ind].reset();
+#if defined(CROWDSOURCE_TRAINING)
+			if (using_an_agent)
+				return;
+#endif
 			if(!quit){
 				Environment::Character::me = hum[ind];
 				update();
@@ -1445,7 +1458,8 @@ namespace Environment::Field{
 						std::cout << head();
 						std::cout << "Game Mode: Solo\nChoose the level which you want to play:\n";
 						for(int i = 0; i < L; ++i){
-							std::cout << "  " << i + 1 << ". level " << i + 1 << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills)";
+							std::cout << "  [" << (char)('0' + i + 1) << "]. level " << i + 1;
+							std::cout << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills)";
 							if(Environment::Character::me.get_level_solo() < i + 1)
 								std::cout << " (Locked)";
 							std::cout << '\n';
@@ -1472,7 +1486,8 @@ namespace Environment::Field{
 						std::cout << head();
 						std::cout << "Game Mode: Timer\n(You have to stay alive in all of the time)\nChoose the level which you want to play:\n";
 						for(int i = 0; i < L; ++i){
-							std::cout << "- level " << i + 1 << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills, in " << (i ? "" : "0") << 5 * (i + 1) << " minutes)";
+							std::cout << "  [" << (char)('0' + i + 1) << "]. level " << i + 1;
+							std::cout << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills, in " << (i ? "" : "0") << 5 * (i + 1) << " minutes)";
 							if(Environment::Character::me.get_level_timer() < i + 1)
 								std::cout << " (Locked)";
 							std::cout << '\n';
@@ -1499,7 +1514,8 @@ namespace Environment::Field{
 						std::cout << head();
 						std::cout << "Game Mode: Squad\nChoose the level which you want to play:\n";
 						for(int i = 0; i < L; ++i){
-							std::cout << "- level " << i + 1 << ", (" << 10 * (i + 1) << " kills and all of the rival's team death)";
+							std::cout << "  [" << (char)('0' + i + 1) << "]. level " << i + 1;
+							std::cout << ", (" << 10 * (i + 1) << " kills and all of the rival's team death)";
 							if(Environment::Character::me.get_level_squad() < i + 1)
 								std::cout << " (Locked)";
 							std::cout << '\n';

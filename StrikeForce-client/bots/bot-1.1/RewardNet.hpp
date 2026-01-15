@@ -25,7 +25,7 @@ SOFTWARE.
 #include "../../basic.hpp"
 #include <torch/torch.h>
 
-#define LAYER_INDEX 3
+#define LAYER_INDEX 4
 
 struct ResBImpl : torch::nn::Module {
     std::vector<torch::nn::Linear> layers;
@@ -100,7 +100,7 @@ struct BackboneImpl : torch::nn::Module {
     }
 
     void update_actions(torch::Tensor one_hot) {
-        //action_input = one_hot.detach().clone();
+        action_input = action_input * 0 + one_hot.clone();
     }
 
     torch::Tensor forward(const torch::Tensor &x) {
@@ -169,7 +169,7 @@ TORCH_MODULE(RewardModel);
 
 class RewardNet {
 public:
-    RewardNet(bool training = true, int T = 10, float learning_rate = 1e-3, 
+    RewardNet(bool training = true, int T = 1024, float learning_rate = 1e-3, 
         const std::string &backup_dir = "bots/bot-1/backup/reward_backup")
         : training(training), T(T), learning_rate(learning_rate), backup_dir(backup_dir) {
         model = RewardModel();
@@ -254,7 +254,7 @@ public:
         auto output = model->forward(action, state);
         auto target = torch::tensor(imitate ? 1.0f : 0.0f);
         update(output, target);
-        auto reward = torch::log(output[0]);
+        auto reward = torch::log(output);
         return reward;
     }
 
@@ -303,7 +303,7 @@ private:
 
     void train() {
         time_t ts = time(0);
-        auto loss = torch::zeros({}), human = torch::zeros({}), agent = torch::zeros({});
+        auto loss = torch::zeros({}), human = torch::zeros({1}), agent = torch::zeros({1});
         int hum_cnt = 0, agent_cnt = 0;
         auto tmp_a_i = model->backbone->action_input.detach().clone();
         torch::Tensor tmp_h_s[2] = {model->backbone->h_state[0].detach().clone(),
@@ -311,9 +311,9 @@ private:
         for (int i = 0; i < T; ++i) {
             loss += torch::binary_cross_entropy(outputs[i], targets[i]);
             if (targets[i].item<float>() == 1)
-                human += outputs[i][0], ++hum_cnt;
+                human += outputs[i], ++hum_cnt;
             else
-                agent += outputs[i][0], ++agent_cnt;
+                agent += outputs[i], ++agent_cnt;
         }
         loss = loss / T, human /= hum_cnt, agent /= agent_cnt;
         if (training) {

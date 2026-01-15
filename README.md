@@ -118,14 +118,14 @@ g++ -std=c++17 main.cpp -o StrikeForce \
 's' : Move down
 'a' : Move left
 'd' : Move right
-'`' : Turn left (rotate counterclockwise)
-'1' : Turn right (rotate clockwise)
+'q' : Turn left (rotate counterclockwise)
+'e' : Turn right (rotate clockwise)
 ```
 
 #### Combat Actions (2 actions)
 ```cpp
-'p' : Punch (melee attack in facing direction)
-'x' : Attack with selected item (weapon/throwable)
+'z' : Punch (melee attack in facing direction)
+'x' : Shoot with selected item (weapon/throwable)
 ```
 
 #### Item Selection - Consumables (4 actions)
@@ -166,15 +166,15 @@ g++ -std=c++17 main.cpp -o StrikeForce \
 ### Controls Summary
 
 ```
-Movement:  W/A/S/D  or  8/4/2/6 (NumPad)
-Turn:      ` (left), 1 (right)
-Attack:    X (use selected item), P (punch)
+Movement:  w/a/s/d  or  8/4/2/6 (NumPad)
+Turn:      q (left), e (right)
+Shoot:     x (use selected item), z (punch)
 Block:     [ (place block)
 Portal:    ] (place portal)
-Items:     F/G/H/J (consumables)
-           K/L/;/' (throwables)
-           C/V/B/N/M/,/.// (weapons)
-Use:       U (consume selected item)
+Items:     f/g/h/j (consumables)
+           k/l/;/' (throwables)
+           c/v/b/n/m/,/.// (weapons)
+Use:       u (consume selected item)
 UI:        0 (help), - (backpack), F/O (fullscreen)
 Agent:     3 (toggle manual/auto mode)
            Space (pause rendering in auto mode)
@@ -239,12 +239,12 @@ public:
 
 **Default Action Mapping (9 actions):**
 ```cpp
-// actions: "+xp`1awsd"
+// actions: "+xzqeawsd"
 0: '+' Do nothing
 1: 'x' Attack with selected weapon
-2: 'p' Punch
-3: '`' Turn left
-4: '1' Turn right
+2: 'z' Punch
+3: 'e' Turn left
+4: 'q' Turn right
 5: 'a' Move left
 6: 'w' Move up
 7: 's' Move down
@@ -307,6 +307,7 @@ g++ -std=c++17 main.cpp -o StrikeForce \
     -ltorch -ltorch_cpu -lc10
 
 ./StrikeForce
+# -lws_32 in windows is required
 ```
 
 ---
@@ -362,7 +363,7 @@ std::vector<float> describe(const node &cell,
 
 ### Complete Observation Pipeline
 
-The `obs` vector in `predict()` contains a **39×39 grid** around the player, compressed to **13×13** with **32 feature channels**:
+The `obs` vector in `predict()` contains a **31×31 grid** around the player, compressed to **13×13** with **32 feature channels**:
 
 **Feature Channels (32 total):**
 
@@ -456,6 +457,7 @@ std::vector<int> actions;   // Action history
 cd StrikeForce-server
 g++ -std=c++17 server.cpp -pthread -ltbb -o app_server
 ./app_server
+# in some settings -ltbb is not nessecary and in windows -lws_32 is required
 ```
 
 **Configuration:**

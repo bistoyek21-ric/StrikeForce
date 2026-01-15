@@ -42,7 +42,7 @@ namespace Environment::Field{
     
 	char command[H], symbol[8][4] = {{'V', '>', 'A', '<'}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
 
-	const std::string valid_commands = "+`13upxawsdfghjkl;'cvbnm,./[]";
+	const std::string valid_commands = "+qe3uzxawsdfghjkl;'cvbnm,./[]";
 
 	Environment::Item::Bullet bull[B];
 	Environment::Character::Zombie zomb[Z];
@@ -729,8 +729,8 @@ namespace Environment::Field{
                 }
                 return;
 		    }
-			if(c == '1' || c == '`'){
-				(c == '1' ? player.turn_r() : player.turn_l());
+			if(c == 'q' || c == 'e'){
+				(c == 'e' ? player.turn_r() : player.turn_l());
 				return;
 			}
 			if(c == 'a' || c == 's' || c == 'd' || c == 'w'){
@@ -787,7 +787,7 @@ namespace Environment::Field{
 				player.use(player.backpack.list_cons[player.backpack.ind].first);
 				return;
 			}
-			if(c == 'p' || c == 'x'){
+			if(c == 'z' || c == 'x'){
 				int bway = player.get_way() - 1;
 				std::vector<int> v = player.get_cor();
 				v[1] += wdx[bway], v[2] += wdy[bway];
@@ -795,7 +795,7 @@ namespace Environment::Field{
 				if(index == -1 || v[1] >= N || 0 > v[1] || v[2] >= M || 0 > v[2])
 					return;
 				bool can;
-				if(c == 'p')
+				if(c == 'z')
 					can = player.punch(bull[index]);
 				else if(player.backpack.vec == 1)
 					can = player.throw_it(bull[index]);
@@ -830,14 +830,22 @@ namespace Environment::Field{
 #endif
 			if(moved){
 				command[ind] = getch();
-				if(command[ind] == '8')
+				if(command[ind] == '9')
+					command[ind] = 'e';
+				else if(command[ind] == '8')
 					command[ind] = 'w';
-				else if(command[ind] == '4')
-					command[ind] = 'a';
+				else if(command[ind] == '7')
+					command[ind] = 'q';
 				else if(command[ind] == '6')
 					command[ind] = 'd';
+				else if(command[ind] == '5')
+					command[ind] = 'x';
+				else if(command[ind] == '4')
+					command[ind] = 'a';
 				else if(command[ind] == '2')
 					command[ind] = 's';
+				else if(command[ind] == '1')
+					command[ind] = 'z';
 				if(using_an_agent){
 #if !defined(CROWDSOURCED_TRAINING)
 					if(!manual && command[ind] == ' ')
@@ -980,21 +988,21 @@ namespace Environment::Field{
 			printer.print("Command list:\n");
 			printer.print(" - : show backpack\n");
 			printer.print(" 0 : command list\n");
-			printer.print(" ` : turn to left [1]\n");
-			printer.print(" 1 : turn to right\n");
+			printer.print(" q or 7 : turn to left [1]\n");
+			printer.print(" e or 9 : turn to right\n");
 #if !defined(CROWDSOURCED_TRAINING)
 			printer.print(" 3 : switch bitween Manual and Automate\n");
 #endif
-			printer.print(" a or 4 : move to left [2]\n");
+			printer.print(" a or 4 : move to left\n");
 			printer.print(" d or 6: move to right\n");
 			printer.print(" w or 8: move to up\n");
 			printer.print(" s or 2: move to down\n");
-			printer.print(" p : punch\n");
+			printer.print(" c or 1: punch\n");//p
 			printer.print(" [ : add block\n");
 			printer.print(" ] : add portal\n");
 			printer.print(" (Item's sign)* : change item\n");
 			printer.print(" u : use item (for consumables)\n");
-			printer.print(" x : attack\n");
+			printer.print(" x or 5: shoot\n");
 			printer.print(" Q : quit\n");
 			printer.print("-------------------------------------\n");
 			printer.print("Item signes:\n");
@@ -1008,8 +1016,7 @@ namespace Environment::Field{
 			printer.print(" W : increase width, E : decrease width (not availabel in crowdsourced training)\n");
 			printer.print(" R : increase hight, T : decrease hight (not availabel in crowdsourced training)\n");
 			printer.print("-------------------------------------\n");
-			printer.print("[1]: its location on the standardized keyboards is the key below Esc.\n");
-			printer.print("[2]: you can enable NumLock and then use the arrows!\n");
+			printer.print("[1]: you can enable NumLock and then use the keys!\n");
 			printer.print("note: if you do an invalid move nothing will happen.\n");
 #if !defined(CROWDSOURCED_TRAINING)
 			printer.print("* If you selected Automate you can press the space key to disable rendering.\n");
@@ -1345,8 +1352,8 @@ namespace Environment::Field{
 			std::vector<int> v = temp_me.get_cor();
 			v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
 			v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-			for(int i = v[1] - _H; i <= v[1] + _H; ++i)
-				for(int j = v[2] - W; j <= v[2] + W; ++j){
+			for(int i = 0; i < N; ++i)
+				for(int j = 0; j < M; ++j){
 					temp_map[i][j] = temp_cell;
 					temp_map[i][j].s = themap[v[0]][i][j].s;
 					if(temp_map[i][j].s[0]) {
@@ -1748,27 +1755,27 @@ namespace Environment::Field{
 			return;
 		}
 		std::string res = "";
+		res += head(true, true) + "Mode: " + mode;
+		if(using_an_agent){
+			if(manual1)
+				res += " (Manual)";
+			else
+				res += " (Automate)";
+			if(is_training1)
+				res += "off";
+			else
+				res += "on";
+		}
+		if(online){
+            res += " | index: " + std::to_string(ind);
+            res += ", team: " + std::to_string(temp_me.get_team());
+        }
+        res += "\n_____________________\n";
+    	res += c_col(33, 40);
+        res += "Frame: " + std::to_string(frame1) + "\n";
+		res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n";
 		if(!full1){
-			res += head(true, true) + "Mode: " + mode;
-			if(using_an_agent){
-				if(manual1)
-					res += " (Manual)";
-				else
-					res += " (Automate)";
-				if(is_training1)
-					res += "off";
-				else
-					res += "on";
-			}
-			if(online){
-                res += " | index: " + std::to_string(ind);
-                res += ", team: " + std::to_string(temp_me.get_team());
-            }
-            res += "\n_____________________\n";
-    		res += c_col(33, 40);
-            res += "Frame: " + std::to_string(frame1) + "\n";
-			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
-			res += c_col(34, 40);
+			res += c_col(32, 40);
 			res += "Your teams' kills: " + std::to_string(teams_kills1) + " (yours': " + std::to_string(temp_me.get_kills()) + ")";
 			if(!online)
 				res += ", level: " + std::to_string(level);
@@ -1779,9 +1786,10 @@ namespace Environment::Field{
 				res += "Your' reward (If you win): " + std::to_string(loot1 + (int)(temp_me.get_level_solo() == level) * 1000 * level) + "\n";
 			else if(mode == "Squad")
 				res += "Your' reward (If you win): " + std::to_string(loot1 + (int)(temp_me.get_level_squad() == level) * 1000 * level) + "\n";
-			res += "\nYou:\n";
+			res += c_col(34, 40);
+			res += "You:\n";
 			res += temp_me.subtitle();
-			res += c_col(31, 40) + "\n";
+			res += c_col(31, 40);
 			if(is_zombie1){
 				res += "Enemy:\n";
 				res += temp_recZ + '\n';
@@ -1792,29 +1800,30 @@ namespace Environment::Field{
 			}
 			else
 				res += "\n\n\n\n\n";
-			res += c_col(0, 0);
-			res += "to see the command list";
-			res += (!online ? " or pause the game" : "");
-			res += " press 0\n";
-			res += "____________________________________________________\n";
 		}
-		else
-			res += "0: command list\n";
+		res += c_col(0, 0);
+		res += "to see the command list";
+		res += (!online ? " or pause the game" : "");
+		res += " press 0\n";
+		res += "____________________________________________________\n";
 		std::vector<int> v = temp_me.get_cor();
 		std::string last = "", color, cell;
-		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
-		#if !defined(CROWDSOURCED_TRAINING)
-		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-		#endif
-		int Width;
+		int Width, Hight;
 		#if defined(CROWDSOURCED_TRAINING)
-		Width = 19;
+		Width = 15;
+		if (full1)
+			Hight = 15;
+		else
+			Hight = _H;
 		#else
+		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
+		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
 		Width = W;
+		Hight = _H;
 		#endif
-		for(int i = v[1] - _H; i <= v[1] + _H; ++i, res.push_back('\n'))
+		for(int i = v[1] - Hight; i <= v[1] + Hight; ++i, res.push_back('\n'))
 			for(int j = v[2] - Width; j <= v[2] + Width; ++j){
-				cell = ((j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit());
+				cell = ((i < 0 || i >= N || j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit());
 				color = "";
 				int cnt = 2;
 				for(int k = 0; k < cell.size(); ++k){

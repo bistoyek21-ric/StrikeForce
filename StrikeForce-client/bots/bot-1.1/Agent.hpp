@@ -25,20 +25,17 @@ SOFTWARE.
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
 #include "RewardNet.hpp"
 
-const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
+const std::string bot_code = "bot-1.1", backup_path = "bots/bot-1.1/backup";
 
 struct AgentModelImpl : torch::nn::Module {
     Backbone backbone{nullptr};
-    torch::nn::Sequential value_head{nullptr}, policy_head{nullptr};
+    torch::nn::Sequential policy_head{nullptr};
 
     int num_channels, grid_x, grid_y, hidden_size, num_actions;
 
     AgentModelImpl(int num_channels = 32, int grid_x = 31, int grid_y = 31, int hidden_size = 160, int num_actions = 9)
         : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y), hidden_size(hidden_size), num_actions(num_actions) {
         backbone = register_module("backbone", Backbone(num_channels, grid_x, grid_y, hidden_size, num_actions));
-        value_head = register_module("value", torch::nn::Sequential(
-            ResB(hidden_size, LAYER_INDEX), torch::nn::Linear(hidden_size, 1)
-        ));
         policy_head = register_module("policy", torch::nn::Sequential(
             ResB(hidden_size, LAYER_INDEX), torch::nn::Linear(hidden_size, num_actions)
         ));
@@ -55,6 +52,11 @@ struct AgentModelImpl : torch::nn::Module {
             p.set_requires_grad(false);
     }
 
+    void unfreeze_backbone(){
+        for (auto& p : backbone->parameters())
+            p.set_requires_grad(true);
+    }
+
     void reset_memory() {
         backbone->reset_memory();
     }
@@ -63,22 +65,20 @@ struct AgentModelImpl : torch::nn::Module {
         backbone->update_actions(one_hot);
     }
 
-    std::vector<torch::Tensor> forward(torch::Tensor x) {
+    torch::Tensor forward(torch::Tensor x) {
         auto gated = backbone->forward(x);
 
         auto logits = policy_head->forward(gated);
         auto p = torch::softmax(logits, -1) + 1e-8;
-        
-        auto v = torch::sigmoid(value_head->forward(gated).squeeze());
 
-        return {p, v};
+        return p;
     }
 };
 TORCH_MODULE(AgentModel);
 
 class Agent {
 public:
-    Agent(bool training = true, int T = 10, int num_epochs = 4, float gamma = 0.99, float learning_rate = 1e-3,
+    Agent(bool training = true, int T = 1024, int num_epochs = 4, float gamma = 0.98, float learning_rate = 1e-3,
          float ppo_clip = 0.2, float cv = 0.5, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
         : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
         ppo_clip(ppo_clip), alpha(alpha), cv(cv), backup_dir(backup_dir) {
@@ -129,6 +129,8 @@ public:
 #if defined(FREEZE_TL_BLOCK)
             model->freeze_backbone();
             log("Frozen TL block parameters.");
+#else
+            model->unfreeze_backbone();
 #endif
             if (!backup_dir.empty() && std::filesystem::exists(backup_dir + "/optimizer.pt")) {
                 try {
@@ -137,6 +139,9 @@ public:
             }
         }
         auto dummy = torch::zeros({1, num_channels, grid_x, grid_y});
+        action_input_checkpoint = model->backbone->action_input.clone().detach();
+        h_state_checkpoint[0] = model->backbone->h_state[0].clone().detach();
+        h_state_checkpoint[1] = model->backbone->h_state[1].clone().detach();
         model->forward(dummy);
         model->reset_memory();
     }
@@ -197,11 +202,10 @@ public:
         auto state = torch::tensor(obs, torch::dtype(torch::kFloat32)).view({1, num_channels, grid_x , grid_y});
         states.push_back(state);
         auto output = model->forward(state);
-        values.push_back(output[1]);
-        log_probs.push_back(torch::log(output[0]));
+        log_probs.push_back(torch::log(output));
         std::vector<float> v;
         for (int i = 0; i < num_actions; ++i)
-            v.push_back(output[0][i].item<float>());
+            v.push_back(output[i].item<float>());
 #if !defined(SLOWMOTION)
         for (int i = 1; i < num_actions; ++i)
             v[i] *= 0.5f / (1 - v[0] + 1e-5f);
@@ -215,17 +219,21 @@ public:
     void update(int action, bool imitate) {
         if (is_training || cnt <= T_initial)
             return;
-        auto one_hot = torch::zeros({num_actions});
-        auto p = torch::exp(log_probs.back())[action];
-        one_hot[action] += (p + 1e-5) / (p.detach() + 1e-5);
+        auto one_hot = torch::exp(log_probs.back().clone());
+        for (int i = 0; i < num_actions; ++i)
+            if (i == action)
+                one_hot[i] = torch::max(one_hot[i] / (one_hot[i].item<float>() + 1e-8), torch::tensor(1.0f));
+            else
+                one_hot[i] = one_hot[i] * 0;
         rewards.push_back(reward_net->get_reward(one_hot, imitate, states.back().detach().clone()));
         if (rewards.back().item<float>() == -2 && training) {
             actions.clear(), rewards.clear(), log_probs.clear();
-            states.clear(), values.clear();
+            states.clear();
             return;
         }
         model->update_actions(one_hot.detach());
         actions.push_back(action);
+        one_hots.push_back(one_hot.detach());
         if (actions.size() == T) {
             is_training = true;
             done_training = false;
@@ -286,13 +294,15 @@ private:
     bool is_training = false, logging = true, training, done_training, manual;
     std::thread trainThread;
     float learning_rate, alpha, gamma, ppo_clip, cv;
-    int T, num_epochs, cnt = 0, T_initial = 10;
+    int T, num_epochs, cnt = 0, T_initial = 512;
     const int num_actions = 9, num_channels = 32, grid_x = 31, grid_y = 31, hidden_size = 160;
     std::string backup_dir;
     AgentModel model{nullptr};
     RewardNet* reward_net;
     std::unique_ptr<torch::optim::AdamW> optimizer{nullptr};
-    std::vector<torch::Tensor> states, log_probs, values, rewards;
+    std::vector<torch::Tensor> states, log_probs, rewards, one_hots;
+    torch::Tensor action_input_checkpoint;
+    torch::Tensor h_state_checkpoint[2];
     std::vector<int> actions;
     std::ofstream log_file;
 
@@ -324,14 +334,6 @@ private:
         log_file.flush();
     }
 
-    std::vector<torch::Tensor> computeReturns() {
-        std::vector<torch::Tensor> returns(T);
-        returns[T - 1] = (1 - gamma) * rewards[T - 1];
-        for (int i = T - 2; i >= 0; --i)
-            returns[i] = gamma * returns[i + 1] + (1 - gamma) * rewards[i];
-        return returns;
-    }
-
     void train() {
         float sum_rewards[2] = {}, nothing[2] = {};
         for (int i = 0; i < T; ++i){
@@ -341,8 +343,7 @@ private:
         log("A stats: r_avg0=" + std::to_string(sum_rewards[0] / T) +
             "|r_avg1=" + std::to_string(sum_rewards[1] / T) +
             "|n_avg0=" + std::to_string(nothing[0] / (T / 2)) +
-            "|n_avg1=" + std::to_string(nothing[1] / (T / 2)) + 
-            "|manual=" + std::to_string(manual));
+            "|n_avg1=" + std::to_string(nothing[1] / (T / 2)) + "|manual=" + std::to_string(manual));
         auto sum = torch::exp(log_probs[0].detach().clone());
         for (int i = 1; i < T; ++i)
             sum += torch::exp(log_probs[i].detach().clone());
@@ -352,71 +353,49 @@ private:
         for (int i = 0; i < num_actions; ++i)
             pref += std::to_string(sum[i].item<float>()) + "|";
         log(pref);
-        auto returns = computeReturns();
+        auto tmp_a_i = model->backbone->action_input.detach().clone();
+        torch::Tensor tmp_h_s[2] = {model->backbone->h_state[0].detach().clone(), 
+            model->backbone->h_state[1].detach().clone()};
         int times = 1;
 #if defined(FREEZE_TL_BLOCK)
         times = 2;
 #endif
-        for (int epoch = 0; epoch < num_epochs * times; ++epoch) {
-            time_t ts = time(0);
-            auto p_loss = torch::zeros({});
-            auto v_loss = torch::zeros({});
-            if (epoch)
-                model->reset_memory();
-            for (int i = 0; i < T; ++i) {
-                torch::Tensor current_logp;
-                std::vector<torch::Tensor> output;
-                if (!epoch) {
-                    current_logp = log_probs[i][actions[i]];
-                    log_probs[i] = log_probs[i].detach();
-                }
-                else {
-                    output = model->forward(states[i]);
-                    auto one_hot = torch::zeros({num_actions});
-                    one_hot[actions[i]] += 1;
-                    model->update_actions(one_hot);
-                    current_logp = torch::log(output[0][actions[i]]);
-                }
-                if (!epoch) {
-                    v_loss += torch::mse_loss(returns[i], torch::log(values[i]));
-                    values[i] = values[i].detach();
-                }
-                else
-                    v_loss += torch::mse_loss(returns[i], torch::log(output[1]));
-                auto diff = torch::clamp(current_logp - log_probs[i][actions[i]], -100, 10);
-                auto ratio = torch::exp(diff);
-                auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
-                auto adv = returns[i] - torch::log(values[i]);
-                p_loss -= torch::min(ratio * adv, clipped * adv);
-            }
-            p_loss = p_loss / T;
-            v_loss = v_loss / T;
-            auto loss = p_loss + cv * v_loss;
-            if (training) {
-                optimizer->zero_grad();
-                loss.backward();
-                /*
-                for (auto & p: model->named_parameters()) {
-                    log("~~~~~~~~~~~~~~~~~~");
-                    log(p.key());
-                    if (p.value().grad().defined())
-                        log(p.value().grad());
-                    else
-                        log("x");
-                }
-                */
-                optimizer->step();
-            }
-            std::cout << "bp10" << std::endl;
-            log("A: loss=" + std::to_string(loss.item<float>()) +
-             "|p_loss=" + std::to_string(p_loss.item<float>()) + 
-             "|v_loss=" + std::to_string(v_loss.item<float>()) + 
-             ",time(s)=" + std::to_string(time(0) - ts) +
-             ",step=" + std::to_string(calc_diff()));
+        time_t ts = time(0);
+        auto p_loss = torch::zeros({});
+        auto v_loss = torch::zeros({});
+        model->backbone->action_input = action_input_checkpoint.clone().detach();
+        model->backbone->h_state[0] = h_state_checkpoint[0].clone().detach();
+        model->backbone->h_state[1] = h_state_checkpoint[1].clone().detach();
+        for (int i = 0; i < T; ++i) {
+            torch::Tensor current_logp, output;        
+            current_logp = log_probs[i][actions[i]];
+            log_probs[i] = log_probs[i].detach();
+            auto diff = torch::clamp(current_logp - log_probs[i][actions[i]], -100, 10);
+            auto ratio = torch::exp(diff);
+            auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
+            p_loss -= torch::min(ratio * rewards[i], clipped * rewards[i]);
+            v_loss -= rewards[i];
         }
-        actions.clear(), rewards.clear(), log_probs.clear();
-        states.clear(), values.clear();
-        model->reset_memory();
+        p_loss = p_loss / T;
+        v_loss = v_loss / T;
+        auto loss = p_loss + cv * v_loss;
+        if (training) {
+            optimizer->zero_grad();
+            loss.backward();
+            optimizer->step();
+        }
+        log("A: loss=" + std::to_string(loss.item<float>()) +
+            "|p_loss=" + std::to_string(p_loss.item<float>()) + 
+            "|v_loss=" + std::to_string(v_loss.item<float>()) + 
+            ",time(s)=" + std::to_string(time(0) - ts) +
+            ",step=" + std::to_string(calc_diff()));
+        actions.clear(), rewards.clear(), log_probs.clear(), states.clear();
+        action_input_checkpoint = tmp_a_i.clone().detach();
+        h_state_checkpoint[0] = tmp_h_s[0].clone().detach();
+        h_state_checkpoint[1] = tmp_h_s[1].clone().detach();
+        model->backbone->action_input = action_input_checkpoint.clone().detach();
+        model->backbone->h_state[0] = h_state_checkpoint[0].clone().detach();
+        model->backbone->h_state[1] = h_state_checkpoint[1].clone().detach();
         done_training = true;
     }
 };

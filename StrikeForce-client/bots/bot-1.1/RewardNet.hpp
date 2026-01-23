@@ -25,7 +25,7 @@ SOFTWARE.
 #include "../../basic.hpp"
 #include <torch/torch.h>
 
-#define LAYER_INDEX 4
+#define LAYER_INDEX 3
 
 struct ResBImpl : torch::nn::Module {
     std::vector<torch::nn::Linear> layers;
@@ -100,7 +100,7 @@ struct BackboneImpl : torch::nn::Module {
     }
 
     void update_actions(torch::Tensor one_hot) {
-        action_input = action_input * 0 + one_hot.clone();
+        action_input = one_hot.clone();
     }
 
     torch::Tensor forward(const torch::Tensor &x) {
@@ -161,7 +161,7 @@ struct RewardModelImpl : torch::nn::Module {
     torch::Tensor forward(torch::Tensor action, torch::Tensor x) {
         update_actions(action);
         auto gated = backbone->forward(x);
-        auto value = value_head->forward(gated);
+        auto value = value_head->forward(gated).view({-1});
         return torch::sigmoid(value);
     }
 };
@@ -170,7 +170,7 @@ TORCH_MODULE(RewardModel);
 class RewardNet {
 public:
     RewardNet(bool training = true, int T = 1024, float learning_rate = 1e-3, 
-        const std::string &backup_dir = "bots/bot-1/backup/reward_backup")
+        const std::string &backup_dir = "bots/bot-1.1/backup/reward_backup")
         : training(training), T(T), learning_rate(learning_rate), backup_dir(backup_dir) {
         model = RewardModel();
         if (!backup_dir.empty()) {
@@ -262,6 +262,29 @@ public:
         return model;
     }
 
+    void train_epoch(const std::vector<int> &actions,
+         const bool &manual, const std::vector<torch::Tensor> &states){
+        time_t ts = time(0);
+        outputs.clear(), targets.clear();
+        model->reset_memory();
+        for (int i = 0; i < T; ++i) {
+            torch::Tensor one_hot = torch::zeros({num_actions});
+            one_hot[actions[i]] += 1;
+            get_reward(one_hot, (i < T / 2 ? !manual : manual), states[i]);
+        }
+        is_training = true;
+        done_training = false;
+        //trainThread = std::thread(&Agent::train, this);
+        ///////////////////////////////////////////////
+        if (training)
+            std::cout << "RewardNet is training..." << std::endl;
+        train();
+        is_training = false;
+        /////////////////////////////////////////////
+        log("total time(s) = " + std::to_string(time(0) - ts));
+        return;
+    }
+
 private:
     bool is_training = false, logging = true, training, done_training;
     std::thread trainThread;
@@ -303,11 +326,8 @@ private:
 
     void train() {
         time_t ts = time(0);
-        auto loss = torch::zeros({}), human = torch::zeros({1}), agent = torch::zeros({1});
+        auto loss = torch::zeros({1}), human = torch::zeros({1}), agent = torch::zeros({1});
         int hum_cnt = 0, agent_cnt = 0;
-        auto tmp_a_i = model->backbone->action_input.detach().clone();
-        torch::Tensor tmp_h_s[2] = {model->backbone->h_state[0].detach().clone(),
-             model->backbone->h_state[1].detach().clone()};
         for (int i = 0; i < T; ++i) {
             loss += torch::binary_cross_entropy(outputs[i], targets[i]);
             if (targets[i].item<float>() == 1)
@@ -318,13 +338,11 @@ private:
         loss = loss / T, human /= hum_cnt, agent /= agent_cnt;
         if (training) {
             optimizer->zero_grad();
-            loss.backward();
+            loss.backward(at::Tensor(), true);
             optimizer->step();
         }
         outputs.clear(), targets.clear();
-        model->backbone->action_input = tmp_a_i;
-        model->backbone->h_state[0] = tmp_h_s[0];
-        model->backbone->h_state[1] = tmp_h_s[1];
+        model->reset_memory();
         log("R: loss=" + std::to_string(loss.item<float>()) +
          "|human_avg=" + std::to_string(human.item<float>()) +
          "|agent_avg=" + std::to_string(agent.item<float>()) +
@@ -336,18 +354,5 @@ private:
     void update(const torch::Tensor &output, const torch::Tensor &target) {
         outputs.push_back(output);
         targets.push_back(target);
-        if (outputs.size() == T) {
-            is_training = true;
-            done_training = false;
-            //trainThread = std::thread(&RewardNet::train, this);
-            ///////////////////////////////////////////////
-            if (training)
-                std::cout << "RewardNet is training..." << std::endl;
-            train();
-            is_training = false;
-            if (training)
-                std::cout << "done!" << std::endl;
-            /////////////////////////////////////////////
-        }
     }
 };

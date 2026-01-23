@@ -25,6 +25,9 @@ SOFTWARE.
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
 #include "RewardNet.hpp"
 
+//#define STG_GAN
+#define PPO_GAIL
+
 const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
 
 struct AgentModelImpl : torch::nn::Module {
@@ -66,10 +69,10 @@ struct AgentModelImpl : torch::nn::Module {
     std::vector<torch::Tensor> forward(torch::Tensor x) {
         auto gated = backbone->forward(x);
 
-        auto logits = policy_head->forward(gated);
+        auto logits = policy_head->forward(gated).view({-1});
         auto p = torch::softmax(logits, -1) + 1e-8;
         
-        auto v = torch::sigmoid(value_head->forward(gated).squeeze());
+        auto v = torch::sigmoid(value_head->forward(gated)).view({-1});
 
         return {p, v};
     }
@@ -78,8 +81,8 @@ TORCH_MODULE(AgentModel);
 
 class Agent {
 public:
-    Agent(bool training = true, int T = 10, int num_epochs = 4, float gamma = 0.99, float learning_rate = 1e-3,
-         float ppo_clip = 0.2, float cv = 0.5, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
+    Agent(bool training = true, int T = 1024, int num_epochs = 4, float gamma = 0.99, float learning_rate = 2e-4,
+         float ppo_clip = 0.2, float cv = 0.5, const std::string &backup_dir = "bots/bot-1.1/backup/agent_backup")
         : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
         ppo_clip(ppo_clip), alpha(alpha), cv(cv), backup_dir(backup_dir) {
 #if defined(CROWDSOURCED_TRAINING)
@@ -197,8 +200,8 @@ public:
         auto state = torch::tensor(obs, torch::dtype(torch::kFloat32)).view({1, num_channels, grid_x , grid_y});
         states.push_back(state);
         auto output = model->forward(state);
-        values.push_back(output[1]);
-        log_probs.push_back(torch::log(output[0]));
+        values.push_back(output[1].detach());
+        log_probs.push_back(torch::log(output[0]).detach());
         std::vector<float> v;
         for (int i = 0; i < num_actions; ++i)
             v.push_back(output[0][i].item<float>());
@@ -216,9 +219,12 @@ public:
         if (is_training || cnt <= T_initial)
             return;
         auto one_hot = torch::zeros({num_actions});
-        auto p = torch::exp(log_probs.back())[action];
-        one_hot[action] += (p + 1e-5) / (p.detach() + 1e-5);
-        rewards.push_back(reward_net->get_reward(one_hot, imitate, states.back().detach().clone()));
+        one_hot[action] += 1;
+#if defined(STG_GAN)
+        auto p = torch::exp(log_probs.back());
+        one_hot += p - p.detach();
+#endif
+        rewards.push_back(reward_net->get_reward(one_hot.clone(), imitate, states.back().detach().clone()));
         if (rewards.back().item<float>() == -2 && training) {
             actions.clear(), rewards.clear(), log_probs.clear();
             states.clear(), values.clear();
@@ -257,9 +263,9 @@ public:
         if (cnt <= T_initial)
             manual = true;
         else if (actions.empty()) {
-            std::mt19937 gen(std::random_device{}());
-            std::uniform_int_distribution<> dist(0, 1);
-            manual = dist(gen);
+            //std::mt19937 gen(std::random_device{}());
+            //std::uniform_int_distribution<> dist(0, 1);
+            manual = false; //dist(gen);
             if (manual) {
                 std::cout << "manual part! press space button to continue" << std::endl;
                 while(getch() != ' ');
@@ -286,7 +292,7 @@ private:
     bool is_training = false, logging = true, training, done_training, manual;
     std::thread trainThread;
     float learning_rate, alpha, gamma, ppo_clip, cv;
-    int T, num_epochs, cnt = 0, T_initial = 10;
+    int T, num_epochs, cnt = 0, T_initial = 512;
     const int num_actions = 9, num_channels = 32, grid_x = 31, grid_y = 31, hidden_size = 160;
     std::string backup_dir;
     AgentModel model{nullptr};
@@ -326,13 +332,13 @@ private:
 
     std::vector<torch::Tensor> computeReturns() {
         std::vector<torch::Tensor> returns(T);
-        returns[T - 1] = (1 - gamma) * rewards[T - 1];
+        returns[T - 1] = (1 - gamma) * rewards[T - 1].detach();
         for (int i = T - 2; i >= 0; --i)
-            returns[i] = gamma * returns[i + 1] + (1 - gamma) * rewards[i];
+            returns[i] = gamma * returns[i + 1] + (1 - gamma) * rewards[i].detach();
         return returns;
     }
 
-    void train() {
+    void train_log() {
         float sum_rewards[2] = {}, nothing[2] = {};
         for (int i = 0; i < T; ++i){
             sum_rewards[i / (T / 2)] += rewards[i].item<float>();
@@ -352,68 +358,75 @@ private:
         for (int i = 0; i < num_actions; ++i)
             pref += std::to_string(sum[i].item<float>()) + "|";
         log(pref);
-        auto returns = computeReturns();
-        int times = 1;
-#if defined(FREEZE_TL_BLOCK)
-        times = 2;
+    }
+    
+    void train() {
+        train_log();
+        time_t t0 = time(0), ts = time(0);
+        torch::Tensor r_loss = torch::zeros({1});
+#if defined(STG_GAN)
+        for (int i = (T / 2) * (1 - manual); i < T; ++i)
+            r_loss -= rewards[i];
+        
+        r_loss = r_loss / (T / 2);
+        
+        if (training) {
+            optimizer->zero_grad();
+            r_loss.backward();
+            optimizer->step();
+        }
+        
+        log("A: r_loss=" + std::to_string(r_loss.item<float>()) +
+         ",time(s)=" + std::to_string(time(0) - ts) +
+         ",step=" + std::to_string(calc_diff()));
 #endif
-        for (int epoch = 0; epoch < num_epochs * times; ++epoch) {
-            time_t ts = time(0);
-            auto p_loss = torch::zeros({});
-            auto v_loss = torch::zeros({});
-            if (epoch)
-                model->reset_memory();
+#if defined(PPO_GAIL)
+        auto returns = computeReturns();
+        for (int epoch = 0; epoch < num_epochs && training; ++epoch) {
+            ts = time(0);
+            auto p_loss = torch::zeros({1});
+            auto v_loss = torch::zeros({1});
+            model->reset_memory();
+
             for (int i = 0; i < T; ++i) {
-                torch::Tensor current_logp;
-                std::vector<torch::Tensor> output;
-                if (!epoch) {
-                    current_logp = log_probs[i][actions[i]];
-                    log_probs[i] = log_probs[i].detach();
-                }
-                else {
-                    output = model->forward(states[i]);
-                    auto one_hot = torch::zeros({num_actions});
-                    one_hot[actions[i]] += 1;
-                    model->update_actions(one_hot);
-                    current_logp = torch::log(output[0][actions[i]]);
-                }
-                if (!epoch) {
-                    v_loss += torch::mse_loss(returns[i], torch::log(values[i]));
-                    values[i] = values[i].detach();
-                }
-                else
-                    v_loss += torch::mse_loss(returns[i], torch::log(output[1]));
+                auto output = model->forward(states[i]);
+                
+                auto one_hot = torch::zeros({num_actions});
+                one_hot[actions[i]] += 1;
+                model->update_actions(one_hot);
+
+                if (i < (T / 2) * (1 - manual))
+                    continue;
+                
+                v_loss += torch::mse_loss(returns[i], torch::log(output[1]));
+                
+                auto current_logp = torch::log(output[0][actions[i]]);
                 auto diff = torch::clamp(current_logp - log_probs[i][actions[i]], -100, 10);
                 auto ratio = torch::exp(diff);
                 auto clipped = torch::clamp(ratio, 1 - ppo_clip, 1 + ppo_clip);
                 auto adv = returns[i] - torch::log(values[i]);
                 p_loss -= torch::min(ratio * adv, clipped * adv);
             }
-            p_loss = p_loss / T;
-            v_loss = v_loss / T;
+            
+            p_loss = p_loss / (T / 2);
+            v_loss = v_loss / (T / 2);
             auto loss = p_loss + cv * v_loss;
-            if (training) {
-                optimizer->zero_grad();
-                loss.backward();
-                /*
-                for (auto & p: model->named_parameters()) {
-                    log("~~~~~~~~~~~~~~~~~~");
-                    log(p.key());
-                    if (p.value().grad().defined())
-                        log(p.value().grad());
-                    else
-                        log("x");
-                }
-                */
-                optimizer->step();
-            }
-            std::cout << "bp10" << std::endl;
+            
+            optimizer->zero_grad();
+            loss.backward();
+            optimizer->step();
+            
             log("A: loss=" + std::to_string(loss.item<float>()) +
              "|p_loss=" + std::to_string(p_loss.item<float>()) + 
              "|v_loss=" + std::to_string(v_loss.item<float>()) + 
              ",time(s)=" + std::to_string(time(0) - ts) +
              ",step=" + std::to_string(calc_diff()));
         }
+#endif
+        log("total time(s) = " + std::to_string(time(0) - t0));
+
+        reward_net->train_epoch(actions, manual, states);
+        
         actions.clear(), rewards.clear(), log_probs.clear();
         states.clear(), values.clear();
         model->reset_memory();

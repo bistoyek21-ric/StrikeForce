@@ -8,4 +8,8 @@
 
 //#define USE_AGENT_IN_SQUAD_NPCS
 
+//#define HIGHLY_OPTIMIZED
+
 #define SLOWMOTION
+
+#define DATASET "datasets/First/"

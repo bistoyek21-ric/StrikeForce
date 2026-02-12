@@ -523,7 +523,6 @@ namespace Environment::Character{
 			sscanf(buffer, "%d %d %d %d", &rate_solo, &rate_timer, &rate_squad, &rate);
 			for(int _ = 0; _ < 4; ++_)
                 scroll(buffer);
-			Hp = def_Hp, mindamage = mindamage_def, stamina = def_stamina;
 			for(int i = 0; i < 4; ++i){
 				sscanf(buffer, "%d", &backpack.list_cons[i].second);
 				scroll(buffer);
@@ -565,6 +564,86 @@ namespace Environment::Character{
 				level_squad_up();
 			level_squad = k1;
 			backpack.back_tmp();
+			return;
+		}
+
+		void scan_file(std::ifstream& file){
+			backpack.build();
+			rnpc = false;
+			
+			file >> name;
+			file >> def_Hp >> mindamage_def >> def_stamina;
+			
+			Hp = def_Hp, mindamage = mindamage_def, stamina = def_stamina;
+			
+			file >> level_solo >> level_timer >> level_squad;
+			file >> money;
+			file >> rate_solo >> rate_timer >> rate_squad >> rate;
+			
+			for(int i = 0; i < 4; ++i){
+				file >> backpack.list_cons[i].second;
+				backpack.set_vol(backpack.get_vol() + backpack.list_cons[i].second * backpack.list_cons[i].first.get_vol());
+			}
+
+			for(int i = 0; i < 4; ++i){
+				file >> backpack.list_throw[i].second.first;
+				file >> backpack.list_throw[i].second.second;
+				
+				for(int j = 0; j + 1 < backpack.list_throw[i].second.first; ++j)
+					backpack.list_throw[i].first.upgrade();
+				backpack.set_vol(backpack.get_vol() + backpack.list_throw[i].second.second * backpack.list_throw[i].first.get_vol());
+			}
+
+			for(int i = 0; i < 8; ++i){
+				file >> backpack.list_w[i].second;
+				for(int j = 0; j < backpack.list_w[i].second; ++j)
+					backpack.list_w[i].first.upgrade();
+				backpack.set_vol(backpack.get_vol() + backpack.list_w[i].second * backpack.list_w[i].first.get_vol());
+			}
+			int k, k1;
+			file >> k;
+			while(--k)
+				backpack.upgrade();
+			k1 = k = level_solo;
+			level_solo = 1;
+			while(--k)
+				level_solo_up();
+			level_solo = k1;
+			k1 = k = level_timer;
+			level_timer = 1;
+			while(--k)
+				level_timer_up();
+			level_timer = k1;
+			k1 = k = level_squad;
+			level_squad = 1;
+			while(--k)
+				level_squad_up();
+			level_squad = k1;
+			backpack.back_tmp();
+			return;
+		}
+
+		void log_file(std::ofstream& file){
+			
+			file << name << '\n';
+			file << def_Hp << '\n' << mindamage_def << '\n' << def_stamina << '\n';
+			
+			file << level_solo << '\n' << level_timer << '\n' << level_squad << '\n';
+			file << money << '\n';
+			file << rate_solo << '\n' << rate_timer << '\n' << rate_squad << '\n' << rate << '\n';
+			
+			for(int i = 0; i < 4; ++i)
+				file << backpack.list_cons[i].second << '\n';
+			
+			for(int i = 0; i < 4; ++i){
+				file << backpack.list_throw[i].second.first << '\n';
+				file << backpack.list_throw[i].second.second << '\n';
+			}
+			
+			for(int i = 0; i < 8; ++i)
+				file << backpack.list_w[i].second << '\n';
+			
+			file << backpack.get_level() << '\n';
 			return;
 		}
 

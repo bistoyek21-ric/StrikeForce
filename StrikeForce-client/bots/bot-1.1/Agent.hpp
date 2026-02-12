@@ -265,7 +265,7 @@ public:
         else if (actions.empty()) {
             //std::mt19937 gen(std::random_device{}());
             //std::uniform_int_distribution<> dist(0, 1);
-            manual = false; //dist(gen);
+            manual = true; //dist(gen);
             if (manual) {
                 std::cout << "manual part! press space button to continue" << std::endl;
                 while(getch() != ' ');
@@ -364,8 +364,13 @@ private:
         train_log();
         time_t t0 = time(0), ts = time(0);
         torch::Tensor r_loss = torch::zeros({1});
+        int l, r;
+        if (manual)
+            l = 0, r = T / 2;
+        else
+            l = T / 2, r = T;
 #if defined(STG_GAN)
-        for (int i = (T / 2) * (1 - manual); i < T; ++i)
+        for (int i = l; i < r; ++i)
             r_loss -= rewards[i];
         
         r_loss = r_loss / (T / 2);
@@ -395,7 +400,7 @@ private:
                 one_hot[actions[i]] += 1;
                 model->update_actions(one_hot);
 
-                if (i < (T / 2) * (1 - manual))
+                if (i < l && i >= r)
                     continue;
                 
                 v_loss += torch::mse_loss(returns[i], torch::log(output[1]));

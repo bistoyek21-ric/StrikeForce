@@ -435,6 +435,12 @@ namespace Environment::Field{
 	const node nd;
 
 	struct gameplay{
+		bool enable_logging = false;
+    	bool replay_mode = false;
+    	std::string replay_filename, log_filename;
+    	std::ofstream log_file;
+    	std::ifstream replay_file;
+
 		std::thread printThread;
 
 		std::chrono::time_point<std::chrono::steady_clock> start, start1;
@@ -923,16 +929,19 @@ namespace Environment::Field{
 		void get_command(int i){
 			if(hum[i].is_rnpc())
 				command[i] = human_rnpc_bot(hum[i]);
-			else
+			else if(!replay_mode)
 				command[i] = bot(hum[i]);
+			else
+				command[i] = '+';
 			return;
 		}
 
 		void get_my_action(){
-			my_command();
+			if(!replay_mode)
+				my_command();
 			if(quit){
 				command[ind] = '_';
-				if(online){
+				if(online && !replay_mode){
 					client.send_it();
 					client.end_it();
 				}
@@ -949,7 +958,7 @@ namespace Environment::Field{
 				if(!manual && command[ind] != '3')
 					command[ind] = c;
 			}
-			if(online)
+			if(online && !replay_mode)
 				client.send_it();
 			return;
 		}
@@ -962,17 +971,28 @@ namespace Environment::Field{
 						act = i;
 				hum[ind].agent->update(act, manual || command[ind] == '3');
 			}
-			if(online && !disconnect)
+			if(online && !disconnect && !replay_mode)
 				client.recieve();
-			for(int i = 0; i < ind; ++i)
-				if(mh[i] && !remote[i])
+			for(int i = 0; i < H; ++i)
+				if(i != ind && mh[i] && !remote[i]) {
 					get_command(i);
-			for(int i = ind + 1; i < H; ++i)
-				if(mh[i] && !remote[i])
-					get_command(i);
+					if(hum[i].get_active_agent()){
+						int act = 0;
+						for(int j = 0; j < action.size(); ++j)
+							if(action[j] == command[i])
+								act = j;
+						hum[i].agent->update(act, false);
+					}
+				}
 			int r = rand() & 1, st = (1 - r) * (H - 1), dif = 2 * r - 1;
 			for(int i = st; i < H && (~i); i += dif)
 				if(mh[i]){
+					if (remote[i] || i == ind || hum[i].get_active_agent()) {
+						if (enable_logging)
+							log_file << command[i] << '\n';
+						else if (replay_mode)
+							replay_file >> command[i];
+					}
 					std::vector<int> v = hum[i].get_cor();
 					obey(command[i], hum[i]);
 					teleport(hum[i]);
@@ -1073,8 +1093,10 @@ namespace Environment::Field{
 		bool check_end(){
 			if(online && rivals_are_dead()){
                 command[ind] = '+';
-				client.send_it();
-				client.end_it();
+				if(!replay_mode){
+					client.send_it();
+					client.end_it();
+				}
 				std::string s = c_col(32, 40);
 				s += "*** Congratulations! You won the match :) ***\n";
 				s += c_col(0, 0);
@@ -1087,7 +1109,7 @@ namespace Environment::Field{
 				while(getch() != ' ');
 				return true;
 			}
-		    if(online && disconnect){
+		    if(online && disconnect && !replay_mode){
 				silent = false;
 				render_it();
 				if(printThread.joinable())
@@ -1098,7 +1120,7 @@ namespace Environment::Field{
 				return true;
 		    }
 			if(hum[ind].get_Hp() <= 0){
-                if(online){
+                if(online && !replay_mode){
 					command[ind] = '~';
 					client.send_it();
 					client.end_it();
@@ -1123,9 +1145,13 @@ namespace Environment::Field{
 						return true;
 					}
 					else{
-						std::string s = "You won :)\nreward: ";
-						s += std::to_string((int)(hum[ind].get_level_solo() == level) * level * 1000 + loot);
-						s += "$\nlevel ";
+						std::string s = "You won :)\n";
+						if (!using_an_agent){
+							s += "reward: ";
+							s += std::to_string((int)(hum[ind].get_level_timer() == level) * level * 1000 + loot);
+							s += "$\n";
+						}
+						s += "level ";
 						s += std::to_string(level);
 						s += " has done successfully!\npress space button to continue\n";
 						silent = false;
@@ -1133,9 +1159,11 @@ namespace Environment::Field{
 						if(printThread.joinable())
 							printThread.join();
 						printer.print(s);
-						hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_timer() == level) * level * 1000);
-						if(hum[ind].get_level_timer() == level)
-							hum[ind].level_timer_up();
+						if (!using_an_agent){
+							hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_timer() == level) * level * 1000);
+							if(hum[ind].get_level_timer() == level)
+								hum[ind].level_timer_up();
+						}
 						while(getch() != ' ');
 						return true;
 					}
@@ -1143,9 +1171,13 @@ namespace Environment::Field{
 				return false;
 			}
 			if(level * 5 <= kills && mode == "Solo"){
-				std::string s = "You won :)\nreward: ";
-				s += std::to_string((int)(hum[ind].get_level_solo() == level) * level * 1000 + loot);
-				s += "$\nlevel ";
+				std::string s = "You won :)\n";
+				if (!using_an_agent){
+					s += "reward: ";
+					s += std::to_string((int)(hum[ind].get_level_solo() == level) * level * 1000 + loot);
+					s += "$\n";
+				}
+				s += "level ";
 				s += std::to_string(level);
 				s += " has done successfully!\npress space button to continue\n";
 				silent = false;
@@ -1153,16 +1185,22 @@ namespace Environment::Field{
 				if(printThread.joinable())
 					printThread.join();
 				printer.print(s);
-				hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_solo() == level) * level * 1000);
-				if(hum[ind].get_level_solo() == level)
-					hum[ind].level_solo_up();
+				if (!using_an_agent){
+					hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_solo() == level) * level * 1000);
+					if(hum[ind].get_level_solo() == level)
+						hum[ind].level_solo_up();
+				}
 				while(getch() != ' ');
 				return true;
 			}
 			if(level * 10 <= teams_kills && rivals_are_dead() && mode == "Squad"){
-				std::string s = "You won :)\nreward: ";
-				s += std::to_string((int)(hum[ind].get_level_squad() == level) * level * 1000 + loot);
-				s += "$\nlevel ";
+				std::string s = "You won :)\n";
+				if (!using_an_agent){
+					s += "reward: ";
+					s += std::to_string((int)(hum[ind].get_level_squad() == level) * level * 1000 + loot);
+					s += "$\n";
+				}
+				s += "level ";
 				s += std::to_string(level);
 				s += " has done successfully!\npress space button to continue\n";
 				silent = false;
@@ -1170,9 +1208,11 @@ namespace Environment::Field{
 				if(printThread.joinable())
 					printThread.join();
 				printer.print(s);
-				if(hum[ind].get_level_squad() == level)
-					hum[ind].level_squad_up();
-				hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_squad() == level) * level * 1000);
+				if (!using_an_agent){
+					hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_squad() == level) * level * 1000);
+					if(hum[ind].get_level_squad() == level)
+						hum[ind].level_squad_up();
+				}
 				while(getch() != ' ');
 				return true;
 			}
@@ -1380,7 +1420,7 @@ namespace Environment::Field{
 			setup();
 			if(disconnect && online)
 				return;
-            if(online)
+            if(online && !replay_mode)
                 client.prepare();
 			cls();
 			std::cout << "* Please keep this terminal\nwindow active while playing :)" << std::endl;
@@ -1427,11 +1467,28 @@ namespace Environment::Field{
 			restore_input_buffering();
 			hum[ind].deleteAgent();
 			hum[ind].reset();
-#if defined(CROWDSOURCE_TRAINING)
+
+			if(replay_mode) {
+				replay_file.close();
+				std::cout << "Replay is done!\ngame:" << replay_filename << std::endl;
+			}
+			
+			if(enable_logging) {
+				log_file.close();
+				std::cout << "Logging is done!\nsaved in:" << log_filename << std::endl;
+			}
+
+			if (enable_logging || replay_mode){
+				std::cout << "press the space key to continue" << std::endl;
+				while(getch() != ' ');
+			}
+
+			#if defined(CROWDSOURCE_TRAINING)
 			if (using_an_agent)
 				return;
-#endif
-			if(!quit){
+			#endif
+
+			if(!quit && !replay_mode){
 				Environment::Character::me = hum[ind];
 				update();
 			}
@@ -1441,6 +1498,7 @@ namespace Environment::Field{
 		void open(){
 			for(bool b = false; true;){
 				full = false;
+				replay_mode = enable_logging = false;
 				_H = 7, W = 24;
 				std::cout << head();
 				std::cout << "Game Modes:" << '\n';
@@ -1484,6 +1542,15 @@ namespace Environment::Field{
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					play();
 					continue;
 				}
@@ -1512,6 +1579,15 @@ namespace Environment::Field{
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					play();
 					continue;
 				}
@@ -1540,6 +1616,15 @@ namespace Environment::Field{
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					play();
 					continue;
 				}
@@ -1548,6 +1633,15 @@ namespace Environment::Field{
 					mode = "Battle Royal";
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					play();
 					online = false;
 					continue;
@@ -1555,6 +1649,15 @@ namespace Environment::Field{
                 if(c == '5'){
                 	level = 1;
                     mode = "AI Battle Royal";
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					manual = false;
                     play();
                     online = false;
@@ -1628,40 +1731,109 @@ namespace Environment::Field{
 
 	void gameplay::load_data(){
 		using_an_agent = !manual;
-		if(using_an_agent)
+		if(using_an_agent && !replay_mode)
 			prepare(Environment::Character::me);
 		srand(tb);
 		serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
 		Environment::Random::_srand(tb, serial_number);
-		if(online){
-			disconnect = false;
-			std::string server_ip, server_port_s, server_password;
-			int server_port = 0;
-			std::cout << "JOINIGN INTO THE MATCH SERVER:" << std::endl;
-			std::cout << "Enter the server IP: ";
-			std::cout.flush();
-			getline(std::cin, server_ip);
-			std::cout << "Enter the server port: ";
-			std::cout.flush();
-			getline(std::cin, server_port_s);
-			std::cout << "Enter the server's password: ";
-			std::cout.flush();
-			getline(std::cin, server_password);
-			for(auto e: server_port_s)
-				server_port = 10 * server_port + (e - '0');
-			server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
-			client.start(server_ip, server_port, server_password);
-			if(disconnect){
-				std::cout << "press space button to continue" << std::endl;
-				while(getch() != ' ');
-				return;
+		int players;
+		if(replay_mode){
+			while (true){
+				std::cout << "Enter the file's address: ";
+				std::cout.flush();
+				getline(std::cin, replay_filename);
+				//checking for being real
+				if (!std::filesystem::exists(replay_filename)){
+					std::cout << "entered file address didn't found, try again or do cltr(right)+C" << std::endl;
+					continue;
+				}
+				replay_file.open(replay_filename);
+				break;
 			}
-			client.give_info();
-			client.get_info();
-			serial_number = client.serial_number;
+			if(online) {
+				std::string useless_info;
+				replay_file >> useless_info; // ip
+				std::cout << "REPLAY:\nIP      : " << useless_info << '\n';
+				replay_file >> useless_info; // port
+				std::cout << "PORT    : " << useless_info << '\n';
+				replay_file >> useless_info; // password
+				std::cout << "PASSWORD: " << useless_info << '\n';
+				std::cout.flush();
+			}
+			time_t time_b;
+			replay_file >> time_b >> serial_number;
+			Environment::Random::_srand(time_b, serial_number);
+			int team;
+			replay_file >> players >> ind >> team;
+			hum[ind].scan_file(replay_file);
+			hum[ind].set_team(team);
+			mh[ind] = true;
+			remote[ind] = false;
+			if (using_an_agent)
+				prepare(hum[ind]);
+		}
+		else if(enable_logging){
+			log_filename += DATASET;
+			log_filename += "/" + mode + "-online:" + std::to_string(online) + "-lvl:" + std::to_string(level);
+			log_filename += "/(";
+			log_filename += date();
+			log_filename += ").sf_sample";
+			log_file.open(log_filename);
+		}
+		if(online){
+			if(replay_mode){
+				for(int i = 0; i < players; ++i){
+					if(i == ind)
+						continue;
+					hum[i].scan_file(replay_file);
+					int t;
+					replay_file >> t;
+					hum[i].set_team(t);
+					mh[i] = true;
+					remote[i] = true;
+				}
+			}
+			else{
+				disconnect = false;
+				std::string server_ip, server_port_s, server_password;
+				int server_port = 0;
+				std::cout << "JOINIGN INTO THE MATCH SERVER:" << std::endl;
+				std::cout << "Enter the server IP: ";
+				std::cout.flush();
+				getline(std::cin, server_ip);
+				std::cout << "Enter the server port: ";
+				std::cout.flush();
+				getline(std::cin, server_port_s);
+				std::cout << "Enter the server's password: ";
+				std::cout.flush();
+				getline(std::cin, server_password);
+				for(auto e: server_port_s)
+					server_port = 10 * server_port + (e - '0');
+				server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
+				client.start(server_ip, server_port, server_password);
+				if(disconnect){
+					std::cout << "press space button to continue" << std::endl;
+					while(getch() != ' ');
+					return;
+				}
+				client.give_info();
+				client.get_info();
+				serial_number = client.serial_number;
+				Environment::Random::_srand(client.tb, serial_number);
+				players = client.n;
+				if(enable_logging){
+					log_file << client.tb << " " << serial_number << '\n';
+					log_file << players << " " << ind << " " << hum[ind].get_team() << '\n';
+					hum[ind].log_file(log_file);
+					for(int i = 0; i < players; ++i){
+						if(i == ind)
+							continue;
+						hum[i].log_file(log_file);
+					}
+				}
+			}
 			tb = time(nullptr);
-			Environment::Random::_srand(client.tb, serial_number);
-			for(int i = 0; i < client.n; ++i){
+			for(int i = 0; i < players; ++i){
 				hum[i].set_way(rand() % 4 + 1);
 				while(true){
 					std::vector<int> v = {rand() % F, rand() % N, rand() % M};
@@ -1677,7 +1849,13 @@ namespace Environment::Field{
 		else if(mode == "Squad"){
 			ind = 0;
 			mh[ind] = true;
-			hum[ind] = Environment::Character::me;
+			if (!replay_mode)
+				hum[ind] = Environment::Character::me;
+			if (enable_logging) {
+				log_file << tb << " " << serial_number << '\n';
+				log_file << 1 << " " << ind << " " << 1 << '\n';
+				hum[ind].log_file(log_file);
+			}
 			remote[ind] = false;
 			themap[0][3][1].human = &hum[ind];
 			themap[0][3][1].s[0] = 1;
@@ -1715,7 +1893,13 @@ namespace Environment::Field{
 			ind = 0;
 			mh[ind] = true;
 			remote[ind] = false;
-			hum[ind] = Environment::Character::me;
+			if (!replay_mode)
+				hum[ind] = Environment::Character::me;
+			if (enable_logging) {
+				log_file << tb << " " << serial_number << '\n';
+				log_file << 1 << " " << ind << " " << 1 << '\n';
+				hum[ind].log_file(log_file);
+			}
 			themap[0][1][1].human = &hum[ind];
 			themap[0][1][1].s[0] = 1;
 			hum[ind].set_way(1);
@@ -1746,6 +1930,9 @@ namespace Environment::Field{
 	auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(40000000LL);
 
 	void gameplay::print_game() const{
+		#if defined(HIGHLY_OPTIMIZED)
+		return;
+		#endif
 		if(silent1){
 			if(using_an_agent && !manual1)
 			    return;
@@ -1766,6 +1953,8 @@ namespace Environment::Field{
 			else
 				res += "on";
 		}
+		if (replay_mode)
+			res += "[replay mode]";
 		if(online){
             res += " | index: " + std::to_string(ind);
             res += ", team: " + std::to_string(temp_me.get_team());

@@ -42,7 +42,7 @@ namespace Environment::Field{
     
 	char command[H], symbol[8][4] = {{'V', '>', 'A', '<'}, {'z','Z'}, {'*'}, {'#'}, {'?'}, {'^'}, {'v'}, {'O'}};
 
-	const std::string valid_commands = "+`13upxawsdfghjkl;'cvbnm,./[]";
+	const std::string valid_commands = "+qe3uzxawsdfghjkl;'cvbnm,./[]";
 
 	Environment::Item::Bullet bull[B];
 	Environment::Character::Zombie zomb[Z];
@@ -435,6 +435,12 @@ namespace Environment::Field{
 	const node nd;
 
 	struct gameplay{
+		bool enable_logging = false;
+    	bool replay_mode = false;
+    	std::string replay_filename, log_filename;
+    	std::ofstream log_file;
+    	std::ifstream replay_file;
+
 		std::thread printThread;
 
 		std::chrono::time_point<std::chrono::steady_clock> start, start1;
@@ -729,8 +735,8 @@ namespace Environment::Field{
                 }
                 return;
 		    }
-			if(c == '1' || c == '`'){
-				(c == '1' ? player.turn_r() : player.turn_l());
+			if(c == 'q' || c == 'e'){
+				(c == 'e' ? player.turn_r() : player.turn_l());
 				return;
 			}
 			if(c == 'a' || c == 's' || c == 'd' || c == 'w'){
@@ -787,7 +793,7 @@ namespace Environment::Field{
 				player.use(player.backpack.list_cons[player.backpack.ind].first);
 				return;
 			}
-			if(c == 'p' || c == 'x'){
+			if(c == 'z' || c == 'x'){
 				int bway = player.get_way() - 1;
 				std::vector<int> v = player.get_cor();
 				v[1] += wdx[bway], v[2] += wdy[bway];
@@ -795,7 +801,7 @@ namespace Environment::Field{
 				if(index == -1 || v[1] >= N || 0 > v[1] || v[2] >= M || 0 > v[2])
 					return;
 				bool can;
-				if(c == 'p')
+				if(c == 'z')
 					can = player.punch(bull[index]);
 				else if(player.backpack.vec == 1)
 					can = player.throw_it(bull[index]);
@@ -819,16 +825,33 @@ namespace Environment::Field{
 			if(using_an_agent)
 				manual = hum[ind].agent->is_manual();
 #endif
-			if(kbhit()){
+			bool moved;
+#if defined(SLOWMOTION)
+			if(using_an_agent && manual)
+				moved = true;
+			else
+				moved = kbhit();
+#else
+			moved = kbhit();
+#endif
+			if(moved){
 				command[ind] = getch();
-				if(command[ind] == '8')
+				if(command[ind] == '9')
+					command[ind] = 'e';
+				else if(command[ind] == '8')
 					command[ind] = 'w';
-				else if(command[ind] == '4')
-					command[ind] = 'a';
+				else if(command[ind] == '7')
+					command[ind] = 'q';
 				else if(command[ind] == '6')
 					command[ind] = 'd';
+				else if(command[ind] == '5')
+					command[ind] = 'x';
+				else if(command[ind] == '4')
+					command[ind] = 'a';
 				else if(command[ind] == '2')
 					command[ind] = 's';
+				else if(command[ind] == '1')
+					command[ind] = 'z';
 				if(using_an_agent){
 #if !defined(CROWDSOURCED_TRAINING)
 					if(!manual && command[ind] == ' ')
@@ -906,16 +929,19 @@ namespace Environment::Field{
 		void get_command(int i){
 			if(hum[i].is_rnpc())
 				command[i] = human_rnpc_bot(hum[i]);
-			else
+			else if(!replay_mode)
 				command[i] = bot(hum[i]);
+			else
+				command[i] = '+';
 			return;
 		}
 
 		void get_my_action(){
-			my_command();
+			if(!replay_mode)
+				my_command();
 			if(quit){
 				command[ind] = '_';
-				if(online){
+				if(online && !replay_mode){
 					client.send_it();
 					client.end_it();
 				}
@@ -932,7 +958,7 @@ namespace Environment::Field{
 				if(!manual && command[ind] != '3')
 					command[ind] = c;
 			}
-			if(online)
+			if(online && !replay_mode)
 				client.send_it();
 			return;
 		}
@@ -945,17 +971,28 @@ namespace Environment::Field{
 						act = i;
 				hum[ind].agent->update(act, manual || command[ind] == '3');
 			}
-			if(online && !disconnect)
+			if(online && !disconnect && !replay_mode)
 				client.recieve();
-			for(int i = 0; i < ind; ++i)
-				if(mh[i] && !remote[i])
+			for(int i = 0; i < H; ++i)
+				if(i != ind && mh[i] && !remote[i]) {
 					get_command(i);
-			for(int i = ind + 1; i < H; ++i)
-				if(mh[i] && !remote[i])
-					get_command(i);
+					if(hum[i].get_active_agent()){
+						int act = 0;
+						for(int j = 0; j < action.size(); ++j)
+							if(action[j] == command[i])
+								act = j;
+						hum[i].agent->update(act, false);
+					}
+				}
 			int r = rand() & 1, st = (1 - r) * (H - 1), dif = 2 * r - 1;
 			for(int i = st; i < H && (~i); i += dif)
 				if(mh[i]){
+					if (remote[i] || i == ind || hum[i].get_active_agent()) {
+						if (enable_logging)
+							log_file << command[i] << '\n';
+						else if (replay_mode)
+							replay_file >> command[i];
+					}
 					std::vector<int> v = hum[i].get_cor();
 					obey(command[i], hum[i]);
 					teleport(hum[i]);
@@ -971,21 +1008,21 @@ namespace Environment::Field{
 			printer.print("Command list:\n");
 			printer.print(" - : show backpack\n");
 			printer.print(" 0 : command list\n");
-			printer.print(" ` : turn to left [1]\n");
-			printer.print(" 1 : turn to right\n");
+			printer.print(" q or 7 : turn to left [1]\n");
+			printer.print(" e or 9 : turn to right\n");
 #if !defined(CROWDSOURCED_TRAINING)
 			printer.print(" 3 : switch bitween Manual and Automate\n");
 #endif
-			printer.print(" a or 4 : move to left [2]\n");
+			printer.print(" a or 4 : move to left\n");
 			printer.print(" d or 6: move to right\n");
 			printer.print(" w or 8: move to up\n");
 			printer.print(" s or 2: move to down\n");
-			printer.print(" p : punch\n");
+			printer.print(" c or 1: punch\n");//p
 			printer.print(" [ : add block\n");
 			printer.print(" ] : add portal\n");
 			printer.print(" (Item's sign)* : change item\n");
 			printer.print(" u : use item (for consumables)\n");
-			printer.print(" x : attack\n");
+			printer.print(" x or 5: shoot\n");
 			printer.print(" Q : quit\n");
 			printer.print("-------------------------------------\n");
 			printer.print("Item signes:\n");
@@ -999,8 +1036,7 @@ namespace Environment::Field{
 			printer.print(" W : increase width, E : decrease width (not availabel in crowdsourced training)\n");
 			printer.print(" R : increase hight, T : decrease hight (not availabel in crowdsourced training)\n");
 			printer.print("-------------------------------------\n");
-			printer.print("[1]: its location on the standardized keyboards is the key below Esc.\n");
-			printer.print("[2]: you can enable NumLock and then use the arrows!\n");
+			printer.print("[1]: you can enable NumLock and then use the keys!\n");
 			printer.print("note: if you do an invalid move nothing will happen.\n");
 #if !defined(CROWDSOURCED_TRAINING)
 			printer.print("* If you selected Automate you can press the space key to disable rendering.\n");
@@ -1057,8 +1093,10 @@ namespace Environment::Field{
 		bool check_end(){
 			if(online && rivals_are_dead()){
                 command[ind] = '+';
-				client.send_it();
-				client.end_it();
+				if(!replay_mode){
+					client.send_it();
+					client.end_it();
+				}
 				std::string s = c_col(32, 40);
 				s += "*** Congratulations! You won the match :) ***\n";
 				s += c_col(0, 0);
@@ -1071,7 +1109,7 @@ namespace Environment::Field{
 				while(getch() != ' ');
 				return true;
 			}
-		    if(online && disconnect){
+		    if(online && disconnect && !replay_mode){
 				silent = false;
 				render_it();
 				if(printThread.joinable())
@@ -1082,7 +1120,7 @@ namespace Environment::Field{
 				return true;
 		    }
 			if(hum[ind].get_Hp() <= 0){
-                if(online){
+                if(online && !replay_mode){
 					command[ind] = '~';
 					client.send_it();
 					client.end_it();
@@ -1107,9 +1145,13 @@ namespace Environment::Field{
 						return true;
 					}
 					else{
-						std::string s = "You won :)\nreward: ";
-						s += std::to_string((int)(hum[ind].get_level_solo() == level) * level * 1000 + loot);
-						s += "$\nlevel ";
+						std::string s = "You won :)\n";
+						if (!using_an_agent){
+							s += "reward: ";
+							s += std::to_string((int)(hum[ind].get_level_timer() == level) * level * 1000 + loot);
+							s += "$\n";
+						}
+						s += "level ";
 						s += std::to_string(level);
 						s += " has done successfully!\npress space button to continue\n";
 						silent = false;
@@ -1117,9 +1159,11 @@ namespace Environment::Field{
 						if(printThread.joinable())
 							printThread.join();
 						printer.print(s);
-						hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_timer() == level) * level * 1000);
-						if(hum[ind].get_level_timer() == level)
-							hum[ind].level_timer_up();
+						if (!using_an_agent){
+							hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_timer() == level) * level * 1000);
+							if(hum[ind].get_level_timer() == level)
+								hum[ind].level_timer_up();
+						}
 						while(getch() != ' ');
 						return true;
 					}
@@ -1127,9 +1171,13 @@ namespace Environment::Field{
 				return false;
 			}
 			if(level * 5 <= kills && mode == "Solo"){
-				std::string s = "You won :)\nreward: ";
-				s += std::to_string((int)(hum[ind].get_level_solo() == level) * level * 1000 + loot);
-				s += "$\nlevel ";
+				std::string s = "You won :)\n";
+				if (!using_an_agent){
+					s += "reward: ";
+					s += std::to_string((int)(hum[ind].get_level_solo() == level) * level * 1000 + loot);
+					s += "$\n";
+				}
+				s += "level ";
 				s += std::to_string(level);
 				s += " has done successfully!\npress space button to continue\n";
 				silent = false;
@@ -1137,16 +1185,22 @@ namespace Environment::Field{
 				if(printThread.joinable())
 					printThread.join();
 				printer.print(s);
-				hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_solo() == level) * level * 1000);
-				if(hum[ind].get_level_solo() == level)
-					hum[ind].level_solo_up();
+				if (!using_an_agent){
+					hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_solo() == level) * level * 1000);
+					if(hum[ind].get_level_solo() == level)
+						hum[ind].level_solo_up();
+				}
 				while(getch() != ' ');
 				return true;
 			}
 			if(level * 10 <= teams_kills && rivals_are_dead() && mode == "Squad"){
-				std::string s = "You won :)\nreward: ";
-				s += std::to_string((int)(hum[ind].get_level_squad() == level) * level * 1000 + loot);
-				s += "$\nlevel ";
+				std::string s = "You won :)\n";
+				if (!using_an_agent){
+					s += "reward: ";
+					s += std::to_string((int)(hum[ind].get_level_squad() == level) * level * 1000 + loot);
+					s += "$\n";
+				}
+				s += "level ";
 				s += std::to_string(level);
 				s += " has done successfully!\npress space button to continue\n";
 				silent = false;
@@ -1154,9 +1208,11 @@ namespace Environment::Field{
 				if(printThread.joinable())
 					printThread.join();
 				printer.print(s);
-				if(hum[ind].get_level_squad() == level)
-					hum[ind].level_squad_up();
-				hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_squad() == level) * level * 1000);
+				if (!using_an_agent){
+					hum[ind].set_money(hum[ind].get_money() + loot + (int)(hum[ind].get_level_squad() == level) * level * 1000);
+					if(hum[ind].get_level_squad() == level)
+						hum[ind].level_squad_up();
+				}
 				while(getch() != ' ');
 				return true;
 			}
@@ -1336,8 +1392,8 @@ namespace Environment::Field{
 			std::vector<int> v = temp_me.get_cor();
 			v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
 			v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-			for(int i = v[1] - _H; i <= v[1] + _H; ++i)
-				for(int j = v[2] - W; j <= v[2] + W; ++j){
+			for(int i = 0; i < N; ++i)
+				for(int j = 0; j < M; ++j){
 					temp_map[i][j] = temp_cell;
 					temp_map[i][j].s = themap[v[0]][i][j].s;
 					if(temp_map[i][j].s[0]) {
@@ -1364,7 +1420,7 @@ namespace Environment::Field{
 			setup();
 			if(disconnect && online)
 				return;
-            if(online)
+            if(online && !replay_mode)
                 client.prepare();
 			cls();
 			std::cout << "* Please keep this terminal\nwindow active while playing :)" << std::endl;
@@ -1411,7 +1467,28 @@ namespace Environment::Field{
 			restore_input_buffering();
 			hum[ind].deleteAgent();
 			hum[ind].reset();
-			if(!quit){
+
+			if(replay_mode) {
+				replay_file.close();
+				std::cout << "Replay is done!\ngame:" << replay_filename << std::endl;
+			}
+			
+			if(enable_logging) {
+				log_file.close();
+				std::cout << "Logging is done!\nsaved in:" << log_filename << std::endl;
+			}
+
+			if (enable_logging || replay_mode){
+				std::cout << "press the space key to continue" << std::endl;
+				while(getch() != ' ');
+			}
+
+			#if defined(CROWDSOURCE_TRAINING)
+			if (using_an_agent)
+				return;
+			#endif
+
+			if(!quit && !replay_mode){
 				Environment::Character::me = hum[ind];
 				update();
 			}
@@ -1421,6 +1498,7 @@ namespace Environment::Field{
 		void open(){
 			for(bool b = false; true;){
 				full = false;
+				replay_mode = enable_logging = false;
 				_H = 7, W = 24;
 				std::cout << head();
 				std::cout << "Game Modes:" << '\n';
@@ -1445,7 +1523,8 @@ namespace Environment::Field{
 						std::cout << head();
 						std::cout << "Game Mode: Solo\nChoose the level which you want to play:\n";
 						for(int i = 0; i < L; ++i){
-							std::cout << "  " << i + 1 << ". level " << i + 1 << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills)";
+							std::cout << "  [" << (char)('0' + i + 1) << "]. level " << i + 1;
+							std::cout << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills)";
 							if(Environment::Character::me.get_level_solo() < i + 1)
 								std::cout << " (Locked)";
 							std::cout << '\n';
@@ -1459,10 +1538,19 @@ namespace Environment::Field{
 						}
 						break;
 					}
-					if(level >= L || level <= 0)
+					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					play();
 					continue;
 				}
@@ -1472,7 +1560,8 @@ namespace Environment::Field{
 						std::cout << head();
 						std::cout << "Game Mode: Timer\n(You have to stay alive in all of the time)\nChoose the level which you want to play:\n";
 						for(int i = 0; i < L; ++i){
-							std::cout << "- level " << i + 1 << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills, in " << (i ? "" : "0") << 5 * (i + 1) << " minutes)";
+							std::cout << "  [" << (char)('0' + i + 1) << "]. level " << i + 1;
+							std::cout << ", (" << (i ? "" : "0") << 5 * (i + 1) << " kills, in " << (i ? "" : "0") << 5 * (i + 1) << " minutes)";
 							if(Environment::Character::me.get_level_timer() < i + 1)
 								std::cout << " (Locked)";
 							std::cout << '\n';
@@ -1486,10 +1575,19 @@ namespace Environment::Field{
 						}
 						break;
 					}
-					if(level >= L || level <= 0)
+					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					play();
 					continue;
 				}
@@ -1499,7 +1597,8 @@ namespace Environment::Field{
 						std::cout << head();
 						std::cout << "Game Mode: Squad\nChoose the level which you want to play:\n";
 						for(int i = 0; i < L; ++i){
-							std::cout << "- level " << i + 1 << ", (" << 10 * (i + 1) << " kills and all of the rival's team death)";
+							std::cout << "  [" << (char)('0' + i + 1) << "]. level " << i + 1;
+							std::cout << ", (" << 10 * (i + 1) << " kills and all of the rival's team death)";
 							if(Environment::Character::me.get_level_squad() < i + 1)
 								std::cout << " (Locked)";
 							std::cout << '\n';
@@ -1513,10 +1612,19 @@ namespace Environment::Field{
 						}
 						break;
 					}
-					if(level >= L || level <= 0)
+					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					play();
 					continue;
 				}
@@ -1525,6 +1633,15 @@ namespace Environment::Field{
 					mode = "Battle Royal";
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
 					manual = (getch() != 'y');
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					play();
 					online = false;
 					continue;
@@ -1532,6 +1649,15 @@ namespace Environment::Field{
                 if(c == '5'){
                 	level = 1;
                     mode = "AI Battle Royal";
+					std::cout << "Options:\n";
+					std::cout << "r: replay a logged match\n";
+					std::cout << "l: log the match\n";
+					std::cout << "Any other key: normal" << std::endl;
+					char c = getch();
+					if(c == 'r')
+						replay_mode = true;
+					if(c == 'l')
+						enable_logging = true;
 					manual = false;
                     play();
                     online = false;
@@ -1605,40 +1731,109 @@ namespace Environment::Field{
 
 	void gameplay::load_data(){
 		using_an_agent = !manual;
-		if(using_an_agent)
+		if(using_an_agent && !replay_mode)
 			prepare(Environment::Character::me);
 		srand(tb);
 		serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
 		Environment::Random::_srand(tb, serial_number);
-		if(online){
-			disconnect = false;
-			std::string server_ip, server_port_s, server_password;
-			int server_port = 0;
-			std::cout << "JOINIGN INTO THE MATCH SERVER:" << std::endl;
-			std::cout << "Enter the server IP: ";
-			std::cout.flush();
-			getline(std::cin, server_ip);
-			std::cout << "Enter the server port: ";
-			std::cout.flush();
-			getline(std::cin, server_port_s);
-			std::cout << "Enter the server's password: ";
-			std::cout.flush();
-			getline(std::cin, server_password);
-			for(auto e: server_port_s)
-				server_port = 10 * server_port + (e - '0');
-			server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
-			client.start(server_ip, server_port, server_password);
-			if(disconnect){
-				std::cout << "press space button to continue" << std::endl;
-				while(getch() != ' ');
-				return;
+		int players;
+		if(replay_mode){
+			while (true){
+				std::cout << "Enter the file's address: ";
+				std::cout.flush();
+				getline(std::cin, replay_filename);
+				//checking for being real
+				if (!std::filesystem::exists(replay_filename)){
+					std::cout << "entered file address didn't found, try again or do cltr(right)+C" << std::endl;
+					continue;
+				}
+				replay_file.open(replay_filename);
+				break;
 			}
-			client.give_info();
-			client.get_info();
-			serial_number = client.serial_number;
+			if(online) {
+				std::string useless_info;
+				replay_file >> useless_info; // ip
+				std::cout << "REPLAY:\nIP      : " << useless_info << '\n';
+				replay_file >> useless_info; // port
+				std::cout << "PORT    : " << useless_info << '\n';
+				replay_file >> useless_info; // password
+				std::cout << "PASSWORD: " << useless_info << '\n';
+				std::cout.flush();
+			}
+			time_t time_b;
+			replay_file >> time_b >> serial_number;
+			Environment::Random::_srand(time_b, serial_number);
+			int team;
+			replay_file >> players >> ind >> team;
+			hum[ind].scan_file(replay_file);
+			hum[ind].set_team(team);
+			mh[ind] = true;
+			remote[ind] = false;
+			if (using_an_agent)
+				prepare(hum[ind]);
+		}
+		else if(enable_logging){
+			log_filename += DATASET;
+			log_filename += "/" + mode + "-online:" + std::to_string(online) + "-lvl:" + std::to_string(level);
+			log_filename += "/(";
+			log_filename += date();
+			log_filename += ").sf_sample";
+			log_file.open(log_filename);
+		}
+		if(online){
+			if(replay_mode){
+				for(int i = 0; i < players; ++i){
+					if(i == ind)
+						continue;
+					hum[i].scan_file(replay_file);
+					int t;
+					replay_file >> t;
+					hum[i].set_team(t);
+					mh[i] = true;
+					remote[i] = true;
+				}
+			}
+			else{
+				disconnect = false;
+				std::string server_ip, server_port_s, server_password;
+				int server_port = 0;
+				std::cout << "JOINIGN INTO THE MATCH SERVER:" << std::endl;
+				std::cout << "Enter the server IP: ";
+				std::cout.flush();
+				getline(std::cin, server_ip);
+				std::cout << "Enter the server port: ";
+				std::cout.flush();
+				getline(std::cin, server_port_s);
+				std::cout << "Enter the server's password: ";
+				std::cout.flush();
+				getline(std::cin, server_password);
+				for(auto e: server_port_s)
+					server_port = 10 * server_port + (e - '0');
+				server_port = std::max(std::min(server_port, (1 << 16) - 1), 0);
+				client.start(server_ip, server_port, server_password);
+				if(disconnect){
+					std::cout << "press space button to continue" << std::endl;
+					while(getch() != ' ');
+					return;
+				}
+				client.give_info();
+				client.get_info();
+				serial_number = client.serial_number;
+				Environment::Random::_srand(client.tb, serial_number);
+				players = client.n;
+				if(enable_logging){
+					log_file << client.tb << " " << serial_number << '\n';
+					log_file << players << " " << ind << " " << hum[ind].get_team() << '\n';
+					hum[ind].log_file(log_file);
+					for(int i = 0; i < players; ++i){
+						if(i == ind)
+							continue;
+						hum[i].log_file(log_file);
+					}
+				}
+			}
 			tb = time(nullptr);
-			Environment::Random::_srand(client.tb, serial_number);
-			for(int i = 0; i < client.n; ++i){
+			for(int i = 0; i < players; ++i){
 				hum[i].set_way(rand() % 4 + 1);
 				while(true){
 					std::vector<int> v = {rand() % F, rand() % N, rand() % M};
@@ -1654,7 +1849,13 @@ namespace Environment::Field{
 		else if(mode == "Squad"){
 			ind = 0;
 			mh[ind] = true;
-			hum[ind] = Environment::Character::me;
+			if (!replay_mode)
+				hum[ind] = Environment::Character::me;
+			if (enable_logging) {
+				log_file << tb << " " << serial_number << '\n';
+				log_file << 1 << " " << ind << " " << 1 << '\n';
+				hum[ind].log_file(log_file);
+			}
 			remote[ind] = false;
 			themap[0][3][1].human = &hum[ind];
 			themap[0][3][1].s[0] = 1;
@@ -1670,7 +1871,9 @@ namespace Environment::Field{
 				themap[0][1][i + 1].human = &hum[i];
 				themap[0][1][i + 1].s[0] = 1;
 				hum[i].set_team(1);
-				//prepare(hum[i]); optional
+				#if defined(USE_AGENT_IN_SQUAD_NPCS)
+				prepare(hum[i]);
+				#endif
 			}
 			for(int i = 5; i < 10; ++i){
 				mh[i] = true;
@@ -1681,14 +1884,22 @@ namespace Environment::Field{
 				themap[2][1][i + 1].human = &hum[i];
 				themap[2][1][i + 1].s[0] = 1;
 				hum[i].set_team(2);
-				//prepare(hum[i]); optional
+				#if defined(USE_AGENT_IN_SQUAD_NPCS)
+				prepare(hum[i]);
+				#endif
 			}
 		}
 		else if(mode == "Solo" || mode == "Timer"){
 			ind = 0;
 			mh[ind] = true;
 			remote[ind] = false;
-			hum[ind] = Environment::Character::me;
+			if (!replay_mode)
+				hum[ind] = Environment::Character::me;
+			if (enable_logging) {
+				log_file << tb << " " << serial_number << '\n';
+				log_file << 1 << " " << ind << " " << 1 << '\n';
+				hum[ind].log_file(log_file);
+			}
 			themap[0][1][1].human = &hum[ind];
 			themap[0][1][1].s[0] = 1;
 			hum[ind].set_way(1);
@@ -1719,6 +1930,9 @@ namespace Environment::Field{
 	auto lim = std::chrono::duration<long long, std::ratio<1, 1000000000LL>>(40000000LL);
 
 	void gameplay::print_game() const{
+		#if defined(HIGHLY_OPTIMIZED)
+		return;
+		#endif
 		if(silent1){
 			if(using_an_agent && !manual1)
 			    return;
@@ -1728,27 +1942,29 @@ namespace Environment::Field{
 			return;
 		}
 		std::string res = "";
+		res += head(true, true) + "Mode: " + mode;
+		if(using_an_agent){
+			if(manual1)
+				res += " (Manual)";
+			else
+				res += " (Automate)";
+			if(is_training1)
+				res += "off";
+			else
+				res += "on";
+		}
+		if (replay_mode)
+			res += "[replay mode]";
+		if(online){
+            res += " | index: " + std::to_string(ind);
+            res += ", team: " + std::to_string(temp_me.get_team());
+        }
+        res += "\n_____________________\n";
+    	res += c_col(33, 40);
+        res += "Frame: " + std::to_string(frame1) + "\n";
+		res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n";
 		if(!full1){
-			res += head(true, true) + "Mode: " + mode;
-			if(using_an_agent){
-				if(manual1)
-					res += " (Manual)";
-				else
-					res += " (Automate)";
-				if(is_training1)
-					res += "off";
-				else
-					res += "on";
-			}
-			if(online){
-                res += " | index: " + std::to_string(ind);
-                res += ", team: " + std::to_string(temp_me.get_team());
-            }
-            res += "\n_____________________\n";
-    		res += c_col(33, 40);
-            res += "Frame: " + std::to_string(frame1) + "\n";
-			res += "Timer: " + std::to_string(time(nullptr) - tb) + "s\n\n";
-			res += c_col(34, 40);
+			res += c_col(32, 40);
 			res += "Your teams' kills: " + std::to_string(teams_kills1) + " (yours': " + std::to_string(temp_me.get_kills()) + ")";
 			if(!online)
 				res += ", level: " + std::to_string(level);
@@ -1759,9 +1975,10 @@ namespace Environment::Field{
 				res += "Your' reward (If you win): " + std::to_string(loot1 + (int)(temp_me.get_level_solo() == level) * 1000 * level) + "\n";
 			else if(mode == "Squad")
 				res += "Your' reward (If you win): " + std::to_string(loot1 + (int)(temp_me.get_level_squad() == level) * 1000 * level) + "\n";
-			res += "\nYou:\n";
+			res += c_col(34, 40);
+			res += "You:\n";
 			res += temp_me.subtitle();
-			res += c_col(31, 40) + "\n";
+			res += c_col(31, 40);
 			if(is_zombie1){
 				res += "Enemy:\n";
 				res += temp_recZ + '\n';
@@ -1772,29 +1989,30 @@ namespace Environment::Field{
 			}
 			else
 				res += "\n\n\n\n\n";
-			res += c_col(0, 0);
-			res += "to see the command list";
-			res += (!online ? " or pause the game" : "");
-			res += " press 0\n";
-			res += "____________________________________________________\n";
 		}
-		else
-			res += "0: command list\n";
+		res += c_col(0, 0);
+		res += "to see the command list";
+		res += (!online ? " or pause the game" : "");
+		res += " press 0\n";
+		res += "____________________________________________________\n";
 		std::vector<int> v = temp_me.get_cor();
 		std::string last = "", color, cell;
-		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
-		#if !defined(CROWDSOURCED_TRAINING)
-		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-		#endif
-		int Width;
+		int Width, Hight;
 		#if defined(CROWDSOURCED_TRAINING)
-		Width = 19;
+		Width = 15;
+		if (full1)
+			Hight = 15;
+		else
+			Hight = _H;
 		#else
+		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
+		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
 		Width = W;
+		Hight = _H;
 		#endif
-		for(int i = v[1] - _H; i <= v[1] + _H; ++i, res.push_back('\n'))
+		for(int i = v[1] - Hight; i <= v[1] + Hight; ++i, res.push_back('\n'))
 			for(int j = v[2] - Width; j <= v[2] + Width; ++j){
-				cell = ((j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit());
+				cell = ((i < 0 || i >= N || j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit());
 				color = "";
 				int cnt = 2;
 				for(int k = 0; k < cell.size(); ++k){

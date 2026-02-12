@@ -25,10 +25,10 @@ SOFTWARE.
 //g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
 #include "RewardNet.hpp"
 
-//#define STG_GAN
-#define PPO_GAIL
+#define STG_GAN
+//#define PPO_GAIL
 
-const std::string bot_code = "bot-1", backup_path = "bots/bot-1/backup";
+const std::string bot_code = "bot-1.1", backup_path = "bots/bot-1.1/backup";
 
 struct AgentModelImpl : torch::nn::Module {
     Backbone backbone{nullptr};
@@ -81,8 +81,8 @@ TORCH_MODULE(AgentModel);
 
 class Agent {
 public:
-    Agent(bool training = true, int T = 1024, int num_epochs = 4, float gamma = 0.99, float learning_rate = 1e-3,
-         float ppo_clip = 0.2, float cv = 0.5, const std::string &backup_dir = "bots/bot-1/backup/agent_backup")
+    Agent(bool training = true, int T = 1024, int num_epochs = 4, float gamma = 0.99, float learning_rate = 2e-4,
+         float ppo_clip = 0.2, float cv = 0.5, const std::string &backup_dir = "bots/bot-1.1/backup/agent_backup")
         : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
         ppo_clip(ppo_clip), alpha(alpha), cv(cv), backup_dir(backup_dir) {
 #if defined(CROWDSOURCED_TRAINING)
@@ -364,8 +364,13 @@ private:
         train_log();
         time_t t0 = time(0), ts = time(0);
         torch::Tensor r_loss = torch::zeros({1});
+        int l, r;
+        if (manual)
+            l = 0, r = T / 2;
+        else
+            l = T / 2, r = T;
 #if defined(STG_GAN)
-        for (int i = (T / 2) * (1 - manual); i < T; ++i)
+        for (int i = l; i < r; ++i)
             r_loss -= rewards[i];
         
         r_loss = r_loss / (T / 2);
@@ -395,7 +400,7 @@ private:
                 one_hot[actions[i]] += 1;
                 model->update_actions(one_hot);
 
-                if (i < (T / 2) * (1 - manual))
+                if (i < l && i >= r)
                     continue;
                 
                 v_loss += torch::mse_loss(returns[i], torch::log(output[1]));

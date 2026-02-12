@@ -170,7 +170,7 @@ TORCH_MODULE(RewardModel);
 class RewardNet {
 public:
     RewardNet(bool training = true, int T = 1024, float learning_rate = 1e-3, 
-        const std::string &backup_dir = "bots/bot-1/backup/reward_backup")
+        const std::string &backup_dir = "bots/bot-1.1/backup/reward_backup")
         : training(training), T(T), learning_rate(learning_rate), backup_dir(backup_dir) {
         model = RewardModel();
         if (!backup_dir.empty()) {

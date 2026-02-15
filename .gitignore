@@ -5,8 +5,12 @@
 
 *.log
 
-*/app*
+*app*
 
 *backup*
+
+*checkpoint*
+
+*datasets*
 
 *.zst

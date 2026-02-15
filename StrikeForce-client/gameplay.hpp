@@ -827,7 +827,7 @@ namespace Environment::Field{
 #endif
 			bool moved;
 #if defined(SLOWMOTION)
-			if(using_an_agent && manual)
+			if(using_an_agent && manual && !replay_mode)
 				moved = true;
 			else
 				moved = kbhit();
@@ -937,8 +937,7 @@ namespace Environment::Field{
 		}
 
 		void get_my_action(){
-			if(!replay_mode)
-				my_command();
+			my_command();
 			if(quit){
 				command[ind] = '_';
 				if(online && !replay_mode){
@@ -964,6 +963,10 @@ namespace Environment::Field{
 		}
 
 		void human_action(){
+			if (enable_logging)
+				log_file << command[ind] << '\n';
+			if (replay_mode)
+				replay_file >> command[ind];
 			if(using_an_agent){
 				int act = 0;
 				for(int i = 0; i < action.size(); ++i)
@@ -974,25 +977,31 @@ namespace Environment::Field{
 			if(online && !disconnect && !replay_mode)
 				client.recieve();
 			for(int i = 0; i < H; ++i)
-				if(i != ind && mh[i] && !remote[i]) {
-					get_command(i);
-					if(hum[i].get_active_agent()){
-						int act = 0;
-						for(int j = 0; j < action.size(); ++j)
-							if(action[j] == command[i])
-								act = j;
-						hum[i].agent->update(act, false);
+				if(i != ind && mh[i]) {
+					if (remote[i]) {
+						if (enable_logging)
+							log_file << command[i] << '\n';
+						if (replay_mode)
+							replay_file >> command[i];
+					}
+					else {
+						get_command(i);
+						if(hum[i].get_active_agent()){
+							if (enable_logging)
+								log_file << command[i] << '\n';
+							if (replay_mode)
+								replay_file >> command[i];
+							int act = 0;
+							for(int j = 0; j < action.size(); ++j)
+								if(action[j] == command[i])
+									act = j;
+							hum[i].agent->update(act, false);
+						}
 					}
 				}
 			int r = rand() & 1, st = (1 - r) * (H - 1), dif = 2 * r - 1;
 			for(int i = st; i < H && (~i); i += dif)
 				if(mh[i]){
-					if (remote[i] || i == ind || hum[i].get_active_agent()) {
-						if (enable_logging)
-							log_file << command[i] << '\n';
-						else if (replay_mode)
-							replay_file >> command[i];
-					}
 					std::vector<int> v = hum[i].get_cor();
 					obey(command[i], hum[i]);
 					teleport(hum[i]);
@@ -1470,12 +1479,12 @@ namespace Environment::Field{
 
 			if(replay_mode) {
 				replay_file.close();
-				std::cout << "Replay is done!\ngame:" << replay_filename << std::endl;
+				std::cout << "Replay is done!\ngame: " << replay_filename << std::endl;
 			}
 			
 			if(enable_logging) {
 				log_file.close();
-				std::cout << "Logging is done!\nsaved in:" << log_filename << std::endl;
+				std::cout << "Logging is done!\nsaved in: " << log_filename << std::endl;
 			}
 
 			if (enable_logging || replay_mode){
@@ -1772,11 +1781,14 @@ namespace Environment::Field{
 			if (using_an_agent)
 				prepare(hum[ind]);
 		}
-		else if(enable_logging){
+		if(enable_logging){
 			log_filename += DATASET;
 			log_filename += "/" + mode + "-online:" + std::to_string(online) + "-lvl:" + std::to_string(level);
+			if(!std::filesystem::exists(log_filename))
+				std::filesystem::create_directories(log_filename);
 			log_filename += "/(";
 			log_filename += date();
+			log_filename.pop_back();
 			log_filename += ").sf_sample";
 			log_file.open(log_filename);
 		}

@@ -40,8 +40,6 @@ SOFTWARE.
 
 #include "GraphicPrinter.hpp"
 
-#define CROWDSOURCED_TRAINING
-
 #include "macros.hpp"
 
 bool during_battle = false;

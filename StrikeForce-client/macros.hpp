@@ -1,15 +1,20 @@
+#define CROWDSOURCED_TRAINING
+
+
+
+//#define DISTRIBUTED_LEARNING
+
+
 //#define FREEZE_REWARDNET_BLOCK
 //#define TL_IMPORT_REWARDNET
 //#define FREEZE_TL_BLOCK
 
-
 //#define FREEZE_AGENT_BLOCK
-
 
 //#define USE_AGENT_IN_SQUAD_NPCS
 
-//#define HIGHLY_OPTIMIZED
+#define HIGHLY_OPTIMIZED
 
 #define SLOWMOTION
 
-#define DATASET "datasets/First/"
+#define DATASET "datasets/bot-0.5(0)"

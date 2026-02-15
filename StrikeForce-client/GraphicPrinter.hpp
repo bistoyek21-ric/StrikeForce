@@ -202,8 +202,11 @@ private:
 
 public:
     GraphicPrinter(unsigned int characterSize = 14, unsigned int H = 800, unsigned int W = 800) : charSize(characterSize), H(H), W(W){
-        if(!font.loadFromFile("./DejaVuSansMono.ttf"))
-            throw std::runtime_error("Failed to load font");
+        if(!font.loadFromFile("./DejaVuSansMono.ttf")) {
+            std::cout << "press enter" << std::endl;
+            std::string s;
+            std::getline(std::cin, s);
+        }
     }
 
     void start(){
@@ -212,6 +215,7 @@ public:
     }
 
     void stop(){
+        cls();
         running = false;
         cv.notify_all();
         if(renderThread.joinable())

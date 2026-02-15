@@ -239,7 +239,6 @@ public:
     bool is_manual() {
         if (!is_training && cnt <= T_initial)
             ++cnt;
-            
         if (is_training) {
             if (done_training) {
                 is_training = false;
@@ -255,8 +254,9 @@ public:
         } else if (actions.empty()) {
             manual = true;
             if (manual) {
-                std::cout << "Manual mode! Press space" << std::endl;
+                std::cout << "manual part! press space button to continue" << std::endl;
                 while(getch() != ' ');
+                std::cout << "space button pressed!" << std::endl;
             }
         }
         return manual;

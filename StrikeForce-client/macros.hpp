@@ -13,4 +13,4 @@
 
 #define SLOWMOTION
 
-#define DATASET "datasets/First/"
+#define DATASET "datasets/bot-0.5(0)"

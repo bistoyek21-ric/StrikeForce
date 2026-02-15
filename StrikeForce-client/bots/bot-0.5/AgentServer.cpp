@@ -22,7 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-//g++ -std=c++17 AgentServer.cpp -o app_agnet_server -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lpthread
+//g++ -std=c++17 AgentServer.cpp -o app_agent_server -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lpthread
 // Add -lws2_32 on Windows
 #include <iostream>
 #include <vector>
@@ -52,7 +52,7 @@ SOFTWARE.
 #pragma comment(lib, "ws2_32.lib")
 #endif
 
-#include <torch/torch.h>
+#include "Modules.hpp"
 
 const int BUFFER_SIZE = 2048;
 
@@ -86,24 +86,21 @@ public:
         
         // Load or initialize checkpoint
         std::string model_path = checkpoint_path + "/model.pt";
+        model = AgentModel();
         if (std::filesystem::exists(model_path)) {
             std::cout << "Loading checkpoint from: " << model_path << std::endl;
-            torch::load(server_params, model_path);
-            std::cout << "Loaded " << server_params.size() << " parameter tensors" << std::endl;
+            torch::load(model, model_path);
+            std::cout << "Loaded" << std::endl;
         } else {
             std::cerr << "No checkpoint found at " << model_path << std::endl;
-            std::cerr << "Please provide initial an initial model.pt" << std::endl;
-            exit(1);
+            std::cerr << "Initializing..." << std::endl;
+            std::filesystem::create_directories(checkpoint_path);
+            std::cerr << "done!" << std::endl;
         }
         
         // Setup optimizer
-        std::vector<torch::Tensor> params_for_optim;
-        for (auto& p : server_params) {
-            auto param = p.clone().set_requires_grad(true);
-            params_for_optim.push_back(param);
-        }
         optimizer = std::make_unique<torch::optim::AdamW>(
-            params_for_optim, 
+            model->parameters(), 
             torch::optim::AdamWOptions(lr)
         );
 
@@ -115,10 +112,6 @@ public:
             } catch (...) {
                 std::cout << "Failed to load optimizer state, using fresh" << std::endl;
             }
-        }
-        
-        for (auto& p : server_params) {
-            theta_old.push_back(p.clone().detach());
         }
         
         std::cout << "Server initialized:" << std::endl;
@@ -135,6 +128,21 @@ public:
             return;
         }
 #endif
+
+        std::cout << "Is it a global server or local?\n(G:global/any thing else:local)\n";
+    	std::string is_global;
+    	std::cin >> is_global;
+	    std::cout << "Server IP: ";
+    	if(is_global == "G"){
+	    	std::cout.flush();
+		    system("curl -s https://api.ipify.org");
+    	}
+	    else{
+		    char host[256];
+    		gethostname(host, sizeof(host));
+	    	std::cout << inet_ntoa(*((struct in_addr*)gethostbyname(host)->h_addr_list[0]));
+	    }
+        std::cout << std::endl;
 
         SOCKET server_sock = socket(AF_INET, SOCK_STREAM, 0);
         if (server_sock == INVALID_SOCKET) {
@@ -256,7 +264,7 @@ public:
         std::string model_path = checkpoint_path + "/model.pt";
         std::string optim_path = checkpoint_path + "/optimizer.pt";
         
-        torch::save(server_params, model_path);
+        torch::save(model, model_path);
         torch::save(*optimizer, optim_path);
         
         std::cout << "Final checkpoint saved to " << checkpoint_path << std::endl;
@@ -272,17 +280,18 @@ public:
     }
 
 private:
+    AgentModel model{nullptr};
     int port, max_clients, min_clients_for_update;
     std::string password, checkpoint_path;
-    std::vector<torch::Tensor> server_params, theta_old, update_vector;
+    std::vector<torch::Tensor> theta_new, theta_old, update_vector;
     std::unique_ptr<torch::optim::AdamW> optimizer;
     std::vector<ClientHandler*> clients;
 
     int get_active_client_count() {
         int count = 0;
-        for (auto* client : clients) {
-            if (client->is_active) count++;
-        }
+        for (auto* client : clients)
+            if (client->is_active)
+                count++;
         return count;
     }
 
@@ -291,9 +300,11 @@ private:
         send_checkpoint(handler);
         
         while (server_running && handler->is_active) {
+            std::cout << "[-] Agent " << handler->client_id << " entered the room." << std::endl;
             try {
                 char type;
                 if (recv_block(handler->sock, &type, 1) <= 0) {
+                    std::cout << "[-] Client " << handler->client_id << " disconnected" << std::endl;
                     break;  // Connection closed
                 }
 
@@ -361,7 +372,7 @@ private:
         }
         
         closesocket(handler->sock);
-        std::cout << "[-] Client " << handler->client_id << " disconnected" << std::endl;
+        std::cout << "[-] Agent " << handler->client_id << " job is done." << std::endl;
     }
 
     void send_checkpoint(ClientHandler* handler) {
@@ -370,7 +381,7 @@ private:
             
             char type = 'C';
             send_block(handler->sock, &type, 1);
-            send_tensor_vector(handler->sock, server_params);
+            send_tensor_vector(handler->sock, model->parameters());
             
             std::cout << "[C] Sent checkpoint to client " << handler->client_id 
                       << " (version " << update_version.load() << ")" << std::endl;
@@ -422,7 +433,7 @@ private:
             // Aggregate and update
             aggregate_and_update();
             compute_update_vector();
-            
+
             // Increment version
             update_version++;
             std::cout << "Model version: " << update_version.load() << std::endl;
@@ -442,7 +453,7 @@ private:
             
             // Save checkpoint
             std::string model_path = checkpoint_path + "/model.pt";
-            torch::save(server_params, model_path);
+            torch::save(model, model_path);
             std::cout << "Checkpoint saved (round " << round << ")" << std::endl;
 
             round++;
@@ -454,7 +465,7 @@ private:
     void aggregate_and_update() {
         std::vector<torch::Tensor> avg_gradients;
         int contributing_clients = 0;
-        
+        int sz = model->parameters().size();
         // Count contributing clients
         {
             std::lock_guard<std::mutex> lock(mtx);
@@ -464,61 +475,47 @@ private:
                 }
             }
         }
-        
         if (contributing_clients == 0) {
             std::cout << "No clients with gradients!" << std::endl;
             return;
         }
-        
         // Aggregate gradients
         {
             std::lock_guard<std::mutex> lock(mtx);
-            
-            for (size_t i = 0; i < server_params.size(); ++i) {
-                torch::Tensor sum_grad = torch::zeros_like(server_params[i]);
+            for (int i = 0; i < sz; ++i) {
+                torch::Tensor sum_grad = torch::zeros_like(model->parameters()[i]);
                 
-                for (auto* client : clients) {
-                    if (client->is_active && client->gradient_ready && i < client->gradients.size()) {
+                for (auto* client : clients) 
                         sum_grad += client->gradients[i];
-                    }
-                }
                 
                 avg_gradients.push_back(sum_grad / contributing_clients);
             }
         }
-        
         // Store old parameters
-        for (size_t i = 0; i < server_params.size(); ++i) {
-            theta_old[i] = server_params[i].clone().detach();
-        }
-        
+        theta_old.clear();
+        for (size_t i = 0; i < sz; ++i)
+            theta_old.push_back(model->parameters()[i].clone().detach());
         // Apply gradients using AdamW
         optimizer->zero_grad();
-        auto params = optimizer->param_groups()[0].params();
-        for (size_t i = 0; i < params.size(); ++i) {
-            if (params[i].grad().defined()) {
-                params[i].mutable_grad() = avg_gradients[i];
-            } else {
-                params[i].mutable_grad() = avg_gradients[i].clone();
-            }
+        for (size_t i = 0; i < sz; ++i) {
+            if (model->parameters()[i].grad().defined()) 
+                model->parameters()[i].mutable_grad() = avg_gradients[i];
+            else
+                model->parameters()[i].mutable_grad() = avg_gradients[i].clone().detach();
         }
-        
         optimizer->step();
-        
-        // Update server_params
-        for (size_t i = 0; i < params.size(); ++i) {
-            server_params[i] = params[i].detach().clone();
-        }
-        
+        // Update parameters
+        theta_new.clear();
+        for (size_t i = 0; i < sz; ++i)
+            theta_new.push_back(model->parameters()[i].clone().detach());
         std::cout << "Aggregated gradients from " << contributing_clients << " clients" << std::endl;
     }
 
     void compute_update_vector() {
         update_vector.clear();
         float norm = 0.0f;
-        
-        for (size_t i = 0; i < server_params.size(); ++i) {
-            auto v = (server_params[i] - theta_old[i]).detach().clone();
+        for (size_t i = 0; i < theta_new.size(); ++i) {
+            auto v = (theta_new[i] - theta_old[i]).detach().clone();
             update_vector.push_back(v);
             norm += v.pow(2).sum().item<float>();
         }
@@ -527,7 +524,7 @@ private:
     }
 
     void cleanup_inactive_clients() {
-        const int timeout_seconds = 300;  // 5 minutes
+        const int timeout_seconds = 600;  // 10 minutes
         
         while (server_running) {
             std::this_thread::sleep_for(std::chrono::seconds(30));

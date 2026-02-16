@@ -940,6 +940,8 @@ namespace Environment::Field{
 			my_command();
 			if(quit){
 				command[ind] = '_';
+				if (enable_logging)
+					log_file << command[ind] << '\n';
 				if(online && !replay_mode){
 					client.send_it();
 					client.end_it();

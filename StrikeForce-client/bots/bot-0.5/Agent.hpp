@@ -27,10 +27,6 @@ SOFTWARE.
 
 #include "Modules.hpp"
 
-#if defined(DISTRIBUTED_LEARNING)
-#include "AgentClient.hpp"
-#endif
-
 const std::string bot_code = "bot-0.5", backup_path = "bots/bot-0.5/backup";
 
 class Agent {
@@ -41,6 +37,7 @@ public:
         ppo_clip(ppo_clip), cv(cv), backup_dir(backup_dir) {
 
 #if defined(DISTRIBUTED_LEARNING)
+        this->backup_dir = backup_dir = "bots/bot-0.5/server_checkpoint";
         std::cout << "=== DISTRIBUTED LEARNING MODE ===" << std::endl;
         client = std::make_unique<AgentClient>(backup_dir);
         

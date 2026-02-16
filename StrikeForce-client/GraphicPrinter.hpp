@@ -24,8 +24,11 @@ SOFTWARE.
 */
 #pragma once
 
+#if !defined(HIGHLY_OPTIMIZED)
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
+#endif
+
 #include <string>
 #include <vector>
 #include <sstream>
@@ -37,6 +40,37 @@ SOFTWARE.
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+
+#if defined(HIGHLY_OPTIMIZED)
+
+class GraphicPrinter{
+public:
+    GraphicPrinter(unsigned int characterSize = 14, unsigned int H = 800, unsigned int W = 800){
+        
+    }
+
+    void start(){
+        
+    }
+
+    void stop(){
+        
+    }
+
+    void print(const std::string& str){
+        
+    }
+
+    void cls(){
+        
+    }
+
+    void render(const std::string& str){
+        
+    }
+} printer;
+
+#else
 
 sf::ConvexShape createTriangle(int direction, sf::FloatRect bounds, sf::Color fillColor, float x, float y){
     sf::ConvexShape triangle(3);
@@ -246,3 +280,4 @@ public:
         cv.notify_all();
     }
 } printer;
+#endif

@@ -22,12 +22,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
-#include "../../basic.hpp"
+#include "basic.hpp"
 #include <torch/torch.h>
 #include <sstream>
 #include <filesystem>
 
-const int BUFFER_SIZE = 2048;
+const int BUFFER_SIZE = 20480;
 char AgentBuffer[BUFFER_SIZE];
 
 class AgentClient {

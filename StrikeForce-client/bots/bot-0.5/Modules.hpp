@@ -22,7 +22,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 */
+
+#if defined(DISTRIBUTED_LEARNING)
+#include "../../AgentClient.hpp"
+#else
 #include "../../basic.hpp"
+#endif
+
 #include <torch/torch.h>
 
 #define LAYER_INDEX 3

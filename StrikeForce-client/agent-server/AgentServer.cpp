@@ -52,7 +52,7 @@ SOFTWARE.
 #pragma comment(lib, "ws2_32.lib")
 #endif
 
-#include "Modules.hpp"
+#include "../selected_agent.hpp"
 
 const int BUFFER_SIZE = 2048;
 
@@ -187,6 +187,14 @@ public:
         // Accept clients continuously
         int next_client_id = 0;
         while (server_running) {
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                if(kbhit()){
+                    if(getch() == '~')
+                        server_sunning = false;
+                }
+            }
+
             struct sockaddr_in client_addr;
             socklen_t client_len = sizeof(client_addr);
             SOCKET client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_len);

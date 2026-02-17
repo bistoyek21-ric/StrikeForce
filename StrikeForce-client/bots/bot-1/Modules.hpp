@@ -351,6 +351,62 @@ struct AuxHeadsImpl : torch::nn::Module {
 TORCH_MODULE(AuxHeads);
 
 // ─────────────────────────────────────────────
+//  AIRL networks (r_θ and h_φ)
+//  Both share the same backbone class but are
+//  instantiated separately and do NOT share weights
+//  with the policy network (cleaner separation;
+//  see note below about potential sharing).
+// ─────────────────────────────────────────────
+struct AIRLNetsImpl : torch::nn::Module {
+    Backbone  backbone{nullptr};
+    // r_θ(s,a): state-action reward
+    torch::nn::Sequential reward_head{nullptr};
+    // h_φ(s): potential / shaping function
+    torch::nn::Sequential shaping_head{nullptr};
+
+    int num_channels, grid_x, grid_y, H, num_actions;
+
+    AIRLNetsImpl(int num_channels = 32, int grid_x = 31, int grid_y = 31,
+                 int H = 160, int num_actions = 9)
+        : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y),
+          H(H), num_actions(num_actions) {
+
+        backbone = register_module("backbone",
+            Backbone(num_channels, grid_x, grid_y, H, num_actions));
+
+        // r_θ(s,a): scalar reward
+        reward_head = register_module("reward", torch::nn::Sequential(
+            ResB(H, LAYER_INDEX),
+            torch::nn::Linear(H, 1)
+        ));
+
+        // h_φ(s): scalar potential
+        shaping_head = register_module("shaping", torch::nn::Sequential(
+            ResB(H, LAYER_INDEX),
+            torch::nn::Linear(H, 1)
+        ));
+
+        reset_memory();
+    }
+
+    void reset_memory() { backbone->reset_memory(); }
+
+    void update_action_history(torch::Tensor one_hot) {
+        backbone->update_action_history(one_hot);
+    }
+
+    // Compute r_θ(s,a) and h_φ(s) for one step
+    // Returns {r, h}  both scalars
+    std::pair<torch::Tensor, torch::Tensor> forward(torch::Tensor x) {
+        auto [z, _] = backbone->forward(x);
+        auto r = reward_head->forward(z).squeeze();   // 0-dim scalar
+        auto h = shaping_head->forward(z).squeeze();  // 0-dim scalar
+        return {r, h};
+    }
+};
+TORCH_MODULE(AIRLNets);
+
+// ─────────────────────────────────────────────
 //  AgentModel  (Policy + Value)
 //  backbone → z
 //  policy_head : z → π(a|s)   [num_actions]
@@ -452,60 +508,3 @@ struct AgentModelImpl : torch::nn::Module {
     }
 };
 TORCH_MODULE(AgentModel);
-
-
-// ─────────────────────────────────────────────
-//  AIRL networks (r_θ and h_φ)
-//  Both share the same backbone class but are
-//  instantiated separately and do NOT share weights
-//  with the policy network (cleaner separation;
-//  see note below about potential sharing).
-// ─────────────────────────────────────────────
-struct AIRLNetsImpl : torch::nn::Module {
-    Backbone  backbone{nullptr};
-    // r_θ(s,a): state-action reward
-    torch::nn::Sequential reward_head{nullptr};
-    // h_φ(s): potential / shaping function
-    torch::nn::Sequential shaping_head{nullptr};
-
-    int num_channels, grid_x, grid_y, H, num_actions;
-
-    AIRLNetsImpl(int num_channels = 32, int grid_x = 31, int grid_y = 31,
-                 int H = 160, int num_actions = 9)
-        : num_channels(num_channels), grid_x(grid_x), grid_y(grid_y),
-          H(H), num_actions(num_actions) {
-
-        backbone = register_module("backbone",
-            Backbone(num_channels, grid_x, grid_y, H, num_actions));
-
-        // r_θ(s,a): scalar reward
-        reward_head = register_module("reward", torch::nn::Sequential(
-            ResB(H, LAYER_INDEX),
-            torch::nn::Linear(H, 1)
-        ));
-
-        // h_φ(s): scalar potential
-        shaping_head = register_module("shaping", torch::nn::Sequential(
-            ResB(H, LAYER_INDEX),
-            torch::nn::Linear(H, 1)
-        ));
-
-        reset_memory();
-    }
-
-    void reset_memory() { backbone->reset_memory(); }
-
-    void update_action_history(torch::Tensor one_hot) {
-        backbone->update_action_history(one_hot);
-    }
-
-    // Compute r_θ(s,a) and h_φ(s) for one step
-    // Returns {r, h}  both scalars
-    std::pair<torch::Tensor, torch::Tensor> forward(torch::Tensor x) {
-        auto [z, _] = backbone->forward(x);
-        auto r = reward_head->forward(z).squeeze();   // 0-dim scalar
-        auto h = shaping_head->forward(z).squeeze();  // 0-dim scalar
-        return {r, h};
-    }
-};
-TORCH_MODULE(AIRLNets);

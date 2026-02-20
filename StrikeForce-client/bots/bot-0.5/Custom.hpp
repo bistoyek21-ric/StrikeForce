@@ -154,13 +154,16 @@ namespace Environment::Field{
 		for(int k = 0; k < 32; ++k)
 			for(int i = 0; i < 31; ++i)
 				for(int j = 0; j < 31; ++j)
-					obs.push_back(std::pow(std::abs(ch[k][i * 31 + j]) / 10, 0.2));
+					if (ch[k][i * 31 + j] >= 0.5)
+						obs.push_back(10 / (1 + std::exp(5.0 - ch[k][i * 31 + j])));
+					else
+						obs.push_back(ch[k][i * 31 + j]);	
 		return action[player.agent->predict(obs)];
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+xzqeawsd";
-		player.agent = new Agent();
+		player.agent = new Agent(/*training=*/true);
 		player.set_agent_active();
 	}
 

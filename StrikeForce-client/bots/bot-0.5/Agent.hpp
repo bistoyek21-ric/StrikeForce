@@ -249,7 +249,7 @@ public:
         if (cnt <= T_initial) {
             manual = true;
         } else if (actions.empty()) {
-            manual = true;
+            manual = training;
             if (manual) {
                 std::cout << "manual part! press space button to continue" << std::endl;
                 while(getch() != ' ');
@@ -319,8 +319,7 @@ private:
             loss -= log_probs[i][actions[i]];
             H -= (log_probs[i] * torch::exp(log_probs[i])).sum();
         }
-        loss = loss / T;
-        H = H / T;
+        loss = (loss + 0.05 * H) / T;
         
         if (training) {
 #if defined(DISTRIBUTED_LEARNING)

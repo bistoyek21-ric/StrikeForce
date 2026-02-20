@@ -199,16 +199,8 @@ public:
         std::vector<float> v;
         for (int i = 0; i < num_actions; ++i)
             v.push_back(output[0][i].item<float>());
-            
-#if !defined(SLOWMOTION)
-        for (int i = 1; i < num_actions; ++i)
-            v[i] *= 0.5f / (1 - v[0] + 1e-5f);
-        v[0] = 0.5f;
-#endif
         
-        std::mt19937 gen(std::random_device{}());
-        std::discrete_distribution<> dist(v.begin(), v.end());
-        return dist(gen);
+        return max_element(v.begin(), v.end()) - v.begin();
     }
 
     void update(int action, bool imitate) {

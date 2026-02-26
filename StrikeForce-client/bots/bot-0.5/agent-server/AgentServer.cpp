@@ -24,15 +24,10 @@ SOFTWARE.
 */
 //g++ -std=c++17 AgentServer.cpp -o app_agent_server -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lpthread
 // Add -lws2_32 on Windows
-#include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-#include <cstring>
 #include <sstream>
-#include <fstream>
-#include <filesystem>
-#include <chrono>
 #include <set>
 #include <string>
 

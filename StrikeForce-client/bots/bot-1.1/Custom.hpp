@@ -49,9 +49,9 @@ namespace Environment::Field{
 		for(int i = 0; i < 4; ++i)
 			res.push_back(sit[i]);
 		if(cell.s[0]){
-			res.push_back(cell.human->get_kills());
-			res.push_back(cell.human->backpack.get_blocks());
-			res.push_back(cell.human->backpack.get_portals());
+			res.push_back(cell.human->get_kills() / 20);
+			res.push_back(cell.human->backpack.get_blocks() / 20);
+			res.push_back(cell.human->backpack.get_portals() / 20);
 			res.push_back(cell.human->backpack.get_portal_ind() != -1);
 		}
 		else{
@@ -151,16 +151,20 @@ namespace Environment::Field{
 				for(int k = 0; k < vec.size(); ++k)
 					ch[k].push_back(vec[k]);
 			}
+		double beta = 1;
 		for(int k = 0; k < 32; ++k)
 			for(int i = 0; i < 31; ++i)
 				for(int j = 0; j < 31; ++j)
-					obs.push_back(std::pow(std::abs(ch[k][i * 31 + j]) / 10, 0.2));
+					if (5.0 < ch[k][i * 31 + j])
+						obs.push_back(10 - (10.0 / (beta * (ch[k][i * 31 + j] - 5) + 2)));
+					else
+						obs.push_back(ch[k][i * 31 + j]);	
 		return action[player.agent->predict(obs)];
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+xzqeawsd";
-		player.agent = new Agent();
+		player.agent = new Agent(/*training=*/true);
 		player.set_agent_active();
 	}
 

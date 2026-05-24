@@ -122,7 +122,7 @@ namespace Environment::Field{
 		}
 		for(int i = 0; i < 3; ++i)
 			res.push_back(sit[i]);
-		// damage effect   [0, inf)^2                                                     | 2
+		// damage effect   [0, inf)^2                                                      | 2
 		if(cell.s[0]){
 			res.push_back(cell.human->get_damage() / 1000.0);
 			res.push_back(-cell.human->get_effect() / 1000.0);

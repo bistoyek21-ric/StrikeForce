@@ -17,4 +17,4 @@
 
 #define SLOWMOTION
 
-#define DATASET "datasets/bot-0.5(0)"
+#define DATASET "datasets/bot-bc[-mgda]"

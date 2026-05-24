@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 #if defined(DISTRIBUTED_LEARNING)
-#include "../../AgentClient.hpp"
+#include "AgentClient.hpp"
 #else
 #include "../../basic.hpp"
 #endif

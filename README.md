@@ -696,7 +696,7 @@ We treat each action type as a separate loss function and apply the **Multipleâ€
 
 **New BCâ€‘MGDA comparison (work in progress):**
 ```bibtex
-@misc{fouladi2025bc-mgda,
+@misc{fouladi2026bc-mgda,
   title={Fair Behavioral Cloning via Multi-Objective Gradient Descent in a 2D Battle Royale},
   author={Kasra Fouladi},
   year={2026},

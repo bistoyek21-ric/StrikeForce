@@ -13,8 +13,8 @@
 
 //#define USE_AGENT_IN_SQUAD_NPCS
 
-#define HIGHLY_OPTIMIZED
+//#define HIGHLY_OPTIMIZED
 
 #define SLOWMOTION
 
-#define DATASET "datasets/bot-0.5(0)"
+#define DATASET "datasets/bot-bc[-mgda]"

@@ -27,7 +27,7 @@ SOFTWARE.
 #include <sstream>
 #include <filesystem>
 
-const int BUFFER_SIZE = 2048;
+const int BUFFER_SIZE = 20480;
 char AgentBuffer[BUFFER_SIZE];
 
 class AgentClient {
@@ -69,12 +69,23 @@ public:
         disconnectAgent();
     }
 
-    void send_gradient(const std::vector<torch::Tensor>& grad) {
+    void send_gradient(const std::vector<std::vector<torch::Tensor>>& action_grads,
+                   const std::vector<int>& counts) {
         try {
+            // Build the tensor vector to send:
+            // [counts_tensor, (for each action with count>0: grad0, grad1, ...)]
+            auto counts_tensor = torch::tensor(counts, torch::kInt32);
+            std::vector<torch::Tensor> payload;
+            payload.push_back(counts_tensor);
+            for (int a = 0; a < (int)counts.size(); ++a) {
+                if (counts[a] > 0) {
+                    for (auto& t : action_grads[a])   // action_grads indexed by action id
+                        payload.push_back(t);
+                }
+            }
             char type = 'G';
             send_block(&type, 1);
-            send_tensor_vector(grad);
-            std::cout << "Gradients sent successfully" << std::endl;
+            send_tensor_vector(payload);
         } catch (const std::exception& e) {
             std::cerr << "Error sending gradients: " << e.what() << std::endl;
             throw;

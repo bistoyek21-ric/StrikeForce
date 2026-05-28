@@ -27,20 +27,16 @@ SOFTWARE.
 
 #include "Modules.hpp"
 
-#if defined(DISTRIBUTED_LEARNING)
-#include "AgentClient.hpp"
-#endif
-
-const std::string bot_code = "bot-0.5", backup_path = "bots/bot-0.5/backup";
+const std::string bot_code = "bot-bc", backup_path = "bots/bot-bc/backup";
 
 class Agent {
 public:
-    Agent(bool training = true, int T = 1024, int num_epochs = 4, float gamma = 0.99, float learning_rate = 1e-3,
-         float ppo_clip = 0.2, float cv = 0.5, const std::string &backup_dir = "bots/bot-0.5/backup/agent_backup")
-        : training(training), T(T), num_epochs(num_epochs), gamma(gamma), learning_rate(learning_rate),
-        ppo_clip(ppo_clip), cv(cv), backup_dir(backup_dir) {
+    Agent(bool training = true, int T = 1024, float learning_rate = 1e-3,
+         const std::string &backup_dir = "bots/bot-bc/backup/agent_backup")
+        : training(training), T(T), learning_rate(learning_rate), backup_dir(backup_dir) {
 
 #if defined(DISTRIBUTED_LEARNING)
+        this->backup_dir = backup_dir = "bots/bot-bc/server_checkpoint";
         std::cout << "=== DISTRIBUTED LEARNING MODE ===" << std::endl;
         client = std::make_unique<AgentClient>(backup_dir);
         
@@ -193,31 +189,31 @@ public:
 #endif
         }
         
+        if(!manual)
+            return rand() % num_actions;
+
         auto state = torch::tensor(obs, torch::dtype(torch::kFloat32)).view({1, num_channels, grid_x, grid_y});
+
         states.push_back(state);
         auto output = model->forward(state);
+
         values.push_back(output[1]);
         log_probs.push_back(torch::log(output[0]));
         
         std::vector<float> v;
         for (int i = 0; i < num_actions; ++i)
             v.push_back(output[0][i].item<float>());
-            
-#if !defined(SLOWMOTION)
-        for (int i = 1; i < num_actions; ++i)
-            v[i] *= 0.5f / (1 - v[0] + 1e-5f);
-        v[0] = 0.5f;
-#endif
         
-        std::mt19937 gen(std::random_device{}());
-        std::discrete_distribution<> dist(v.begin(), v.end());
-        return dist(gen);
+        return max_element(v.begin(), v.end()) - v.begin();
     }
 
     void update(int action, bool imitate) {
         if (is_training || cnt <= T_initial)
             return;
-            
+        
+        if (!manual)
+            return;
+        
         auto one_hot = torch::zeros({num_actions});
         one_hot[action] += 1;
         model->update_actions(one_hot);
@@ -251,13 +247,20 @@ public:
         
         if (cnt <= T_initial) {
             manual = true;
+            cnt_warm_up = 0;
         } else if (actions.empty()) {
-            manual = true;
-            if (manual) {
-                std::cout << "manual part! press space button to continue" << std::endl;
-                while(getch() != ' ');
-                std::cout << "space button pressed!" << std::endl;
+            if (cnt_warm_up == T_warm_up) {
+                manual = training;
+                if (manual) {
+                    std::cout << "manual part! press space button to continue" << std::endl;
+                    while(getch() != ' ');
+                    std::cout << "space button pressed!" << std::endl;
+                }
             }
+            else
+                manual = false;
+            if (cnt_warm_up < T_warm_up)
+                ++cnt_warm_up;
         }
         return manual;
     }
@@ -270,8 +273,8 @@ public:
 private:
     bool is_training = false, logging = true, training, done_training = false, manual = false;
     std::thread trainThread;
-    float learning_rate, gamma, ppo_clip, cv;
-    int T, num_epochs, cnt = 0, T_initial = 10;
+    float learning_rate;
+    int T, cnt = 0, cnt_warm_up = 0, T_initial = 512, T_warm_up = 100;
     const int num_actions = 9, num_channels = 32, grid_x = 31, grid_y = 31, hidden_size = 160;
     std::string backup_dir;
     AgentModel model{nullptr};
@@ -315,15 +318,18 @@ private:
 
     void train() {
         time_t ts = time(0);
-        auto loss = torch::zeros({1});
+        auto b_loss = torch::zeros({1});
         auto H = torch::zeros({1});
-        
-        for (size_t i = 0; i < T; ++i) {
-            loss -= log_probs[i][actions[i]];
+
+        for (int i = 0; i < T; ++i) {        
+            b_loss -= log_probs[i][actions[i]];
             H -= (log_probs[i] * torch::exp(log_probs[i])).sum();
         }
-        loss = loss / T;
-        H = H / T;
+        
+        b_loss /= T;
+        H /= T;
+
+        auto loss = b_loss - 0.05 * H;
         
         if (training) {
 #if defined(DISTRIBUTED_LEARNING)
@@ -332,13 +338,11 @@ private:
             loss.backward();
             
             std::vector<torch::Tensor> gradients;
-            for (auto& p : model->parameters()) {
-                if (p.grad().defined()) {
+            for (auto& p : model->parameters())
+                if (p.grad().defined())
                     gradients.push_back(p.grad().detach().clone());
-                } else {
+                else
                     gradients.push_back(torch::zeros_like(p));
-                }
-            }
             
             std::cout << "Sending gradients to server..." << std::endl;
             client->send_gradient(gradients);
@@ -352,7 +356,7 @@ private:
                 params[i].data() += update_vector[i];
             }
             
-            std::cout << "Model synchronized with server" << std::endl;
+            std::cout << "Model is synchronized with server" << std::endl;
 #else
             // Local mode: standard gradient descent
             optimizer->zero_grad();
@@ -362,6 +366,7 @@ private:
         }
         
         log("A: loss=" + std::to_string(loss.item<float>()) +
+            ",b_loss=" + std::to_string(b_loss.item<float>()) + 
             ",H=" + std::to_string(H.item<float>()) + 
             ",time(s)=" + std::to_string(time(0) - ts) +
             ",step=" + std::to_string(calc_diff()));

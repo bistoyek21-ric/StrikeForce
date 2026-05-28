@@ -312,7 +312,7 @@ g++ -std=c++17 main.cpp -o StrikeForce \
 
 ---
 
-## 👁️ Observation Space Design
+## 👁️ Observation Space Design (Common in all bots)
 
 ### bot-1's Observation Design
 
@@ -445,6 +445,19 @@ AgentModel model;           // Policy network
 RewardNet reward_net;       // Reward learning
 std::vector<float> rewards; // Episode rewards
 std::vector<int> actions;   // Action history
+```
+
+### Example: BC and BC‑MGDA (bot‑bc & bot‑bc‑mgda)
+
+We also provide two pure imitation‑learning bots using a 9‑action space (movement, turning, shooting, punching). These bots demonstrate standard Behavioral Cloning and an extension that ensures **fairness across action types**:
+
+- **bot‑bc**: Off‑policy BC with an Actor‑Critic architecture (CNN + 2×GRU + ResBlock). The loss is \(-\mathbb{E}[\log\pi(a|s)] - 0.05 H\).
+- **bot‑bc‑mgda**: Same architecture, but each action type is treated as a separate objective. The **Multiple‑Gradient Descent Algorithm (MGDA)** finds a common gradient direction that simultaneously improves all per‑action losses – preventing rare actions from being sacrificed.
+
+The complete implementation is in:
+```
+bots/bot-bc/Agent.hpp, Custom.hpp, Modules.hpp
+bots/bot-bc-mgda/Agent.hpp, Custom.hpp, Modules.hpp
 ```
 
 ---
@@ -644,10 +657,18 @@ StrikeForce/
 │   │   ├── bot-0/                  # Dummy agent template
 │   │   │   ├── Agent.hpp
 │   │   │   └── Custom.hpp
-│   │   └── bot-1/                  # PPO example
+│   │   ├── bot-1/                  # GAIL example
+│   │   │   ├── Agent.hpp
+│   │   │   ├── Custom.hpp
+│   │   │   └── RewardNet.hpp
+│   │   ├── bot-bc/                 # Behavioral Cloning (baseline)
+│   │   │   ├── Agent.hpp
+│   │   │   ├── Custom.hpp
+│   │   │   └── Modules.hpp
+│   │   └── bot-bc-mgda/            # BC with MGDA (our method)
 │   │       ├── Agent.hpp
 │   │       ├── Custom.hpp
-│   │       └── RewardNet.hpp
+│   │       └── Modules.hpp
 │   ├── Items/                      # Item stats
 │   ├── map/                        # Level designs
 │   ├── character/                  # Character configs
@@ -663,30 +684,27 @@ StrikeForce/
 
 ## 📊 Research Context
 
-### StrikeForce/bot-1 in Academic Research
+### Current Focus: Fair Behavioral Cloning with MGDA
 
-This environment was developed as part of research in **resource-efficient imitation learning**. Key findings:
+The latest bots, **bot‑bc** and **bot‑bc‑mgda**, are part of an ongoing study on **multi‑objective imitation learning**. In many demonstrations, action distributions are highly skewed (e.g., moving is much more frequent than shooting or healing). Standard BC tends to sacrifice the rare actions, leading to a loss of diverse behavior.
 
-- **84.2% win rate** vs expert humans with only 16 participants
-- **47.3/50 human-likeness score** using GAIL-RT protocol
-- **<100MB RAM** idle, **<3.2GB RAM** during training (CPU-only)
+We treat each action type as a separate loss function and apply the **Multiple‑Gradient Descent Algorithm (MGDA)** to find a weight update that improves all actions simultaneously. The comparison between bot‑bc (single combined loss) and bot‑bc‑mgda (MGDA‑guided update) shows how this approach preserves rare actions without harming overall performance.
 
-### Paper: "Crowdsourced Training of Human-Like Agents via Adaptive GAIL"
+**Repository links:**
+- `bots/bot-bc/` — pure BC baseline (Actor‑Critic, 9 actions)
+- `bots/bot-bc-mgda/` — BC with per‑action MGDA gradients
 
-The accompanying paper introduces:
-1. **GAIL-RT Protocol**: Representation transfer for stable adversarial imitation
-2. **Resource-Optimal Design**: End-to-end efficiency in data, compute, and human effort
-3. **Crowdsourcing Pipeline**: Distributed training without centralized datasets
-
-**Citation:**
+**New BC‑MGDA comparison (work in progress):**
 ```bibtex
-@article{fouladi2025strikeforce,
-  title={StrikeForce: Crowdsourced Training of Human-Like Agents via Adaptive GAIL},
-  author={Kasra Fouladi and Hamta Rahmani},
-  journal={arXiv preprint arXiv:2501.XXXXX},
-  year={2025}
+@misc{fouladi2026bc-mgda,
+  title={Fair Behavioral Cloning via Multi-Objective Gradient Descent in a 2D Battle Royale},
+  author={Kasra Fouladi},
+  year={2026},
+  note={Under preparation}
 }
 ```
+
+**Earlier work on GAIL with crowdsourced training is still available in 'bots/bot-1' and 'bots/bot-1.1'.**
 
 ---
 
@@ -753,7 +771,7 @@ int random_value = Environment::Random::_rand();
 
 MIT License - see LICENSE file for details.
 
-**Created by**: Kasra Fouladi, Hamta Rahmani, bistoyek21 R.I.C.
+**Created by**: Kasra Fouladi, bistoyek21 R.I.C.
 
 ---
 
@@ -780,9 +798,9 @@ We welcome contributions!
 
 **Found a bug?** Open an issue on the repository.
 
-**Need help with your agent?** Check `bots/bot-1/` for a complete example.
+**Need help with your agent?** Check `bots/bot-bc/` for a complete example.
 
-**Research collaboration?** Email: k4sr405@gmail.com or hamtar693@gmail.com
+**Research collaboration?** Email: k4sr405@gmail.com
 
 **Want to play online?** Join our Discord community: [https://discord.gg/4Dmum8Egs](https://discord.gg/4Dmum8Egs).
 

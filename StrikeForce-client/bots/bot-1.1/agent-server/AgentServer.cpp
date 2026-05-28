@@ -24,35 +24,19 @@ SOFTWARE.
 */
 //g++ -std=c++17 AgentServer.cpp -o app_agent_server -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lpthread
 // Add -lws2_32 on Windows
-#include <iostream>
-#include <vector>
-#include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-#include <cstring>
 #include <sstream>
-#include <fstream>
-#include <filesystem>
-#include <chrono>
 #include <set>
+#include <string>
 
-#if defined(__unix__) || defined(__APPLE__)
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#include "../Modules.hpp"
+
 #define SOCKET int
 #define INVALID_SOCKET -1
 #define SOCKET_ERROR -1
 #define closesocket close
-#else
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#pragma comment(lib, "ws2_32.lib")
-#endif
-
-#include "Modules.hpp"
 
 const int BUFFER_SIZE = 2048;
 
@@ -187,6 +171,32 @@ public:
         // Accept clients continuously
         int next_client_id = 0;
         while (server_running) {
+            {
+                std::lock_guard<std::mutex> lock(mtx);
+                if(kbhit()){
+                    if(getch() == '~')
+                        server_running = false;
+                    if(getch() == '_') {
+                        std::cout << "Enter id of the agent you want to eleminate:" << std::endl;
+                        try{
+                            int id, idx = -1;
+                            std::cin >> id;
+                            for(int i = 0; i < clients.size(); ++i)
+                                if(clients[i]->client_id == id)
+                                    idx = i;
+                            if(idx != -1) {
+                                delete clients[idx];
+                                clients.erase(clients.begin() + idx);
+                                std::cout << "Agent " << idx << " eleminated.\n";
+                            }
+                            else
+                                std::cout << "No such active agent.\n";
+                        } catch(...){}
+                        std::cout << "Continue!" << std::endl;
+                    }
+                }
+            }
+
             struct sockaddr_in client_addr;
             socklen_t client_len = sizeof(client_addr);
             SOCKET client_sock = accept(server_sock, (struct sockaddr*)&client_addr, &client_len);

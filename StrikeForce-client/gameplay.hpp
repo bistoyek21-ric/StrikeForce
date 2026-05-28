@@ -940,6 +940,8 @@ namespace Environment::Field{
 			my_command();
 			if(quit){
 				command[ind] = '_';
+				if (enable_logging)
+					log_file << command[ind] << '\n';
 				if(online && !replay_mode){
 					client.send_it();
 					client.end_it();
@@ -1782,7 +1784,7 @@ namespace Environment::Field{
 				prepare(hum[ind]);
 		}
 		if(enable_logging){
-			log_filename += DATASET;
+			log_filename = DATASET;
 			log_filename += "/" + mode + "-online:" + std::to_string(online) + "-lvl:" + std::to_string(level);
 			if(!std::filesystem::exists(log_filename))
 				std::filesystem::create_directories(log_filename);
@@ -1834,6 +1836,9 @@ namespace Environment::Field{
 				Environment::Random::_srand(client.tb, serial_number);
 				players = client.n;
 				if(enable_logging){
+					log_file << server_ip << '\n';
+					log_file << server_port << '\n';
+					log_file << server_password << '\n';
 					log_file << client.tb << " " << serial_number << '\n';
 					log_file << players << " " << ind << " " << hum[ind].get_team() << '\n';
 					hum[ind].log_file(log_file);
@@ -2057,12 +2062,9 @@ namespace Environment::Field{
 			res += color;
 		printer.render(res);
 		auto end_ = std::chrono::steady_clock::now();
-		#if defined(CROWDSOURCED_TRAINING)
-		int k = (lim.count() * 1.25 - (end_ - start1).count()) / 1000;
-		#else
 		int k = (lim.count() - (end_ - start1).count()) / 1000;
-		#endif
-		usleep(std::max(k, 0));
+		if (!replay_mode || !manual1)
+			usleep(std::max(k, 0));
 		return;
 	}
 }

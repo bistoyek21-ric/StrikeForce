@@ -13,7 +13,9 @@
 
 //#define USE_AGENT_IN_SQUAD_NPCS
 
-//#define HIGHLY_OPTIMIZED
+//#define AUTOMATIC
+
+#define HIGHLY_OPTIMIZED
 
 #define SLOWMOTION
 

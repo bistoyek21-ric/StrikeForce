@@ -63,7 +63,9 @@ public:
         std::cout << "Loading backup..." << std::endl;
         request_and_extract_backup(backup_path, bot_code);
         std::cout << "Press space to continue" << std::endl;
+        #if !defined(AUTOMATIC)
         while (getch() != ' ');
+        #endif
     #endif
 
         model = AgentModel();
@@ -92,7 +94,6 @@ public:
             param_count += p.numel();
         }
         log("Agent's parameters: " + std::to_string(param_count));
-        log("LAYER_INDEX=" + std::to_string(LAYER_INDEX));
 
 #if defined(SLOWMOTION)
         log("SLOWMOTION");
@@ -160,12 +161,14 @@ public:
 
     #if defined(CROWDSOURCED_TRAINING)
         std::cout << "Submit backup to server? (y/n)" << std::endl;
+        #if !defined(AUTOMATIC)
         if (getch() == 'y') {
             std::cout << "Submitting..." << std::endl;
             zip_and_return_backup(backup_path);
             std::cout << "Done! Press space" << std::endl;
             while (getch() != ' ');
         }
+        #endif
     #endif
 
 #endif
@@ -254,7 +257,9 @@ public:
                 manual = training;
                 if (manual) {
                     std::cout << "manual part! press space button to continue" << std::endl;
+                    #if !defined(AUTOMATIC)
                     while(getch() != ' ');
+                    #endif
                     std::cout << "space button pressed!" << std::endl;
                 }
             }
@@ -339,10 +344,21 @@ private:
         std::vector<torch::Tensor> per_group_losses(groups.size());
         auto H = torch::zeros({1}), b_loss = torch::zeros({1});
         
+        double acc = 0;
+
         for (int t = 0; t < T; ++t) {
             H -= (log_probs[t] * torch::exp(log_probs[t])).sum();
             b_loss -= log_probs[t][actions[t]];
+            
+            int is_true = 1;
+            for(int act = 0; act < num_actions && is_true; ++act)
+                if(actions[t] != act && 
+                    log_probs[t][actions[t]].item<float>() <= log_probs[t][act].item<float>())
+                    is_true = 0;
+            acc += is_true;
         }
+
+        acc /= T;
         
         b_loss /= T, H /= T;
         b_loss = b_loss.detach(), H = H.detach();
@@ -350,20 +366,35 @@ private:
 
         std::vector<std::vector<torch::Tensor>> group_grads;  // per active group
 
+        std::vector<double> g_acc;
+
         for (int g = 0; g < groups.size(); ++g) {
             per_group_losses[g] = torch::zeros({1});
+
+            g_acc.push_back(-1);
 
             if (group_counts[g] == 0)
                 continue;
             
+            g_acc.back() = 0;
+
             for (int t = 0; t < T; ++t)
                 for (auto a: groups[g])
-                    if (actions[t] == a)
-                        per_group_losses[g] -= log_probs[t][a];
+                    if (actions[t] == a) {
+                        per_group_losses[g] -= log_probs[t][actions[t]];
+                        int is_true = 1;
+                        for(int act = 0; act < num_actions && is_true; ++act)
+                            if(actions[t] != act && 
+                                log_probs[t][actions[t]].item<float>() <= log_probs[t][act].item<float>())
+                                is_true = 0;
+                        g_acc.back() += is_true;
+                    }
             
             per_group_losses[g] /= group_counts[g];
             
             //std::cout << "WE DID IT 1" << std::endl;
+
+            g_acc.back() /= group_counts[g];
 
             model->zero_grad();
             per_group_losses[g].backward();
@@ -448,8 +479,21 @@ private:
 #else
             
             // MGDA on active group objectives
-            auto alphas = solve_mgda(group_grads);
-        
+            //auto alphas = solve_mgda(group_grads);
+
+            std::vector<double> norm = {
+                per_group_losses[0].item<double>(),
+                per_group_losses[1].item<double>(),
+                per_group_losses[2].item<double>()
+            };
+
+            auto N0 = norm[0];
+            auto N1 = norm[1];
+            auto N2 = norm[2];
+            auto SumN = N0 + N1 + N2;
+
+            std::vector<double> alphas = {N0 / SumN, N1 / SumN, N2 / SumN};
+            
             // Combine action gradients using MGDA weights
             auto params = model->parameters();
             for (size_t p = 0; p < params.size(); ++p) {
@@ -525,6 +569,19 @@ private:
             }() +
             "]");
         }
+        
+        log("Total Accuracy=" + std::to_string(acc));
+
+        log("Per Group Accuracies=[" +
+            [&]{
+                std::string s;
+                for (size_t i=0; i< groups.size(); ++i) {
+                    if (i) s += ", ";
+                    s += std::to_string(g_acc[i]);
+                }
+                return s;
+            }() +
+            "]");
 
         // Cleanup
         actions.clear();

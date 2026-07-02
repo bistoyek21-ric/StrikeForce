@@ -92,7 +92,6 @@ public:
             param_count += p.numel();
         }
         log("Agent's parameters: " + std::to_string(param_count));
-        log("LAYER_INDEX=" + std::to_string(LAYER_INDEX));
 
 #if defined(SLOWMOTION)
         log("SLOWMOTION");
@@ -102,7 +101,7 @@ public:
             model->eval();
         } else {
             model->train();
-            
+
 #if !defined(DISTRIBUTED_LEARNING)
             // Only create optimizer in local mode
             optimizer = std::make_unique<torch::optim::AdamW>(
@@ -321,10 +320,21 @@ private:
         auto b_loss = torch::zeros({1});
         auto H = torch::zeros({1});
 
-        for (int i = 0; i < T; ++i) {        
-            b_loss -= log_probs[i][actions[i]];
-            H -= (log_probs[i] * torch::exp(log_probs[i])).sum();
+        double acc = 0;
+
+        for (int t = 0; t < T; ++t) {
+            H -= (log_probs[t] * torch::exp(log_probs[t])).sum();
+            b_loss -= log_probs[t][actions[t]];
+            
+            int is_true = 1;
+            for(int act = 0; act < num_actions && is_true; ++act)
+                if(actions[t] != act && 
+                    log_probs[t][actions[t]].item<float>() <= log_probs[t][act].item<float>())
+                    is_true = 0;
+            acc += is_true;
         }
+
+        acc /= T;
         
         b_loss /= T;
         H /= T;
@@ -370,6 +380,8 @@ private:
             ",H=" + std::to_string(H.item<float>()) + 
             ",time(s)=" + std::to_string(time(0) - ts) +
             ",step=" + std::to_string(calc_diff()));
+
+        log("Total Accuracy=" + std::to_string(acc));
         
         actions.clear();
         rewards.clear();

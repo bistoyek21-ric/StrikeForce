@@ -1141,7 +1141,9 @@ namespace Environment::Field{
 				if(printThread.joinable())
 					printThread.join();
                 printer.print("You Died :(\npress space button to continue\n");
+				#if !defined(AUTOMATIC)
 				while(getch() != ' ');
+				#endif
 				return true;
 			}
 			if(mode == "Timer"){
@@ -1491,7 +1493,9 @@ namespace Environment::Field{
 
 			if (enable_logging || replay_mode){
 				std::cout << "press the space key to continue" << std::endl;
+				#if !defined(AUTOMATIC)
 				while(getch() != ' ');
+				#endif
 			}
 
 			#if defined(CROWDSOURCE_TRAINING)
@@ -1525,7 +1529,11 @@ namespace Environment::Field{
 				if(b)
 					std::cout << "invalid input, try again" << std::endl;
 				b = false;
+				#if !defined(AUTOMATIC)
 				char c = getch();
+				#else
+				char c = '1';
+				#endif
 				if(c == '6')
 					return;
 				if(c == '1'){
@@ -1541,7 +1549,11 @@ namespace Environment::Field{
 							std::cout << '\n';
 						}
 						std::cout << "------------------\npress any other key to back\n------------------" << std::endl;
+						#if !defined(AUTOMATIC)
 						level = getch() - '0';
+						#else
+						level = 10;
+						#endif
 						if(Environment::Character::me.get_level_solo() < level && level <= L && level > 0){
 							std::cout << "you can't choose this level" << std::endl;
 							usleep(1500000);
@@ -1552,12 +1564,20 @@ namespace Environment::Field{
 					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					#if !defined(AUTOMATIC)
 					manual = (getch() != 'y');
+					#else
+					manual = false;
+					#endif
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
 					std::cout << "Any other key: normal" << std::endl;
+					#if !defined(AUTOMATIC)
 					char c = getch();
+					#else
+					char c = 'r';
+					#endif
 					if(c == 'r')
 						replay_mode = true;
 					if(c == 'l')
@@ -1752,7 +1772,11 @@ namespace Environment::Field{
 			while (true){
 				std::cout << "Enter the file's address: ";
 				std::cout.flush();
+				#if !defined(AUTOMATIC)
 				getline(std::cin, replay_filename);
+				#else
+				replay_filename = "datasets/bot-bc[-mgda]/Solo-online:0-lvl:10/(Sat Jun  6 09:10:26 2026).sf_sample";
+				#endif
 				//checking for being real
 				if (!std::filesystem::exists(replay_filename)){
 					std::cout << "entered file address didn't found, try again or do cltr(right)+C" << std::endl;

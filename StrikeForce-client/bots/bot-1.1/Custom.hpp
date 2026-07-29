@@ -58,11 +58,11 @@ namespace Environment::Field{
 			for(int i = 0; i < 4; ++i)
 				res.push_back(0);
 		}
-		// it can't be passed through by human, bullet; can it destroyed by shooting, Hp {0, 1}^3 [0, inf)| 4
-		sit = {0, 0, 0};
+		// it can  be passed through by human, bullet; can it destroyed by shooting, Hp {0, 1}^3 [0, inf)| 4
+		sit = {1, 1, 0};
 		float hp = 0;
 		if(cell.s[3] || cell.s[5] || cell.s[6] || cell.s[0] || cell.s[1]){
-			sit[0] = sit[1] = 1;
+			sit[0] = sit[1] = 0;
 			sit[2] = cell.s[10] || cell.s[0] || cell.s[1];
 			if(cell.s[0])
 				hp = cell.human->get_Hp() / 1000.0;
@@ -76,8 +76,8 @@ namespace Environment::Field{
 			}
 		}
 		else if(cell.s[7]){
-			sit[0] = 1;
-			sit[1] = sit[2] = 0;
+			sit[0] = 0;
+			sit[1] = 1, sit[2] = 0;
 		}
 		for(int i = 0; i < 3; ++i)
 			res.push_back(sit[i]);
@@ -122,7 +122,7 @@ namespace Environment::Field{
 		}
 		for(int i = 0; i < 3; ++i)
 			res.push_back(sit[i]);
-		// damage effect   [0, inf)^2                                                     | 2
+		// damage effect   [0, inf)^2                                                      | 2
 		if(cell.s[0]){
 			res.push_back(cell.human->get_damage() / 1000.0);
 			res.push_back(-cell.human->get_effect() / 1000.0);
@@ -164,7 +164,7 @@ namespace Environment::Field{
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+xzqeawsd";
-		player.agent = new Agent(/*training=*/true);
+		player.agent = new Agent(/*training=*/false, /*auto_pilot=*/true);
 		player.set_agent_active();
 	}
 

@@ -1775,7 +1775,7 @@ namespace Environment::Field{
 				#if !defined(AUTOMATIC)
 				getline(std::cin, replay_filename);
 				#else
-				replay_filename = "datasets/bot-bc[-mgda]/Solo-online:0-lvl:10/(Sat Jun  6 09:10:26 2026).sf_sample";
+				replay_filename = "datasets/bot-bc/Solo-online:0-lvl:10/(Sat Jun  6 09:10:26 2026).sf_sample";
 				#endif
 				//checking for being real
 				if (!std::filesystem::exists(replay_filename)){

@@ -40,8 +40,6 @@ SOFTWARE.
 
 #include "GraphicPrinter.hpp"
 
-#include "macros.hpp"
-
 bool during_battle = false;
 
 void usleep(int x){

@@ -447,18 +447,6 @@ std::vector<float> rewards; // Episode rewards
 std::vector<int> actions;   // Action history
 ```
 
-### Example: BC and BC‑MGDA (bot‑bc & bot‑bc‑mgda)
-
-We also provide two pure imitation‑learning bots using a 9‑action space (movement, turning, shooting, punching). These bots demonstrate standard Behavioral Cloning and an extension that ensures **fairness across action types**:
-
-- **bot‑bc**: Off‑policy BC with an Actor‑Critic architecture (CNN + 2×GRU + ResBlock). The loss is \(-\mathbb{E}[\log\pi(a|s)] - 0.05 H\).
-- **bot‑bc‑mgda**: Same architecture, but each action type is treated as a separate objective. The **Multiple‑Gradient Descent Algorithm (MGDA)** finds a common gradient direction that simultaneously improves all per‑action losses – preventing rare actions from being sacrificed.
-
-The complete implementation is in:
-```
-bots/bot-bc/Agent.hpp, Custom.hpp, Modules.hpp
-bots/bot-bc-mgda/Agent.hpp, Custom.hpp, Modules.hpp
-```
 
 ---
 
@@ -665,7 +653,7 @@ StrikeForce/
 │   │   │   ├── Agent.hpp
 │   │   │   ├── Custom.hpp
 │   │   │   └── Modules.hpp
-│   │   └── bot-bc-mgda/            # BC with MGDA (our method)
+│   │   └── bot-bc-focal/            # BC with MGDA (our method)
 │   │       ├── Agent.hpp
 │   │       ├── Custom.hpp
 │   │       └── Modules.hpp
@@ -692,11 +680,11 @@ We treat each action type as a separate loss function and apply the **Multiple�
 
 **Repository links:**
 - `bots/bot-bc/` — pure BC baseline (Actor‑Critic, 9 actions)
-- `bots/bot-bc-mgda/` — BC with per‑action MGDA gradients
+- `bots/bot-bc-focal/` — BC with per‑action MGDA gradients
 
 **New BC‑MGDA comparison (work in progress):**
 ```bibtex
-@misc{fouladi2026bc-mgda,
+@misc{fouladi2026bc-focal,
   title={Fair Behavioral Cloning via Multi-Objective Gradient Descent in a 2D Battle Royale},
   author={Kasra Fouladi},
   year={2026},

@@ -24,10 +24,10 @@ SOFTWARE.
 */
 #pragma once
 
-#if !defined(HIGHLY_OPTIMIZED)
+#include "macros.hpp"
+
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
-#endif
 
 #include <string>
 #include <vector>

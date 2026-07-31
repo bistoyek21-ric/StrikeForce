@@ -369,21 +369,16 @@ TORCH_MODULE(PlayerPolicyNet);
 // -----------------------------------------------------------------------
 //  Focal loss (matching Python version)
 // -----------------------------------------------------------------------
-torch::Tensor focal_loss(torch::Tensor logits, torch::Tensor targets,
-                         torch::Tensor valid_mask, double gamma) {
+torch::Tensor focal_loss(torch::Tensor logits, torch::Tensor targets, double gamma) {
     auto log_probs = torch::log_softmax(logits, 1);
     auto target_log_probs = log_probs.gather(1, targets.unsqueeze(1)).squeeze(1);
     auto p_t = torch::exp(target_log_probs);
     auto focal_weight = torch::pow(1 - p_t, gamma);
     auto loss = -focal_weight * target_log_probs;
-
-    auto keep_mask = valid_mask.index({targets});
-    auto keep_float = keep_mask.to(loss.scalar_type());
-
-    return loss * keep_float;
+    return loss;
 }
 
-torch::Tensor future_pred_loss(
+torch::Tensor future_pred_focal_loss(
     torch::Tensor pred,                    // [B, PRED_HEADS, N_ACTIONS]
     torch::Tensor future_actions,          // [B, PRED_HEADS] (int64)
     double gamma_future = 0.9
@@ -392,16 +387,11 @@ torch::Tensor future_pred_loss(
     auto H = pred.size(1);   // PRED_HEADS
     auto N = pred.size(2);   // N_ACTIONS
 
-    //std::cout << "2.0" << std::endl;
     auto weights = torch::pow(gamma_future, torch::arange(H, pred.options()))
                         .view({1, H, 1});   // [1, H, 1]
-    //std::cout << "2.1" << std::endl;
     auto log_probs = torch::log_softmax(pred, -1);  // [B, H, N]
-    //std::cout << "2.2 " << future_actions.unsqueeze(-1).unsqueeze(-1).sizes() << " | " << log_probs.sizes() << std::endl;
     auto gathered = log_probs.gather(-1, future_actions.unsqueeze(-1).unsqueeze(-1)).squeeze(-1); // [B, H]
-    //std::cout << "2.3" << std::endl;
     auto loss_per_step = -gathered * weights.squeeze(-1);
-    //std::cout << "2.4" << std::endl;
     auto loss = loss_per_step.sum();
     return loss;
 }
@@ -491,50 +481,57 @@ struct EpisodeResult {
 EpisodeResult process_episode(PlayerPolicyNet& model,
                               torch::Tensor states,   // [1, T, C, H, W]
                               torch::Tensor actions,  // [1, T]
-                              const torch::Tensor& valid_mask,
                               double gamma, int64_t padding, 
                               double gamma_future = 0.9) {
     auto device = states.device();
     int64_t T = states.size(1);
 
+    // weight sum for future loss normalisation (same as before)
     double sum_w = 0.0, tmp = 1.0;
-
     for (int i = 0; i < padding + 1; ++i) {
         sum_w += tmp;
         tmp *= gamma_future;
     }
 
     model->reset_memory();
-    model->zero_grad();
+    model->zero_grad();   // one clear at the start
 
-    torch::Tensor total_loss = torch::zeros({}, device);
-    int64_t valid_count = 0;
+    double loss_sum = 0.0;        // for logging
+    int64_t valid_count = 0;      // number of policy‑loss steps (t >= padding)
 
     auto prev_action = torch::tensor({5}, torch::kLong).to(device);
 
     for (int64_t t = 0; t < T; ++t) {
-        auto x = states.select(1, t);               // [1, C, H, W]
-        auto out = model->forward(x, prev_action);  // {pred, logits, value}
-        
-        auto pred = out[0];                     // [1, 9]
-        auto logits = out[1];                   // [1, 9]
+        auto x = states.select(1, t);
+        auto out = model->forward(x, prev_action);
+        auto pred = out[0];      // [1, PRED_HEADS, N_ACTIONS]
+        auto logits = out[1];    // [1, N_ACTIONS]
 
+        // Build step loss (policy loss + future loss)
+        torch::Tensor step_loss = torch::zeros({}, device);
+
+        // Policy loss (only for t >= padding)
         if (t >= padding) {
             auto target = actions.select(1, t);     // [1]
-            auto loss_per_sample = focal_loss(logits, target, valid_mask, gamma);
-            auto target_valid = valid_mask.index_select(0, target);
-
-            total_loss += (loss_per_sample * target_valid.to(loss_per_sample.dtype())).sum();
-            valid_count += target_valid.sum().item<int64_t>();
+            auto pol_loss = focal_loss(logits, target, gamma);
+            step_loss += pol_loss;
+            valid_count++;      // count only policy‑loss steps
         }
 
+        // Future loss (only if there are enough future steps)
         if (t < T - padding) {
-            //std::cout << "1.0" << std::endl;
             auto future_targets = actions.slice(1, t, t + padding);
-            //std::cout << "1.1" << std::endl;
-            auto aux_loss = future_pred_loss(pred, future_targets, gamma_future);
-            //std::cout << "1.2" << std::endl;
-            total_loss += aux_loss / sum_w;
+            auto aux_loss = future_pred_focal_loss(pred, future_targets, gamma_future);
+            step_loss += aux_loss / sum_w;
+        }
+
+        // If any loss was added, backpropagate this step
+        if (step_loss.defined() && step_loss.numel() > 0) {
+            // Avoid calling backward on a zero tensor (no loss)
+            if (step_loss.item<double>() != 0.0) {
+                step_loss.backward();
+                loss_sum += step_loss.item<double>();   // accumulate for logging
+            }
         }
 
         prev_action = actions.select(1, t);
@@ -542,25 +539,18 @@ EpisodeResult process_episode(PlayerPolicyNet& model,
 
     EpisodeResult result;
     result.valid_count = valid_count;
+    result.loss_sum = loss_sum;   // sum of per‑step losses
 
-    if (valid_count > 0) {
-        total_loss.backward();
-
-        // clone gradients
-        for (auto& param : model->parameters()) {
-            if (param.grad().defined())
-                result.grads.push_back(param.grad().clone().detach());
-            else
-                result.grads.push_back(torch::zeros_like(param));
-        }
-        result.loss_sum = total_loss.item<double>() * valid_count; // recover sum
-    } else {
-        result.loss_sum = 0.0;
-        // leave grads empty
+    // Clone gradients for the aggregator
+    for (auto& param : model->parameters()) {
+        if (param.grad().defined())
+            result.grads.push_back(param.grad().clone().detach());
+        else
+            result.grads.push_back(torch::zeros_like(param));
     }
 
     model->reset_memory();
-    model->zero_grad();
+    model->zero_grad();   // clear for next episode
 
     return result;
 }

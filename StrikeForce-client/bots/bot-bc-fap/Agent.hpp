@@ -31,8 +31,8 @@ const std::string bot_code = "bot-bc-focal", backup_path = "bots/bot-bc-focal/ba
 
 class Agent {
 public:
-    Agent(bool training = true, bool auto_pilot = false, int T = 256, float learning_rate = 1e-3,
-         const std::string &backup_dir = "bots/bot-bc-focal/backup/agent_backup")
+    Agent(bool training = true, bool auto_pilot = false, int T = 1054, float learning_rate = 1e-3,
+         const std::string &backup_dir = "bots/bot-bc-fap/backup/agent_backup")
         : training(training), auto_pilot(auto_pilot), T(T), learning_rate(learning_rate), backup_dir(backup_dir) {
 
 #if defined(DISTRIBUTED_LEARNING)

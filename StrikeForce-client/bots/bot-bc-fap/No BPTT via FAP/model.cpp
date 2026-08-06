@@ -258,9 +258,9 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
     AFCBackboneSparse afc{nullptr};
     torch::nn::Linear  proj_in{nullptr};
     torch::nn::LayerNorm proj_norm{nullptr};
-    PreLNAttnBlock tf_value{nullptr}, tf_policy{nullptr};
+    PreLNAttnBlock /*tf_value{nullptr},*/ tf_policy{nullptr};
     torch::Tensor cls_token, pos_embed;
-    torch::nn::Linear value_head{nullptr}, policy_head{nullptr};
+    torch::nn::Linear /*value_head{nullptr},*/ policy_head{nullptr};
     
     std::vector<torch::nn::Linear> pred_heads;
 
@@ -285,14 +285,14 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
         proj_norm = register_module("proj_norm", torch::nn::LayerNorm(
                         torch::nn::LayerNormOptions({d_model})));
 
-        tf_value  = register_module("tf_value",  PreLNAttnBlock(d_model, 10));
+        //tf_value  = register_module("tf_value",  PreLNAttnBlock(d_model, 10));
         tf_policy = register_module("tf_policy", PreLNAttnBlock(d_model, 10));
 
         cls_token = register_parameter("cls_token", torch::randn({1, 1, d_model}) * 0.02);
         pos_embed = register_parameter("pos_embed",
                         torch::randn({1, 1 + WINDOW_SIZE, d_model}) * 0.02);
 
-        value_head  = register_module("value_head",  torch::nn::Linear(d_model, 1));
+        //value_head  = register_module("value_head",  torch::nn::Linear(d_model, 1));
         policy_head = register_module("policy_head", torch::nn::Linear(d_model, N_ACTIONS));
 
         reset_memory();
@@ -319,8 +319,8 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
         }
 
         // Build current timestep feature
-        auto afc_out = afc->forward(x);                         // [B, 1, 256]
-        auto A_vec   = afc_out.squeeze(1);                      // [B, 256]
+        auto afc_out = afc->forward(x);                         // [B, 1, afc_d_out2]
+        auto A_vec   = afc_out.squeeze(1);                      // [B, afc_d_out2]
 
         std::vector<torch::Tensor> prog;
         for (auto &pred_head: pred_heads)
@@ -332,18 +332,20 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
                                 FIXED_ROW, FIXED_COL});         // [B, C]
         auto C_vec   = torch::one_hot(prev_action, N_ACTIONS)
                            .to(A_vec.dtype());
-        auto x_cat   = torch::cat({A_vec.detach(), B_vec, C_vec}, 1);   // [B, 297]
-        auto x_proj  = proj_norm->forward(proj_in->forward(x_cat));     // [B, d_model]
+        auto x_cat   = torch::cat({A_vec.detach(), B_vec, C_vec}, 1);   // [B, afc_d_out2+C+N_ACTIONS]
 
         // Push new token, pop oldest once past the window — out-of-place,
         // each element keeps its own graph, no version-counter issues.
-        buffer_queue.push_back(x_proj);
-        if ((int64_t)buffer_queue.size() > WINDOW_SIZE) {
+        buffer_queue.push_back(x_cat);
+        if ((int64_t)buffer_queue.size() > WINDOW_SIZE)
             buffer_queue.pop_front();
-        }
 
         // Stack the current window in chronological order: [B, L, d_model]
-        std::vector<torch::Tensor> frames(buffer_queue.begin(), buffer_queue.end());
+        std::vector<torch::Tensor> raw_frames(buffer_queue.begin(), buffer_queue.end()), frames;
+
+        for (int i = 0; i < raw_frames.size(); ++i)
+            frames.push_back(proj_norm->forward(proj_in->forward(raw_frames[i]))); // [B, d_model]
+
         auto seq_buffer = torch::stack(frames, 1);
         int64_t L_hist = seq_buffer.size(1);
 
@@ -359,9 +361,9 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
 
         //out         = tf_value->forward_self(seq);
         //cls_out     = out.index({I::Slice(), 0});
-        auto value  = torch::zeros({}); //value_head->forward(cls_out);
+        //auto value  = value_head->forward(cls_out);
 
-        return {pred, logits, value};
+        return {pred, logits/*, value*/};
     }
 };
 TORCH_MODULE(PlayerPolicyNet);
@@ -494,7 +496,6 @@ EpisodeResult process_episode(PlayerPolicyNet& model,
     }
 
     model->reset_memory();
-    model->zero_grad();   // one clear at the start
 
     double loss_sum = 0.0;        // for logging
     int64_t valid_count = 0;      // number of policy‑loss steps (t >= padding)
@@ -508,14 +509,13 @@ EpisodeResult process_episode(PlayerPolicyNet& model,
         auto logits = out[1];    // [1, N_ACTIONS]
 
         // Build step loss (policy loss + future loss)
-        torch::Tensor step_loss = torch::zeros({}, device);
+        torch::Tensor step_loss = torch::zeros({1}, device);
 
         // Policy loss (only for t >= padding)
         if (t >= padding) {
             auto target = actions.select(1, t);     // [1]
             auto pol_loss = focal_loss(logits, target, gamma);
-            step_loss += pol_loss;
-            valid_count++;      // count only policy‑loss steps
+            step_loss += pol_loss;    
         }
 
         // Future loss (only if there are enough future steps)
@@ -538,33 +538,25 @@ EpisodeResult process_episode(PlayerPolicyNet& model,
     }
 
     EpisodeResult result;
-    result.valid_count = valid_count;
+    result.valid_count = T - padding;
     result.loss_sum = loss_sum;   // sum of per‑step losses
 
-    // Clone gradients for the aggregator
-    for (auto& param : model->parameters()) {
-        if (param.grad().defined())
-            result.grads.push_back(param.grad().clone().detach());
-        else
-            result.grads.push_back(torch::zeros_like(param));
-    }
-
     model->reset_memory();
-    model->zero_grad();   // clear for next episode
 
     return result;
 }
 
 // ---------- set model gradients to weighted average of collected grads ----------
-void set_total_grad(PlayerPolicyNet& model,
-                            const std::vector<torch::Tensor>& grad, int n) {
-
-    model->zero_grad();
-
-    int sz = model->parameters().size();
-
-    for (size_t i = 0; i < sz; ++i)
-        model->parameters()[i].mutable_grad() = grad[i].detach() / n;
+void set_total_grad(PlayerPolicyNet& model, int n) {
+    auto params = model->parameters();
+    for (size_t i = 0; i < params.size(); ++i) {
+        auto& param = params[i];
+        if (param.grad().defined()) {
+            param.mutable_grad() = param.grad().clone().detach() / n;
+        } else {
+            param.mutable_grad() = torch::zeros_like(param);
+        }
+    }
 }
 
 // -----------------------------------------------------------------------
@@ -573,13 +565,10 @@ void set_total_grad(PlayerPolicyNet& model,
 int main(int argc, char* argv[]) {
     // Defaults
     std::string data_dir = "data";
-    //int64_t K = 128;           // action frequency threshold (no longer used — all actions valid)
-    int num_epochs = 200;
+    int num_epochs = 2;
 
     if (argc > 1) data_dir = argv[1];
-    //if (argc > 2) K = std::stoi(argv[2]);   // kept for backward compatibility but ignored
-    //if (argc > 3) num_epochs = std::stoi(argv[3]);
-    if (argc > 3) num_epochs = std::stoi(argv[2]);
+    if (argc > 2) num_epochs = std::stoi(argv[2]);
 
     torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
     std::cout << "Using device: " << device << std::endl;
@@ -623,7 +612,7 @@ int main(int argc, char* argv[]) {
     }
 
     // 3. Training loop
-    const int64_t BATCH_SIZE = 16;
+    const int64_t BATCH_SIZE = 2;
     const int64_t PADDING = model->PRED_HEADS;
     const double GAMMA = 2.0;
 
@@ -639,22 +628,16 @@ int main(int argc, char* argv[]) {
         int batches_done = 0;
 
         for (size_t start = 0; start + BATCH_SIZE <= indices.size(); start += BATCH_SIZE) {
-            std::vector<torch::Tensor> total_grad;
             double batch_loss_sum = 0.0;
             int64_t batch_valid_total = 0;
-
-            for (auto& param : model->parameters())
-                total_grad.push_back(torch::zeros_like(param));
-
-            // --- All actions are valid (mask removed) ---
-            torch::Tensor valid_mask = torch::ones({9}, torch::kBool).to(device);
+            model->zero_grad();
 
             // 1. Process each episode individually
             for (int64_t b = 0; b < BATCH_SIZE; ++b) {
                 auto st = std::chrono::high_resolution_clock::now();
 
                 auto [states, actions] = load_episode(episode_files[indices[start + b]], device);
-                auto result = process_episode(model, states, actions, valid_mask, GAMMA, PADDING);
+                auto result = process_episode(model, states, actions, GAMMA, PADDING);
 
                 auto en = std::chrono::high_resolution_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);
@@ -662,16 +645,9 @@ int main(int argc, char* argv[]) {
                 std::cout << "Execution time (to load and process ep, batch sample " << b
                      << "):\n" << ((int)duration.count()) / 1000000.0 << " s" << std::endl;
 
-                if (result.valid_count > 0) {
-                    int sz = model->parameters().size();
-
-                    for (int i = 0; i < sz; ++i)
-                        total_grad[i] = total_grad[i].detach() + 
-                        result.grads[i].detach();
-
-                    batch_loss_sum += result.loss_sum;
-                    batch_valid_total += result.valid_count;
-                }
+                batch_loss_sum += result.loss_sum;
+                batch_valid_total += result.valid_count;
+                
             }
 
             // 2. Aggregate gradients & step
@@ -679,9 +655,10 @@ int main(int argc, char* argv[]) {
 
                 auto st = std::chrono::high_resolution_clock::now();
 
-                set_total_grad(model, total_grad, batch_valid_total);
+                set_total_grad(model, batch_valid_total);
                 torch::nn::utils::clip_grad_norm_(model->parameters(), 1.0);
                 optimizer->step();
+                model->zero_grad();
 
                 auto en = std::chrono::high_resolution_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);

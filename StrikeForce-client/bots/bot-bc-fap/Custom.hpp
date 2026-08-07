@@ -164,7 +164,7 @@ namespace Environment::Field{
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+xzqeawsd";
-		player.agent = new Agent(/*training=*/true, /*auto_pilot=*/false);
+		player.agent = new Agent(/*data_gathering=*/true, /*inference=*/false);
 		player.set_agent_active();
 	}
 

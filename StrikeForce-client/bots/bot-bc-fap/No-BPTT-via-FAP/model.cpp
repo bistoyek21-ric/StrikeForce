@@ -1,3 +1,28 @@
+/*
+MIT License
+
+Copyright (c) 2025 bistoyek21 R.I.C.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
 #include <torch/torch.h>
 #include <torch/optim/adamw.h>
 #include <iostream>
@@ -12,7 +37,7 @@
 #include <map>
 #include <chrono>
 
-//g++ -std=c++17 model.cpp -o a -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda  && clear && ./a
+//g++ -std=c++17 model.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda  && clear && ./app
 
 namespace fs = std::filesystem;
 
@@ -404,15 +429,16 @@ torch::Tensor future_pred_focal_loss(
 void save_checkpoint(PlayerPolicyNet& model,
                      std::unique_ptr<torch::optim::AdamW>& optimizer,
                      int epoch,
-                     double best_loss,
+                     double best_val_loss,
                      const std::string& model_path,
                      const std::string& optim_path,
                      const std::string& meta_path) {
+    model->reset_memory();
     torch::save(model, model_path);
     torch::save(*optimizer, optim_path);
 
     std::ofstream meta(meta_path);
-    meta << epoch << "\n" << best_loss << "\n";
+    meta << epoch << "\n" << best_val_loss << "\n";
 }
 
 std::tuple<int, double> load_checkpoint(
@@ -444,10 +470,10 @@ std::tuple<int, double> load_checkpoint(
     // no manual per-tensor .to(device) loop required anymore.
 
     int epoch;
-    double best_loss;
+    double best_val_loss;
     std::ifstream meta(meta_path);
-    meta >> epoch >> best_loss;
-    return {epoch, best_loss};
+    meta >> epoch >> best_val_loss;
+    return {epoch, best_val_loss};
 }
 
 // ---------- helper: load a single episode from disk ----------
@@ -546,6 +572,53 @@ EpisodeResult process_episode(PlayerPolicyNet& model,
     return result;
 }
 
+struct EvalResult {
+    double loss_sum;
+    int64_t valid_count;
+};
+
+EvalResult evaluate_episode(PlayerPolicyNet& model,
+                            torch::Tensor states,
+                            torch::Tensor actions,
+                            double gamma, int64_t padding,
+                            double gamma_future = 0.9) {
+    auto device = states.device();
+    int64_t T = states.size(1);
+    double sum_w = 0.0, tmp = 1.0;
+    for (int i = 0; i < padding + 1; ++i) {
+        sum_w += tmp;
+        tmp *= gamma_future;
+    }
+    model->reset_memory();
+    double loss_sum = 0.0;
+    int64_t valid_count = 0;
+    auto prev_action = torch::tensor({5}, torch::kLong).to(device);
+    torch::NoGradGuard no_grad;   // prevent gradient
+    for (int64_t t = 0; t < T; ++t) {
+        auto x = states.select(1, t);
+        auto out = model->forward(x, prev_action);
+        auto pred = out[0];
+        auto logits = out[1];
+        torch::Tensor step_loss = torch::zeros({1}, device);
+        if (t >= padding) {
+            auto target = actions.select(1, t);
+            auto pol_loss = focal_loss(logits, target, gamma);
+            step_loss += pol_loss;
+        }
+        if (t < T - padding) {
+            auto future_targets = actions.slice(1, t, t + padding);
+            auto aux_loss = future_pred_focal_loss(pred, future_targets, gamma_future);
+            step_loss += aux_loss / sum_w;
+        }
+        if (step_loss.defined() && step_loss.numel() > 0) {
+            loss_sum += step_loss.item<double>();
+        }
+        prev_action = actions.select(1, t);
+    }
+    model->reset_memory();
+    return {loss_sum, T - padding};
+}
+
 // ---------- set model gradients to weighted average of collected grads ----------
 void set_total_grad(PlayerPolicyNet& model, int n) {
     auto params = model->parameters();
@@ -564,11 +637,13 @@ void set_total_grad(PlayerPolicyNet& model, int n) {
 // -----------------------------------------------------------------------
 int main(int argc, char* argv[]) {
     // Defaults
-    std::string data_dir = "data";
+    std::string data_dir = "../dataset/data_train";
+    std::string val_dir = "../dataset/data_val";   // new
     int num_epochs = 2;
 
     if (argc > 1) data_dir = argv[1];
     if (argc > 2) num_epochs = std::stoi(argv[2]);
+    if (argc > 3) val_dir = argv[3];       // new
 
     torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
     std::cout << "Using device: " << device << std::endl;
@@ -585,25 +660,36 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "Found " << episode_files.size() << " episodes." << std::endl;
 
+    std::vector<std::string> val_files;
+    if (fs::exists(val_dir)) {
+        for (const auto& entry : fs::directory_iterator(val_dir)) {
+            if (entry.path().extension() == ".pt")
+                val_files.push_back(entry.path().string());
+        }
+        std::cout << "Found " << val_files.size() << " validation episodes." << std::endl;
+    } else {
+        std::cout << "Validation directory not found, skipping validation." << std::endl;
+    }
+
     // 2. Model and optimizer
     PlayerPolicyNet model{nullptr};
     std::unique_ptr<torch::optim::AdamW> optimizer{nullptr};
 
     model = PlayerPolicyNet();
 
-    const std::string model_path = "model.pt";
-    const std::string optim_path = "optimizer.pt";
-    const std::string meta_path  = "meta.txt";
+    const std::string model_path = "../backup/model.pt";
+    const std::string optim_path = "../backup/optimizer.pt";
+    const std::string meta_path  = "../backup/meta.txt";
 
     int start_epoch = 0;
-    double best_loss = std::numeric_limits<double>::infinity();
+    double best_val_loss = std::numeric_limits<double>::infinity();
 
     if (fs::exists(model_path) && fs::exists(optim_path) && fs::exists(meta_path)) {
-        std::tie(start_epoch, best_loss) =
+        std::tie(start_epoch, best_val_loss) =
             load_checkpoint(model, device, model_path, optim_path, meta_path, optimizer);
         start_epoch += 1;
         std::cout << "Resumed from epoch " << (start_epoch-1)
-                  << " with best loss " << best_loss << std::endl;
+                  << " with best loss " << best_val_loss << std::endl;
     } else {
         model->to(device);
         optimizer = std::make_unique<torch::optim::AdamW>(
@@ -678,21 +764,49 @@ int main(int argc, char* argv[]) {
             }
         } // end batch loop
 
-        // Epoch summary (unchanged)
+        // ---------- Validation phase ----------
+        double val_avg = 0.0;
+        if (!val_files.empty()) {
+            double val_loss_sum = 0.0;
+            int64_t val_valid_cnt = 0;
+            for (const auto& f : val_files) {
+                auto [states, actions] = load_episode(f, device);
+                auto result = evaluate_episode(model, states, actions, GAMMA, PADDING);
+                val_loss_sum += result.loss_sum;
+                val_valid_cnt += result.valid_count;
+            }
+            if (val_valid_cnt > 0) {
+                val_avg = val_loss_sum / val_valid_cnt;
+                std::cout << "=== Epoch " << epoch
+                          << " validation avg loss: " << val_avg
+                          << " (" << val_valid_cnt << " decisions) ===" << std::endl;
+            } else {
+                std::cout << "Epoch " << epoch << " validation had no valid decisions." << std::endl;
+            }
+        }
+
+        // ---------- Epoch summary & checkpoint ----------
         if (epoch_valid_cnt > 0) {
             double epoch_avg = epoch_loss_sum / epoch_valid_cnt;
             std::cout << "=== Epoch " << epoch
-                      << " overall avg loss: " << epoch_avg
+                      << " training avg loss: " << epoch_avg
                       << " (" << epoch_valid_cnt << " decisions) ===" << std::endl;
-            if (epoch_avg < best_loss) {
-                best_loss = epoch_avg;
-                save_checkpoint(model, optimizer, epoch, best_loss,
+
+            if (!val_files.empty() && val_avg < best_val_loss) {
+                best_val_loss = val_avg;
+                save_checkpoint(model, optimizer, epoch, best_val_loss,
                                 model_path, optim_path, meta_path);
-                std::cout << "Checkpoint saved (new best)." << std::endl;
+                std::cout << "Checkpoint saved (new best validation loss)." << std::endl;
+            } else if (val_files.empty() && epoch_avg < best_val_loss) {
+                best_val_loss = epoch_avg;
+                save_checkpoint(model, optimizer, epoch, best_val_loss,
+                                model_path, optim_path, meta_path);
+                std::cout << "Checkpoint saved (new best training loss)." << std::endl;
             }
         } else {
-            std::cout << "Epoch " << epoch << " had no valid decisions." << std::endl;
+            std::cout << "Epoch " << epoch << " had no valid training decisions." << std::endl;
         }
+        
     }
 
     std::cout << "Training finished." << std::endl;

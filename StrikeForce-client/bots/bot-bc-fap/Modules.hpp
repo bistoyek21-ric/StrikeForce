@@ -22,11 +22,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-#if defined(DISTRIBUTED_LEARNING)
-#include "AgentClient.hpp"
-#else
 #include "../../basic.hpp"
-#endif
 
 #pragma once
 
@@ -43,8 +39,6 @@ SOFTWARE.
 #include <set>
 #include <map>
 #include <chrono>
-
-//g++ -std=c++17 model.cpp -o a -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda  && clear && ./a
 
 namespace fs = std::filesystem;
 

@@ -23,7 +23,7 @@ SOFTWARE.
 
 */
 
-//g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system
+//g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system && ./app
 // Add -lws2_32 on Windows
 
 #include "Modules.hpp"          // brings PlayerPolicyNet, TORCH_MODULE etc.
@@ -43,6 +43,8 @@ public:
           model_dir_(model_dir),
           dataset_dir_(dataset_dir)
     {
+        prev_action_ = torch::tensor({5}, torch::kLong);
+        
         // 1. Load model
         if(inference_mode_)
             model_ = PlayerPolicyNet();
@@ -79,7 +81,7 @@ public:
         if (inference_mode_)
             log("=========\nAgent parameters: " + std::to_string(param_count()));
         else
-            log("=========\n---------\n");
+            log("=========\n---------");
         
         log("Inference mode : " + std::to_string(inference_mode_));
         log("Data gathering : " + std::to_string(data_gathering_mode_));
@@ -90,11 +92,12 @@ public:
 
         if (inference_mode_) {
             model_->eval();          // always eval – no training gradients needed
-            prev_action_ = torch::tensor({5}, torch::kLong);
             auto dummy = torch::zeros({1, num_channels_, grid_size_, grid_size_});
             model_->forward(dummy, prev_action_);
             model_->reset_memory();
         }
+
+        freq_ = torch::zeros({num_actions_});
     }
 
     ~Agent() {
@@ -111,7 +114,7 @@ public:
         // During warm‑up (before T_warm_up_) we play randomly
         if (!warmup_finished_)
             return rand() % num_actions_;
-
+        
         auto state = torch::tensor(obs, torch::kFloat32).view({1, num_channels_, grid_size_, grid_size_});
 
         // Store state for episode saving (if data gathering is on)
@@ -138,9 +141,14 @@ public:
     void update(int action, bool imitate) {
         if (cnt_ <= T_initial_ || !warmup_finished_)
             return;
-
+        
+        if(action < 0 || num_actions_ < action)
+            action = 0;
+        
         // Update RNN state for next step (always needed)
         prev_action_ = torch::tensor({action}, torch::kLong);
+
+        freq_[action] += 1;
 
         // Recording: only if data_gathering_mode_ is true and we are past warm‑up
         if (data_gathering_mode_) {
@@ -158,16 +166,21 @@ public:
     //  is_manual – tells the environment whether to listen to human input
     // ---------------------------------------------------------------
     bool is_manual() {
-        if (cnt_ <= T_initial_)
+        if (cnt_ < T_initial_) {
             ++cnt_;
+            return true;
+        }
 
         // During session warm‑up (first T_warm_up_ frames after T_initial_) → random, not manual
-        if (cnt_ == T_initial_ + 1 && cnt_warm_up_ < T_warm_up_) {
+        if (cnt_ >= T_initial_ && cnt_warm_up_ < T_warm_up_) {
             ++cnt_warm_up_;
+            ++cnt_;
             if (cnt_warm_up_ == T_warm_up_) {
                 warmup_finished_ = true;
-                log("Warm-up finished. manual=" + std::to_string(!inference_mode_) +
-                    ", recording=" + std::to_string(data_gathering_mode_));
+
+                log("---------");
+                
+                return !inference_mode_;
             }
             return false;   // not manual yet
         }
@@ -191,9 +204,9 @@ private:
             return;
         }
 
-        // Stack into tensors: [T, C, H, W] and [T]
-        auto states_tensor = torch::stack(episode_states_, 0);
-        auto actions_tensor = torch::stack(episode_actions_, 0).squeeze(-1); // [T]
+        // Stack into tensors: [1, T, C, H, W] and [1, T]
+        auto states_tensor = torch::stack(episode_states_, 0).squeeze(1).unsqueeze(0);
+        auto actions_tensor = torch::stack(episode_actions_, 0).squeeze(-1).unsqueeze(0);
 
         std::string path = dataset_dir_ + "/episode_" + std::to_string(episode_count_) + ".pt";
         torch::serialize::OutputArchive archive;
@@ -201,8 +214,14 @@ private:
         archive.write("actions", actions_tensor);
         archive.save_to(path);
 
+
         log("Episode saved: " + path + " (" + std::to_string(states_tensor.size(0)) + " frames)");
+        log("frequency:");
+        log(freq_ / states_tensor.size(0));
+
         episode_count_++;
+
+        freq_ = torch::zeros({num_actions_});
 
         // Clean up
         episode_states_.clear();
@@ -210,6 +229,7 @@ private:
         
         if (inference_mode_)
             model_->reset_memory();   // reset sliding window for next episode
+        std::cout << "Episode saved!" << std::endl;
     }
 
     // ---------------------------------------------------------------
@@ -238,12 +258,12 @@ private:
     int T_;
     int cnt_ = 0, cnt_warm_up_ = 0;
     static constexpr int T_initial_ = 512, T_warm_up_ = 128;
-    static constexpr int num_actions_ = 9, num_channels_ = 32, grid_size_ = 31;
+    static constexpr int num_actions_ = 7, num_channels_ = 32, grid_size_ = 31;
 
     std::string model_dir_, dataset_dir_;
     PlayerPolicyNet model_{nullptr};
 
-    torch::Tensor prev_action_;
+    torch::Tensor prev_action_, freq_;
     std::vector<torch::Tensor> episode_states_;   // raw observations [1,C,H,W] each step
     std::vector<torch::Tensor> episode_actions_;  // action tensors [1]
 

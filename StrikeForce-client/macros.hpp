@@ -19,6 +19,8 @@
 
 #define SLOWMOTION
 
+//#define DATA_GATHERING_MODE
+
 #define DATASET "datasets/bot-bc"
 
 //datasets/bot-bc/Solo-online:0-lvl:10/(Sat Jun  6 09:10:26 2026).sf_sample

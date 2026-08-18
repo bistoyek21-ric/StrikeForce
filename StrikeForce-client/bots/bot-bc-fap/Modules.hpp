@@ -275,7 +275,7 @@ struct AFCBackboneSparseImpl : torch::nn::Module {
 TORCH_MODULE(AFCBackboneSparse);
 
 struct PlayerPolicyNetImpl : torch::nn::Module {
-    static constexpr int64_t N_ACTIONS   = 9;
+    static constexpr int64_t N_ACTIONS   = 7;
     static constexpr int64_t FIXED_ROW   = 15, FIXED_COL = 15;
     static constexpr int64_t WINDOW_SIZE = 31, PRED_HEADS = 31;
     static constexpr int64_t d_model     = 300;

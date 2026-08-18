@@ -456,7 +456,7 @@ namespace Environment::Field{
 
 		std::string action, mode;
 
-		const int L = 10, pc = 30, pz = 40, ph = 50, wdx[4] = {1, 0, -1, 0}, wdy[4] = {0, 1, 0, -1};
+		const int L = 9, pc = 10, pz = 13, ph = 17, wdx[4] = {1, 0, -1, 0}, wdy[4] = {0, 1, 0, -1};
 
 		long long loot, level, teams_kills, kills, chest, frame, serial_number;
 
@@ -1183,6 +1183,7 @@ namespace Environment::Field{
 				}
 				return false;
 			}
+#if !defined(DATA_GATHERING_MODE)
 			if(level * 5 <= kills && mode == "Solo"){
 				std::string s = "You won :)\n";
 				if (!using_an_agent){
@@ -1229,6 +1230,7 @@ namespace Environment::Field{
 				while(getch() != ' ');
 				return true;
 			}
+#endif
 			return false;
 		}
 

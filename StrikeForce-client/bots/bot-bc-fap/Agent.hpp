@@ -60,6 +60,8 @@ public:
             }
         }
 
+        model_->to(torch::kCPU);
+
         // 2. Prepare dataset directory
         if (!dataset_dir_.empty()) {
             if (!std::filesystem::exists(dataset_dir_))

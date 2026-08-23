@@ -112,7 +112,15 @@ target_link_libraries(myapp PRIVATE sfml::graphics sfml::window sfml::system)
 
 ## 4) libtorch (PyTorch C++ distribution)
 
-LibTorch is provided by PyTorch as precompiled archives for different OSes and compute platforms (CPU / CUDA). You download the archive from the PyTorch site (Get Started → C++ / LibTorch). Use CMAKE_PREFIX_PATH to point to libtorch when building.  
+LibTorch is provided by PyTorch as precompiled archives for different OSes and compute platforms (CPU / CUDA). You download the archive from the PyTorch site (Get Started → C++ / LibTorch). Use CMAKE_PREFIX_PATH to point to libtorch when building, or in `~/.bashrc` add this:
+
+```bash
+# ============== LibTorch Paths ==============
+export CPLUS_INCLUDE_PATH=~/libtorch-cxx11-abi-shared-with-deps-2.0.0+cu117/libtorch/include:~/libtorch-cxx11-abi-shared-with-deps-2.0.0+cu117/libtorch/include/torch/csrc/api/include:$CPLUS_INCLUDE_PATH
+export LIBRARY_PATH=~/libtorch-cxx11-abi-shared-with-deps-2.0.0+cu117/libtorch/lib:$LIBRARY_PATH
+export LD_LIBRARY_PATH=~/libtorch-cxx11-abi-shared-with-deps-2.0.0+cu117/libtorch/lib:$LD_LIBRARY_PATH
+# =============================================
+```
 
 ### Windows:
  1. Go to PyTorch “Get Started” → choose C++ / LibTorch, pick CPU or CUDA build and download the .zip.  

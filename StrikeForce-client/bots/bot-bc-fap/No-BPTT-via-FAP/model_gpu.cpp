@@ -38,7 +38,7 @@ SOFTWARE.
 #include <chrono>
 #include <iomanip>
 
-//g++ -std=c++17 model.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && clear && ./app
+//g++ -std=c++17 model_gpu.cpp -o app_gpu -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && clear && ./app_gpu
 
 namespace fs = std::filesystem;
 
@@ -192,12 +192,10 @@ struct AFCStageSparseImpl : torch::nn::Module {
         rows_idx.reserve(cell_set.size()); cols_idx.reserve(cell_set.size());
         for (auto& p : cell_set) { rows_idx.push_back(p.first); cols_idx.push_back(p.second); }
 
-        // FIX: these were plain CPU tensors before — now moved to x's device
         auto ridx_t = torch::tensor(rows_idx, torch::kLong).to(x.device());
         auto cidx_t = torch::tensor(cols_idx, torch::kLong).to(x.device());
         auto values = fuse_selected(row_tok, col_tok, ridx_t, cidx_t, ridx_t, cidx_t);
 
-        // cell_index stays CPU — it's only ever indexed by CPU tensors later
         auto cell_index = torch::full({n, n}, -1, torch::kLong);
         for (size_t k = 0; k < rows_idx.size(); ++k)
             cell_index[rows_idx[k]][cols_idx[k]] = (int64_t)k;
@@ -214,11 +212,9 @@ struct AFCStageSparseImpl : torch::nn::Module {
         auto row_ids_t = torch::tensor(g.unique_rows, torch::kLong);
         auto col_ids_t = torch::tensor(g.unique_cols, torch::kLong);
 
-        // These two index_select calls stay CPU-on-CPU (cell_index is CPU) — fine
         auto row_gather = g.cell_index.index_select(0, row_ids_t);
         auto col_gather = g.cell_index.index_select(1, col_ids_t).transpose(0,1);
 
-        // FIX: move the *results* to v's device before using them to index v
         row_gather = row_gather.to(v.device());
         col_gather = col_gather.to(v.device());
 
@@ -246,7 +242,6 @@ struct AFCStageSparseImpl : torch::nn::Module {
             c_id.push_back(pc.second);
         }
 
-        // FIX: all four moved to v's device
         auto r_sel_t = torch::tensor(r_sel, torch::kLong).to(v.device());
         auto c_sel_t = torch::tensor(c_sel, torch::kLong).to(v.device());
         auto r_id_t  = torch::tensor(r_id,  torch::kLong).to(v.device());
@@ -271,7 +266,7 @@ struct AFCBackboneSparseImpl : torch::nn::Module {
         const std::vector<std::pair<int64_t,int64_t>>& coords
             = {std::pair<int64_t,int64_t>{15, 15}}) {
         auto g1 = stage1->forward_stage1(x, coords);
-        return stage2->forward_stage2(g1, coords);              // [B, P, d_out2]
+        return stage2->forward_stage2(g1, coords);
     }
 };
 TORCH_MODULE(AFCBackboneSparse);
@@ -285,18 +280,14 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
     AFCBackboneSparse afc{nullptr};
     torch::nn::Linear  proj_in{nullptr};
     torch::nn::LayerNorm proj_norm{nullptr};
-    PreLNAttnBlock /*tf_value{nullptr},*/ tf_policy{nullptr};
+    PreLNAttnBlock tf_policy{nullptr};
     torch::Tensor cls_token, pos_embed;
-    torch::nn::Linear /*value_head{nullptr},*/ policy_head{nullptr};
+    torch::nn::Linear policy_head{nullptr};
     
     std::vector<torch::nn::Linear> pred_heads;
 
-    // --- sliding-window buffer (replaces the old in-place ring buffer) ---
-    // Each element keeps its own autograd graph. Pushing/popping naturally
-    // truncates gradient flow once a token falls outside WINDOW_SIZE frames,
-    // with no in-place writes and no manual detach() needed for that purpose.
-    std::deque<torch::Tensor> buffer_queue;   // each: [B, d_model]
-    int64_t buffer_batch_size = -1;           // tracks B to know when to reset
+    std::deque<torch::Tensor> buffer_queue;
+    int64_t buffer_batch_size = -1;
 
     PlayerPolicyNetImpl(int64_t C_ = 32, int64_t n_ = 31, int64_t afc_d_out2 = 256)
         : n(n_), C(C_) {
@@ -307,82 +298,72 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
                 register_module("pred_head_" + std::to_string(i), torch::nn::Linear(afc_d_out2, N_ACTIONS))
             );
 
-        int64_t concat_dim = afc_d_out2 + C + N_ACTIONS; // 297
+        int64_t concat_dim = afc_d_out2 + C + N_ACTIONS;
         proj_in   = register_module("proj_in",  torch::nn::Linear(concat_dim, d_model));
         proj_norm = register_module("proj_norm", torch::nn::LayerNorm(
                         torch::nn::LayerNormOptions({d_model})));
 
-        //tf_value  = register_module("tf_value",  PreLNAttnBlock(d_model, 10));
         tf_policy = register_module("tf_policy", PreLNAttnBlock(d_model, 10));
 
         cls_token = register_parameter("cls_token", torch::randn({1, 1, d_model}) * 0.02);
         pos_embed = register_parameter("pos_embed",
                         torch::randn({1, 1 + WINDOW_SIZE, d_model}) * 0.02);
 
-        //value_head  = register_module("value_head",  torch::nn::Linear(d_model, 1));
         policy_head = register_module("policy_head", torch::nn::Linear(d_model, N_ACTIONS));
 
         reset_memory();
     }
 
-    // Call this at every true episode boundary. Fully clears the sliding
-    // window so no context (value or gradient) leaks across episodes.
     void reset_memory() {
         buffer_queue.clear();
         buffer_batch_size = -1;
     }
 
     std::vector<torch::Tensor> forward(
-        torch::Tensor x, torch::Tensor prev_action) {
+        torch::Tensor x, torch::Tensor prev_action, torch::Tensor active = {}) {
 
         namespace I = torch::indexing;
         auto B = x.size(0);
         auto device = x.device();
 
-        // If batch size changes mid-use, the queue no longer makes sense — reset.
         if (buffer_batch_size != B) {
             reset_memory();
             buffer_batch_size = B;
         }
 
-        // Build current timestep feature
-        auto afc_out = afc->forward(x);                         // [B, 1, afc_d_out2]
-        auto A_vec   = afc_out.squeeze(1);                      // [B, afc_d_out2]
+        auto afc_out = afc->forward(x);
+        auto A_vec   = afc_out.squeeze(1);
 
         std::vector<torch::Tensor> prog;
         for (auto &pred_head: pred_heads)
-            prog.push_back(pred_head->forward(A_vec).unsqueeze(1));               // [B, 1, N_ACTIONS]
+            prog.push_back(pred_head->forward(A_vec).unsqueeze(1));
 
-        auto pred = torch::stack(prog, 1).squeeze(2);                                        // [B, PRED_HEADS, N_ACTIONS]
+        auto pred = torch::stack(prog, 1).squeeze(2);
 
         auto B_vec   = x.index({I::Slice(), I::Slice(),
-                                FIXED_ROW, FIXED_COL}).clone();         // [B, C]
+                                FIXED_ROW, FIXED_COL}).clone();
         auto C_vec   = torch::one_hot(prev_action, N_ACTIONS)
                            .to(A_vec.dtype());
-        
-        //if (rand() % 1 == 0)
-        //    C_vec *= 0, B_vec *= 1;
+        auto x_cat   = torch::cat({A_vec.detach(), B_vec, C_vec}, 1);
 
-        auto x_cat   = torch::cat({A_vec.detach(), B_vec, C_vec}, 1);   // [B, afc_d_out2+C+N_ACTIONS]
+        if (active.defined()) {
+            x_cat = x_cat * active.to(x_cat.dtype()).unsqueeze(-1);
+        }
 
-        // Push new token, pop oldest once past the window — out-of-place,
-        // each element keeps its own graph, no version-counter issues.
         buffer_queue.push_back(x_cat);
         if ((int64_t)buffer_queue.size() > WINDOW_SIZE)
             buffer_queue.pop_front();
 
-        // Stack the current window in chronological order: [B, L, d_model]
         std::vector<torch::Tensor> raw_frames(buffer_queue.begin(), buffer_queue.end()), frames;
 
         for (int i = 0; i < raw_frames.size(); ++i)
-            frames.push_back(proj_norm->forward(proj_in->forward(raw_frames[i]))); // [B, d_model]
+            frames.push_back(proj_norm->forward(proj_in->forward(raw_frames[i])));
 
         auto seq_buffer = torch::stack(frames, 1);
         int64_t L_hist = seq_buffer.size(1);
 
-        // Prepend CLS and add positional encoding
         auto cls = cls_token.expand({B, 1, d_model});
-        auto seq = torch::cat({cls, seq_buffer}, 1);           // [B, 1+L_hist, d_model]
+        auto seq = torch::cat({cls, seq_buffer}, 1);
         int64_t L = L_hist + 1;
         seq = seq + pos_embed.index({I::Slice(), I::Slice(0, L)});
 
@@ -390,11 +371,7 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
         auto cls_out = out.index({I::Slice(), 0});
         auto logits  = policy_head->forward(cls_out);
 
-        //out         = tf_value->forward_self(seq);
-        //cls_out     = out.index({I::Slice(), 0});
-        //auto value  = value_head->forward(cls_out);
-
-        return {pred, logits/*, value*/};
+        return {pred, logits};
     }
 };
 TORCH_MODULE(PlayerPolicyNet);
@@ -412,25 +389,42 @@ torch::Tensor focal_loss(torch::Tensor logits, torch::Tensor targets, double gam
 }
 
 torch::Tensor future_pred_loss(
-    torch::Tensor pred,                    // [B, PRED_HEADS, N_ACTIONS]
-    torch::Tensor future_actions,          // [B, PRED_HEADS] (int64)
+    torch::Tensor pred,
+    torch::Tensor future_actions,
     double gamma_future = 0.9,
     double gamma = 2.0
 ) {
-    auto B = pred.size(0);
-    auto H = pred.size(1);   // PRED_HEADS
-    auto N = pred.size(2);   // N_ACTIONS
+    auto H = pred.size(1);
 
     auto weights = torch::pow(gamma_future, torch::arange(H, pred.options()))
-                        .view({1, H, 1});   // [1, H, 1]
+                        .view({1, H, 1});
 
-    auto log_probs = torch::log_softmax(pred, -1);  // [B, H, N]
+    auto log_probs = torch::log_softmax(pred, -1);
 
-    auto gathered = log_probs.gather(-1, future_actions.unsqueeze(-1)).squeeze(-1); // [B, H]
+    auto gathered = log_probs.gather(-1, future_actions.unsqueeze(-1)).squeeze(-1);
     auto loss_per_step = -gathered * weights.squeeze(-1);
 
     auto loss = loss_per_step.sum();
     return loss;
+}
+
+torch::Tensor future_pred_loss_per_sample(
+    torch::Tensor pred,
+    torch::Tensor future_actions,
+    double gamma_future = 0.9,
+    double gamma = 2.0
+) {
+    auto H = pred.size(1);
+
+    auto weights = torch::pow(gamma_future, torch::arange(H, pred.options()))
+                        .view({1, H, 1});
+
+    auto log_probs = torch::log_softmax(pred, -1);
+
+    auto gathered = log_probs.gather(-1, future_actions.unsqueeze(-1)).squeeze(-1);
+    auto loss_per_step = -gathered * weights.squeeze(-1);
+
+    return loss_per_step.sum(1);
 }
 
 // -----------------------------------------------------------------------
@@ -459,15 +453,10 @@ std::tuple<int, double> load_checkpoint(
         const std::string& meta_path,
         std::unique_ptr<torch::optim::AdamW>& optimizer_out) {
 
-    // load_from(path, device) remaps every tensor onto `device` at
-    // deserialization time, regardless of what device it was saved from.
-    // This is what makes GPU-saved -> CPU-load and CPU-saved -> GPU-load
-    // both work correctly.
     torch::serialize::InputArchive model_archive;
     model_archive.load_from(model_path, device);
     model->load(model_archive);
-    model->to(device);   // belt-and-suspenders: catches any buffers/params
-                          // the archive didn't touch directly
+    model->to(device);
 
     optimizer_out = std::make_unique<torch::optim::AdamW>(
         model->parameters(),
@@ -476,8 +465,6 @@ std::tuple<int, double> load_checkpoint(
     torch::serialize::InputArchive optim_archive;
     optim_archive.load_from(optim_path, device);
     optimizer_out->load(optim_archive);
-    // exp_avg / exp_avg_sq / step buffers all land on `device` directly —
-    // no manual per-tensor .to(device) loop required anymore.
 
     int epoch;
     double best_val_loss;
@@ -494,37 +481,77 @@ std::pair<torch::Tensor, torch::Tensor> load_episode(const std::string& file_pat
     
     torch::Tensor states, actions;
     
-    archive.read("states", states);   // [1, T, C, H, W]
-    archive.read("actions", actions); // [1, T]
+    archive.read("states", states);
+    archive.read("actions", actions);
 
     return {states.to(device),
             actions.to(device)};
 }
 
-torch::Tensor load_actions(const std::string& file_path) {
-    torch::serialize::InputArchive archive;
-    archive.load_from(file_path);
-    torch::Tensor actions;
-    archive.read("actions", actions);   // [T] int64
-    return actions;
+// ---------- scale gradients by valid count ----------
+void scale_gradients(PlayerPolicyNet& model, int64_t n) {
+    if (n == 0) return;
+    auto params = model->parameters();
+    for (size_t i = 0; i < params.size(); ++i) {
+        auto& param = params[i];
+        if (param.grad().defined()) {
+            param.mutable_grad() = param.grad() / n;
+        }
+    }
 }
 
-// ---------- process a single episode (B=1) and return grads ----------
-struct EpisodeResult {
-    std::vector<torch::Tensor> grads;   // cloned gradients for all parameters
-    int64_t valid_count;                // number of valid decisions in this episode
-    double loss_sum;                    // sum of per-sample losses (for logging)
-};
+// ---------- process a batch of episodes in parallel ----------
+void process_batch_gpu(PlayerPolicyNet& model,
+                       const std::vector<std::string>& batch_files,
+                       torch::Device device,
+                       double gamma,
+                       int64_t padding,
+                       double gamma_future,
+                       double& out_loss_sum,
+                       int64_t& out_valid_count) {
+    
+    int64_t B = batch_files.size();
+    if (B == 0) {
+        out_loss_sum = 0.0;
+        out_valid_count = 0;
+        return;
+    }
 
-EpisodeResult process_episode(PlayerPolicyNet& model,
-                              torch::Tensor states,   // [1, T, C, H, W]
-                              torch::Tensor actions,  // [1, T]
-                              double gamma, int64_t padding, 
-                              double gamma_future = 0.9) {
-    auto device = states.device();
-    int64_t T = states.size(1);
+    // 1. Load all episodes in the batch
+    std::vector<torch::Tensor> states_list, actions_list;
+    std::vector<int64_t> lengths_cpu;
+    int64_t T_max = 0;
+    int64_t C = 0, H = 0, W = 0;
 
-    // weight sum for future loss normalisation (same as before)
+    for (const auto& f : batch_files) {
+        auto [states, actions] = load_episode(f, device);
+        states = states.squeeze(0);  // [T, C, H, W]
+        actions = actions.squeeze(0); // [T]
+        int64_t T_i = states.size(0);
+        lengths_cpu.push_back(T_i);
+        T_max = std::max(T_max, T_i);
+        if (C == 0) {
+            C = states.size(1);
+            H = states.size(2);
+            W = states.size(3);
+        }
+        states_list.push_back(states);
+        actions_list.push_back(actions);
+    }
+
+    // 2. Pad to [B, T_max, C, H, W] and [B, T_max]
+    auto states_padded = torch::zeros({B, T_max, C, H, W}, torch::dtype(torch::kFloat32).device(device));
+    auto actions_padded = torch::zeros({B, T_max}, torch::dtype(torch::kLong).device(device));
+
+    for (int64_t i = 0; i < B; ++i) {
+        int64_t T_i = lengths_cpu[i];
+        states_padded.index_put_({i, torch::indexing::Slice(0, T_i)}, states_list[i]);
+        actions_padded.index_put_({i, torch::indexing::Slice(0, T_i)}, actions_list[i]);
+    }
+
+    auto lengths = torch::tensor(lengths_cpu, torch::dtype(torch::kLong).device(device));
+
+    // 3. Precompute future loss normalisation
     double sum_w = 0.0, tmp = 1.0;
     for (int i = 0; i < padding + 1; ++i) {
         sum_w += tmp;
@@ -532,68 +559,52 @@ EpisodeResult process_episode(PlayerPolicyNet& model,
     }
 
     model->reset_memory();
+    auto prev_action = torch::full({B}, 5, torch::dtype(torch::kLong).device(device));
 
-    double loss_sum = 0.0;        // for logging
-    int64_t valid_count = 0;      // number of policy‑loss steps (t >= padding)
+    double batch_loss_sum = 0.0;
+    int64_t total_valid_count = 0;
 
-    auto prev_action = torch::tensor({5}, torch::kLong).to(device);
+    // 4. Loop over timesteps
+    for (int64_t t = 0; t < T_max; ++t) {
+        auto x = states_padded.select(1, t);  // [B, C, H, W]
+        auto active = (lengths > t);           // [B] boolean
 
-    for (int64_t t = 0; t < T; ++t) {
-        auto x = states.select(1, t);
-        auto out = model->forward(x, prev_action);
-        auto pred = out[0];      // [1, PRED_HEADS, N_ACTIONS]
+        auto out = model->forward(x, prev_action, active);
+        auto pred = out[0];    // [B, PRED_HEADS, N_ACTIONS]
+        auto logits = out[1];  // [B, N_ACTIONS]
 
-        auto logits = out[1];    // [1, N_ACTIONS]
-
-        // Build step loss (policy loss + future loss)
         torch::Tensor step_loss = torch::zeros({1}, device);
 
-        // Policy loss (only for t >= padding)
+        // Policy loss (t >= padding)
         if (t >= padding) {
-            auto target = actions.select(1, t);     // [1]
-            auto pol_loss = focal_loss(logits, target, gamma);
-            step_loss += pol_loss;
+            auto target = actions_padded.select(1, t);  // [B]
+            auto pol_loss = focal_loss(logits, target, gamma);  // [B]
+            auto valid = (lengths > t).to(pol_loss.dtype());    // [B]
+            step_loss = step_loss + (pol_loss * valid).sum();
+            total_valid_count += valid.sum().item<int64_t>();
         }
 
-        // Future loss (only if there are enough future steps)
-        if (t < T - padding) {
-            auto future_targets = actions.slice(1, t, t + padding);
-            auto aux_loss = future_pred_loss(pred, future_targets, gamma_future, gamma);
-            step_loss += aux_loss / sum_w;
+        // Future loss (t < T_max - padding)
+        if (t < T_max - padding) {
+            auto future_targets = actions_padded.slice(1, t, t + padding); // [B, padding]
+            auto aux_loss = future_pred_loss_per_sample(pred, future_targets, gamma_future, gamma); // [B]
+            auto future_valid = ((lengths - padding) > t).to(aux_loss.dtype()); // [B]
+            step_loss = step_loss + (aux_loss * future_valid).sum() / sum_w;
         }
 
-        // If any loss was added, backpropagate this step
-        if (step_loss.defined() && step_loss.numel() > 0) {
-            // Avoid calling backward on a zero tensor (no loss)
-            if (step_loss.item<double>() != 0.0) {
-                step_loss.backward();
-                loss_sum += step_loss.item<double>();   // accumulate for logging
-            }
+        // Backward for this timestep (gradient accumulation)
+        if (step_loss.defined() && step_loss.numel() > 0 && step_loss.item<double>() != 0.0) {
+            step_loss.backward();
+            batch_loss_sum += step_loss.item<double>();
         }
 
-        prev_action = actions.select(1, t);
+        prev_action = actions_padded.select(1, t);  // [B]
     }
-
-    EpisodeResult result;
-    result.valid_count = T - padding;
-    result.loss_sum = loss_sum;   // sum of per‑step losses
 
     model->reset_memory();
 
-    return result;
-}
-
-// ---------- set model gradients to weighted average of collected grads ----------
-void set_total_grad(PlayerPolicyNet& model, int n) {
-    auto params = model->parameters();
-    for (size_t i = 0; i < params.size(); ++i) {
-        auto& param = params[i];
-        if (param.grad().defined()) {
-            param.mutable_grad() = param.grad().clone().detach() / n;
-        } else {
-            param.mutable_grad() = torch::zeros_like(param);
-        }
-    }
+    out_loss_sum = batch_loss_sum;
+    out_valid_count = total_valid_count;
 }
 
 struct PolicyMetrics {
@@ -608,24 +619,76 @@ struct EvalResult {
     double loss_sum;
     int64_t valid_count;
     PolicyMetrics main_policy;
-    std::vector<PolicyMetrics> policy_metrics; // one per prediction head (size = PRED_HEADS)
-    std::vector<int64_t> future_correct;       // top-1 accuracy per head
+    std::vector<PolicyMetrics> policy_metrics;
+    std::vector<int64_t> future_correct;
     std::vector<int64_t> future_total;
 };
 
-EvalResult evaluate_episode(PlayerPolicyNet& model,
-                            torch::Tensor states,
-                            torch::Tensor actions,
-                            double gamma, int64_t padding,
-                            double gamma_future = 0.9) {
-    auto device = states.device();
-    int64_t T = states.size(1);
+// -----------------------------------------------------------------------
+//  Evaluate a batch of episodes in parallel (no gradients)
+// -----------------------------------------------------------------------
+EvalResult evaluate_batch(PlayerPolicyNet& model,
+                          const std::vector<std::string>& batch_files,
+                          torch::Device device,
+                          double gamma,
+                          int64_t padding,
+                          double gamma_future = 0.9) {
+    int64_t B = batch_files.size();
+    if (B == 0) {
+        EvalResult empty;
+        empty.valid_count = 0;
+        empty.loss_sum = 0.0;
+        empty.main_policy = PolicyMetrics();
+        empty.policy_metrics.assign(padding, PolicyMetrics());
+        empty.future_correct.assign(padding, 0);
+        empty.future_total.assign(padding, 0);
+        return empty;
+    }
+
+    // Load all episodes in the batch
+    std::vector<torch::Tensor> states_list, actions_list;
+    std::vector<int64_t> lengths_cpu;
+    int64_t T_max = 0;
+    int64_t C = 0, H = 0, W = 0;
+
+    for (const auto& f : batch_files) {
+        auto [states, actions] = load_episode(f, device);
+        states = states.squeeze(0);  // [T, C, H, W]
+        actions = actions.squeeze(0); // [T]
+        int64_t T_i = states.size(0);
+        lengths_cpu.push_back(T_i);
+        T_max = std::max(T_max, T_i);
+        if (C == 0) {
+            C = states.size(1);
+            H = states.size(2);
+            W = states.size(3);
+        }
+        states_list.push_back(states);
+        actions_list.push_back(actions);
+    }
+
+    // Pad to [B, T_max, C, H, W] and [B, T_max]
+    auto states_padded = torch::zeros({B, T_max, C, H, W}, torch::dtype(torch::kFloat32).device(device));
+    auto actions_padded = torch::zeros({B, T_max}, torch::dtype(torch::kLong).device(device));
+
+    for (int64_t i = 0; i < B; ++i) {
+        int64_t T_i = lengths_cpu[i];
+        states_padded.index_put_({i, torch::indexing::Slice(0, T_i)}, states_list[i]);
+        actions_padded.index_put_({i, torch::indexing::Slice(0, T_i)}, actions_list[i]);
+    }
+
+    auto lengths = torch::tensor(lengths_cpu, torch::dtype(torch::kLong).device(device));
+
+    // Precompute future loss normalisation constant
     double sum_w = 0.0, tmp = 1.0;
     for (int i = 0; i < padding + 1; ++i) {
         sum_w += tmp;
         tmp *= gamma_future;
     }
+
     model->reset_memory();
+    auto prev_action = torch::full({B}, 5, torch::dtype(torch::kLong).device(device));
+    torch::NoGradGuard no_grad;
 
     EvalResult r;
     r.loss_sum = 0.0;
@@ -635,83 +698,99 @@ EvalResult evaluate_episode(PlayerPolicyNet& model,
     r.future_correct.assign(padding, 0);
     r.future_total.assign(padding, 0);
 
-    auto prev_action = torch::tensor({5}, torch::kLong).to(device);
-    torch::NoGradGuard no_grad;
+    // Loop over timesteps
+    for (int64_t t = 0; t < T_max; ++t) {
+        auto x = states_padded.select(1, t);  // [B, C, H, W]
+        auto active = (lengths > t);           // [B] boolean
 
-    for (int64_t t = 0; t < T; ++t) {
-        auto x = states.select(1, t);
-        auto out = model->forward(x, prev_action);
-        auto pred = out[0];      // [1, PRED_HEADS, N_ACTIONS]
-        auto logits = out[1];    // [1, N_ACTIONS]
+        auto out = model->forward(x, prev_action, active);
+        auto pred = out[0];    // [B, PRED_HEADS, N_ACTIONS]
+        auto logits = out[1];  // [B, N_ACTIONS]
 
         torch::Tensor step_loss = torch::zeros({1}, device);
 
-        // ---- Main policy (current action) ----
+        // ---- Main policy ----
         if (t >= padding) {
-            auto target = actions.select(1, t);
-            auto pol_loss = focal_loss(logits, target, gamma);
-            step_loss += pol_loss;
+            auto target = actions_padded.select(1, t);  // [B]
+            auto pol_loss = focal_loss(logits, target, gamma);  // [B]
+            auto valid = (lengths > t).to(pol_loss.dtype());    // [B]
+            step_loss = step_loss + (pol_loss * valid).sum();
 
-            int64_t gt = target.item<int64_t>();
+            // Collect metrics
+            auto argmax = logits.argmax(1);        // [B]
             auto topk_res = torch::topk(logits, N_ACTIONS - 1, 1);
-            auto topk_idx = std::get<1>(topk_res).squeeze(0);
-            for (int k = 1; k <= N_ACTIONS - 1; ++k) {
-                bool correct = false;
-                for (int i = 0; i < k; ++i) {
-                    if (topk_idx[i].item<int64_t>() == gt) {
-                        correct = true;
-                        break;
+            auto topk_idx = std::get<1>(topk_res); // [B, N_ACTIONS-1]
+
+            for (int64_t i = 0; i < B; ++i) {
+                if (valid[i].item<bool>()) {
+                    int64_t gt = target[i].item<int64_t>();
+                    int64_t pred_val = argmax[i].item<int64_t>();
+                    r.main_policy.conf_mat[gt][pred_val]++;
+
+                    for (int k = 1; k <= N_ACTIONS - 1; ++k) {
+                        bool correct = false;
+                        for (int j = 0; j < k; ++j) {
+                            if (topk_idx[i][j].item<int64_t>() == gt) {
+                                correct = true;
+                                break;
+                            }
+                        }
+                        if (correct) r.main_policy.topk_correct[k-1]++;
                     }
                 }
-                if (correct) r.main_policy.topk_correct[k - 1]++;
             }
-            int64_t pred_val = logits.argmax(1).item<int64_t>();
-            r.main_policy.conf_mat[gt][pred_val]++;
+            r.valid_count += valid.sum().item<int64_t>();
         }
 
         // ---- Future heads ----
-        if (t < T - padding) {
-            auto future_targets = actions.slice(1, t, t + padding);
-            int64_t H_here = future_targets.size(1);
-            auto aux_loss = future_pred_loss(pred, future_targets, gamma_future);
+        if (t < T_max - padding) {
+            auto future_targets = actions_padded.slice(1, t, t + padding); // [B, padding]
+            auto aux_loss = future_pred_loss(pred, future_targets, gamma_future); // scalar (sum over batch)
             step_loss += aux_loss / sum_w;
 
-            auto pred_argmax = pred.argmax(-1);
-            for (int64_t h = 0; h < H_here; ++h) {
-                int64_t gt = future_targets.index({0, h}).item<int64_t>();
-                int64_t pred_h = pred_argmax.index({0, h}).item<int64_t>();
+            auto pred_argmax = pred.argmax(-1); // [B, padding]
+            auto future_valid = ((lengths - padding) > t).to(torch::kLong);
 
-                r.future_total[h] += 1;
-                if (pred_h == gt) r.future_correct[h] += 1;
+            for (int64_t i = 0; i < B; ++i) {
+                if (future_valid[i].item<bool>()) {
+                    for (int64_t h = 0; h < padding; ++h) {
+                        int64_t gt = future_targets[i][h].item<int64_t>();
+                        int64_t pred_h = pred_argmax[i][h].item<int64_t>();
+                        r.future_total[h] += 1;
+                        if (pred_h == gt) r.future_correct[h] += 1;
 
-                auto logits_h = pred.index({0, h, torch::indexing::Slice()});
-                auto topk_res = torch::topk(logits_h, N_ACTIONS - 1, 0);
-                auto topk_idx = std::get<1>(topk_res);
-                for (int k = 1; k <= N_ACTIONS - 1; ++k) {
-                    bool correct = false;
-                    for (int i = 0; i < k; ++i) {
-                        if (topk_idx[i].item<int64_t>() == gt) {
-                            correct = true;
-                            break;
+                        auto logits_h = pred[i][h]; // [N_ACTIONS]
+                        auto topk_res = torch::topk(logits_h, N_ACTIONS - 1, 0);
+                        auto topk_idx = std::get<1>(topk_res);
+                        for (int k = 1; k <= N_ACTIONS - 1; ++k) {
+                            bool correct = false;
+                            for (int j = 0; j < k; ++j) {
+                                if (topk_idx[j].item<int64_t>() == gt) {
+                                    correct = true;
+                                    break;
+                                }
+                            }
+                            if (correct) r.policy_metrics[h].topk_correct[k-1]++;
                         }
+                        r.policy_metrics[h].conf_mat[gt][pred_h]++;
                     }
-                    if (correct) r.policy_metrics[h].topk_correct[k - 1]++;
                 }
-                r.policy_metrics[h].conf_mat[gt][pred_h]++;
             }
         }
 
         if (step_loss.defined() && step_loss.numel() > 0)
             r.loss_sum += step_loss.item<double>();
 
-        prev_action = actions.select(1, t);
-        if (t >= padding) r.valid_count++;
+        prev_action = actions_padded.select(1, t);
     }
 
     model->reset_memory();
     return r;
 }
 
+// -----------------------------------------------------------------------
+//  Helper to print per‑class metrics
+// -----------------------------------------------------------------------
 void print_class_metrics(const std::vector<std::vector<int64_t>>& conf_mat,
                          int64_t total_samples,
                          const std::string& prefix = "") {
@@ -725,24 +804,25 @@ void print_class_metrics(const std::vector<std::vector<int64_t>>& conf_mat,
             if (j != i) FP += conf_mat[j][i];
             if (j != i) FN += conf_mat[i][j];
         }
-        int64_t support = TP + FN; // actual number of samples for class i
+        int64_t support = TP + FN;
         double precision = (TP + FP > 0) ? (double)TP / (TP + FP) : 0.0;
         double recall    = (support > 0) ? (double)TP / support : 0.0;
         double f1 = (precision + recall > 0) ? 2 * precision * recall / (precision + recall) : 0.0;
-        double accuracy_class = (total_samples > 0) ? (double)(TP + (total_samples - support - FP)) / total_samples : 0.0;
 
         std::cout << prefix << std::setw(5) << i << "\t"
                   << std::fixed << std::setprecision(4) << precision << "\t\t"
                   << recall << "\t\t" << f1 << "\t\t"
                   << support << "\n";
     }
-    // Overall accuracy
     int64_t correct_total = 0;
     for (int i = 0; i < num_classes; ++i) correct_total += conf_mat[i][i];
     double overall_acc = (total_samples > 0) ? (double)correct_total / total_samples : 0.0;
     std::cout << prefix << "Overall accuracy: " << std::fixed << std::setprecision(4) << overall_acc << "\n";
 }
 
+// -----------------------------------------------------------------------
+//  Validation using batches (parallel on GPU)
+// -----------------------------------------------------------------------
 double validation(PlayerPolicyNet& model,
                   std::unique_ptr<torch::optim::AdamW>& optimizer,
                   const std::vector<std::string>& val_files,
@@ -756,6 +836,8 @@ double validation(PlayerPolicyNet& model,
                   int64_t padding,
                   double gamma_future = 0.9) {
 
+    const int64_t VAL_BATCH_SIZE = 16;
+
     double val_loss_sum = 0.0;
     int64_t val_valid_cnt = 0;
 
@@ -764,21 +846,24 @@ double validation(PlayerPolicyNet& model,
     std::vector<int64_t> total_future_correct(padding, 0);
     std::vector<int64_t> total_future_total(padding, 0);
 
-    for (const auto& f : val_files) {
-        auto [states, actions] = load_episode(f, device);
-        auto result = evaluate_episode(model, states, actions, gamma, padding, gamma_future);
+    // Process validation files in batches
+    for (size_t start = 0; start < val_files.size(); start += VAL_BATCH_SIZE) {
+        size_t end = std::min(start + VAL_BATCH_SIZE, val_files.size());
+        std::vector<std::string> batch_files(val_files.begin() + start, val_files.begin() + end);
+
+        auto result = evaluate_batch(model, batch_files, device, gamma, padding, gamma_future);
 
         val_loss_sum += result.loss_sum;
         val_valid_cnt += result.valid_count;
 
-        // Accumulate main policy
+        // Accumulate main policy stats
         for (size_t k = 0; k < total_main_policy.topk_correct.size(); ++k)
             total_main_policy.topk_correct[k] += result.main_policy.topk_correct[k];
         for (int i = 0; i < N_ACTIONS; ++i)
             for (int j = 0; j < N_ACTIONS; ++j)
                 total_main_policy.conf_mat[i][j] += result.main_policy.conf_mat[i][j];
 
-        // Accumulate future heads
+        // Accumulate future heads stats
         for (int64_t h = 0; h < padding; ++h) {
             for (size_t k = 0; k < total_future_policy[h].topk_correct.size(); ++k)
                 total_future_policy[h].topk_correct[k] += result.policy_metrics[h].topk_correct[k];
@@ -794,10 +879,11 @@ double validation(PlayerPolicyNet& model,
     if (val_valid_cnt > 0) {
         val_avg = val_loss_sum / val_valid_cnt;
 
-        // ========== Main policy details ==========
+        // Print results
+        double main_acc1 = (double)total_main_policy.topk_correct[0] / val_valid_cnt;
         std::cout << "\n=== Epoch " << epoch
                   << " val loss: " << val_avg
-                  << " | main policy top-1 acc: " << (double)total_main_policy.topk_correct[0] / val_valid_cnt
+                  << " | main policy top-1 acc: " << main_acc1
                   << " (" << val_valid_cnt << " decisions) ===" << std::endl;
 
         std::cout << "  Main policy top-k accuracies:" << std::endl;
@@ -806,7 +892,6 @@ double validation(PlayerPolicyNet& model,
             std::cout << "    top-" << k << ": " << acc_k << std::endl;
         }
 
-        // Macro F1-score for main policy
         std::vector<double> f1_per_class(N_ACTIONS, 0.0);
         for (int i = 0; i < N_ACTIONS; ++i) {
             int64_t tp = total_main_policy.conf_mat[i][i];
@@ -823,10 +908,8 @@ double validation(PlayerPolicyNet& model,
         double macro_f1 = std::accumulate(f1_per_class.begin(), f1_per_class.end(), 0.0) / N_ACTIONS;
         std::cout << "  Main policy Macro F1-score: " << macro_f1 << std::endl;
 
-        // Per‑class metrics for main policy
         print_class_metrics(total_main_policy.conf_mat, val_valid_cnt, "  ");
 
-        // ========== Future heads details ==========
         for (int64_t h = 0; h < padding; ++h) {
             if (total_future_total[h] == 0) continue;
             std::cout << "\n  Future head " << h << " (horizon " << (h+1) << "):" << std::endl;
@@ -837,7 +920,6 @@ double validation(PlayerPolicyNet& model,
                 double acc_k = (double)total_future_policy[h].topk_correct[k-1] / total_future_total[h];
                 std::cout << "      top-" << k << ": " << acc_k << std::endl;
             }
-            // Macro F1-score for this head
             std::vector<double> f1_per_class_h(N_ACTIONS, 0.0);
             for (int i = 0; i < N_ACTIONS; ++i) {
                 int64_t tp = total_future_policy[h].conf_mat[i][i];
@@ -854,11 +936,9 @@ double validation(PlayerPolicyNet& model,
             double macro_f1_h = std::accumulate(f1_per_class_h.begin(), f1_per_class_h.end(), 0.0) / N_ACTIONS;
             std::cout << "    Macro F1-score: " << macro_f1_h << std::endl;
 
-            // Per‑class metrics for this head
             print_class_metrics(total_future_policy[h].conf_mat, total_future_total[h], "    ");
         }
 
-        // Save checkpoint if validation loss improved
         if (val_avg < best_val_loss) {
             best_val_loss = val_avg;
             save_checkpoint(model, optimizer, epoch, best_val_loss,
@@ -876,19 +956,17 @@ double validation(PlayerPolicyNet& model,
 //  Main training
 // -----------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    // Defaults
     std::string data_dir = "../dataset/data_train";
-    std::string val_dir = "../dataset/data_train";
-    int num_epochs = 256;
+    std::string val_dir = "../dataset/data_val";
+    int num_epochs = 512;
 
     if (argc > 1) data_dir = argv[1];
     if (argc > 2) num_epochs = std::stoi(argv[2]);
     if (argc > 3) val_dir = argv[3];
 
-    torch::Device device(/*torch::cuda::is_available() ? torch::kCUDA :*/ torch::kCPU);
+    torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
     std::cout << "Using device: " << device << std::endl;
 
-    // 1. Gather episode file paths
     std::vector<std::string> episode_files;
     for (const auto& entry : fs::directory_iterator(data_dir)) {
         if (entry.path().extension() == ".pt")
@@ -911,7 +989,6 @@ int main(int argc, char* argv[]) {
         std::cout << "Validation directory not found, skipping validation." << std::endl;
     }
 
-    // 2. Model and optimizer
     PlayerPolicyNet model{nullptr};
     std::unique_ptr<torch::optim::AdamW> optimizer{nullptr};
 
@@ -937,7 +1014,6 @@ int main(int argc, char* argv[]) {
             torch::optim::AdamWOptions(1e-3).weight_decay(1e-4));
     }
 
-    // 3. Training loop
     const int64_t BATCH_SIZE = 16;
     const int64_t PADDING = model->PRED_HEADS;
     const double GAMMA = 2.0;
@@ -947,59 +1023,39 @@ int main(int argc, char* argv[]) {
     std::iota(indices.begin(), indices.end(), 0);
     std::mt19937 gen(std::random_device{}());
 
-    --start_epoch;
-    srand(start_epoch);
+/*
     validation(model, optimizer, val_files, start_epoch, best_val_loss,
-                 model_path, optim_path, meta_path, device,
-                 GAMMA, PADDING, GAMMA_FUTURE);
+               model_path, optim_path, meta_path, device,
+               GAMMA, PADDING, GAMMA_FUTURE);
     exit(0);
+*/
 
     for (int epoch = start_epoch; epoch < num_epochs; ++epoch) {
-	srand(epoch);
-
-	std::shuffle(indices.begin(), indices.end(), gen);
+        std::shuffle(indices.begin(), indices.end(), gen);
 
         double epoch_loss_sum = 0.0;
         int64_t epoch_valid_cnt = 0;
         int batches_done = 0;
 
         for (size_t start = 0; start + BATCH_SIZE <= indices.size(); start += BATCH_SIZE) {
-            double batch_loss_sum = 0.0;
-            int64_t batch_valid_total = 0;
-            model->zero_grad();
-
-            // 1. Process each episode individually
+            std::vector<std::string> batch_files;
             for (int64_t b = 0; b < BATCH_SIZE; ++b) {
-                auto st = std::chrono::high_resolution_clock::now();
-
-                auto [states, actions] = load_episode(episode_files[indices[start + b]], device);
-                auto result = process_episode(model, states, actions, GAMMA, PADDING, GAMMA_FUTURE);
-
-                auto en = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);
-                
-                std::cout << "Execution time (to load and process ep, batch sample " << b
-                     << "):\n" << ((int)duration.count()) / 1000000.0 << " s" << std::endl;
-
-                batch_loss_sum += result.loss_sum;
-                batch_valid_total += result.valid_count;
+                batch_files.push_back(episode_files[indices[start + b]]);
             }
 
-            // 2. Aggregate gradients & step
-            if (batch_valid_total) {
+            model->zero_grad();
 
-                auto st = std::chrono::high_resolution_clock::now();
+            double batch_loss_sum = 0.0;
+            int64_t batch_valid_total = 0;
 
-                set_total_grad(model, batch_valid_total);
+            process_batch_gpu(model, batch_files, device, GAMMA, PADDING, GAMMA_FUTURE,
+                              batch_loss_sum, batch_valid_total);
+
+            if (batch_valid_total > 0) {
+                scale_gradients(model, batch_valid_total);
                 torch::nn::utils::clip_grad_norm_(model->parameters(), 1.0);
                 optimizer->step();
                 model->zero_grad();
-
-                auto en = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);
-                
-                std::cout << "Execution time (to update parameters, at the end of the batch):\n"
-                     << ((int)duration.count()) / 1000000.0 << " s" << std::endl;
 
                 double avg_loss = batch_loss_sum / batch_valid_total;
                 epoch_loss_sum += batch_loss_sum;
@@ -1009,9 +1065,10 @@ int main(int argc, char* argv[]) {
                 std::cout << "Epoch " << epoch << " batch " << batches_done
                           << " avg loss: " << avg_loss << std::endl;
             } else {
-                std::cerr << "Warning: whole batch had no valid actions, skipping." << std::endl;
+                std::cerr << "Warning: batch had no valid actions, skipping." << std::endl;
+                model->zero_grad();
             }
-        } // end batch loop
+        }
 
         double val_avg = 0.0;
         if (!val_files.empty()) {
@@ -1020,24 +1077,21 @@ int main(int argc, char* argv[]) {
                                  GAMMA, PADDING, GAMMA_FUTURE);
         }
 
-        // Epoch summary (training loss) and optional checkpoint based on training loss
         if (epoch_valid_cnt > 0) {
             double epoch_avg = epoch_loss_sum / epoch_valid_cnt;
             std::cout << "=== Epoch " << epoch
                       << " training avg loss: " << epoch_avg
                       << " (" << epoch_valid_cnt << " decisions) ===" << std::endl;
 
-            // If no validation set, use training loss for checkpoint
-            if (val_files.empty()/* && epoch_avg < best_val_loss*/) {
+            if (val_files.empty()) {
                 best_val_loss = epoch_avg;
                 save_checkpoint(model, optimizer, epoch, best_val_loss,
-                            model_path, optim_path, meta_path);
-                //std::cout << "Checkpoint saved (new best training loss)." << std::endl;
+                                model_path, optim_path, meta_path);
+                std::cout << "Checkpoint saved (new best training loss)." << std::endl;
             }
         } else {
             std::cout << "Epoch " << epoch << " had no valid training decisions." << std::endl;
         }
-        
     }
 
     std::cout << "Training finished." << std::endl;

@@ -164,7 +164,7 @@ namespace Environment::Field{
 
 	void gameplay::prepare(Environment::Character::Human& player){
 		action = "+xeawsd";
-		player.agent = new Agent(/*data_gathering=*/true, /*inference=*/false);
+		player.agent = new Agent(/*data_gathering=*/true, /*inference=*/true);
 		player.set_agent_active();
 	}
 

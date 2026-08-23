@@ -355,7 +355,7 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
         auto pred = torch::stack(prog, 1);                                        // [B, PRED_HEADS, N_ACTIONS]
 
         auto B_vec   = x.index({I::Slice(), I::Slice(),
-                                FIXED_ROW, FIXED_COL});         // [B, C]
+                                FIXED_ROW, FIXED_COL}).clone();         // [B, C]
         auto C_vec   = torch::one_hot(prev_action, N_ACTIONS)
                            .to(A_vec.dtype());
         auto x_cat   = torch::cat({A_vec.detach(), B_vec, C_vec}, 1);   // [B, afc_d_out2+C+N_ACTIONS]

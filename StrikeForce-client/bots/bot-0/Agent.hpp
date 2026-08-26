@@ -26,12 +26,14 @@ SOFTWARE.
 
 class Agent{
 private:
-    int x;
+    bool flip_ = false;
 public:
 
     void update(int a, bool b){return;}
 
     bool in_training(){return false;}
 
-    bool is_manual(){return false;}
+    bool is_manual(){return false ^ flip_;}
+
+    void flip() { flip_ ^= 1; }
 };

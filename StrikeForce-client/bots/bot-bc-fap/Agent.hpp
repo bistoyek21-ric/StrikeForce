@@ -36,7 +36,7 @@ public:
           bool inference_mode = false,
           int T = 1054,
           const std::string &model_dir = "bots/bot-bc-fap/backup",
-          const std::string &dataset_dir = "bots/bot-bc-fap/dataset/data_train")
+          const std::string &dataset_dir = "bots/bot-bc-fap/dataset/data_dagger")
         : data_gathering_mode_(data_gathering_mode),
           inference_mode_(inference_mode),
           T_(T),
@@ -155,6 +155,11 @@ public:
         // Recording: only if data_gathering_mode_ is true and we are past warm‑up
         if (data_gathering_mode_) {
             episode_actions_.push_back(prev_action_.clone());
+            
+            episode_imitate_.push_back(
+                torch::tensor({(int)imitate}, torch::kLong)
+            );
+            
             // When the buffer fills up to T_, a full episode is complete
             if (episode_actions_.size() == T_) {
                 save_episode();
@@ -181,15 +186,19 @@ public:
                 warmup_finished_ = true;
 
                 log("---------");
+
+                std::cout << "---------\nepisode Begins:" << std::endl;
                 
-                return !inference_mode_;
+                return !inference_mode_ ^ flip_;
             }
             return false;   // not manual yet
         }
 
         // After warm‑up, manual = NOT inference_mode_
-        return !inference_mode_;
+        return !inference_mode_ ^ flip_;
     }
+
+    void flip() { if (cnt_ > T_initial_ && warmup_finished_) flip_ ^= 1; }
 
     bool in_training() { return data_gathering_mode_; }
 
@@ -209,17 +218,19 @@ private:
         // Stack into tensors: [1, T, C, H, W] and [1, T]
         auto states_tensor = torch::stack(episode_states_, 0).squeeze(1).unsqueeze(0);
         auto actions_tensor = torch::stack(episode_actions_, 0).squeeze(-1).unsqueeze(0);
+        auto imitation_tensor = torch::stack(episode_imitate_, 0).squeeze(-1).unsqueeze(0);
 
         std::string path = dataset_dir_ + "/episode_" + std::to_string(episode_count_) + ".pt";
         torch::serialize::OutputArchive archive;
         archive.write("states", states_tensor);
         archive.write("actions", actions_tensor);
+        archive.write("imitate", imitation_tensor);
         archive.save_to(path);
 
 
         log("Episode saved: " + path + " (" + std::to_string(states_tensor.size(0)) + " frames)");
         log("frequency:");
-        log(freq_ / states_tensor.size(0));
+        log(freq_ / states_tensor.size(1));
 
         episode_count_++;
 
@@ -228,6 +239,7 @@ private:
         // Clean up
         episode_states_.clear();
         episode_actions_.clear();
+        episode_imitate_.clear();
         
         if (inference_mode_)
             model_->reset_memory();   // reset sliding window for next episode
@@ -256,7 +268,7 @@ private:
     //  member variables
     // ---------------------------------------------------------------
     bool inference_mode_, data_gathering_mode_;
-    bool warmup_finished_ = false;
+    bool warmup_finished_ = false, flip_ = false;
     int T_;
     int cnt_ = 0, cnt_warm_up_ = 0;
     static constexpr int T_initial_ = 512, T_warm_up_ = 128;
@@ -267,7 +279,7 @@ private:
 
     torch::Tensor prev_action_, freq_;
     std::vector<torch::Tensor> episode_states_;   // raw observations [1,C,H,W] each step
-    std::vector<torch::Tensor> episode_actions_;  // action tensors [1]
+    std::vector<torch::Tensor> episode_actions_, episode_imitate_;  // action/imitate tensors [1]
 
     int episode_count_ = 0;
     std::ofstream log_file_;

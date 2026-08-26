@@ -247,7 +247,6 @@ public:
         }
     }
 
-#if defined(CROWDSOURCED_TRAINING)
     bool is_manual() {
         if (!is_training && cnt <= T_initial)
             ++cnt;
@@ -280,16 +279,17 @@ public:
                 std::cout << "space button pressed!" << std::endl;
             }
         }
-        return manual;
+        return manual ^ flip_;
     }
-#endif
+
+    void flip() { if (cnt > T_initial) flip_ ^= 1; }
 
     bool in_training(){
         return is_training;
     }
 
 private:
-    bool is_training = false, logging = true, training, done_training, manual;
+    bool is_training = false, logging = true, training, done_training, manual, flip_ = false;
     std::thread trainThread;
     float learning_rate, alpha, gamma, ppo_clip, cv;
     int T, num_epochs, cnt = 0, T_initial = 512;

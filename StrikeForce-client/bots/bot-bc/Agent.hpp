@@ -230,7 +230,6 @@ public:
         }
     }
 
-#if defined(CROWDSOURCED_TRAINING) || defined(DISTRIBUTED_LEARNING)
     bool is_manual() {
         if (!is_training && cnt <= T_initial)
             ++cnt;
@@ -261,16 +260,17 @@ public:
             if (cnt_warm_up < T_warm_up)
                 ++cnt_warm_up;
         }
-        return manual;
+        return manual ^ flip_;
     }
-#endif
+
+    void flip() { if (cnt > T_initial && cnt_warm_up == T_warm_up) flip_ ^= 1; }
 
     bool in_training() {
         return is_training;
     }
 
 private:
-    bool is_training = false, logging = true, training, done_training = false, manual = false;
+    bool is_training = false, logging = true, training, done_training = false, manual = false, flip_ = false;
     std::thread trainThread;
     float learning_rate;
     int T, cnt = 0, cnt_warm_up = 0, T_initial = 512, T_warm_up = 100;

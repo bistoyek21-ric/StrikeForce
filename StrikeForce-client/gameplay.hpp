@@ -821,10 +821,9 @@ namespace Environment::Field{
 		}
 	
 		void my_command(){
-#if defined(CROWDSOURCED_TRAINING)
 			if(using_an_agent)
 				manual = hum[ind].agent->is_manual();
-#endif
+
 			bool moved;
 #if defined(SLOWMOTION)
 			if(using_an_agent && manual && !replay_mode)
@@ -862,6 +861,36 @@ namespace Environment::Field{
 						command[ind] = '+';
 #else
 						manual = !manual;
+		#if defined(SLOWMOTION)
+						hum[ind].agent->flip();
+						if(!online){
+							if(manual){
+								std::cout << "Mnual mode activated ...\n"
+									<< "(agent's valid actions only)" << std::endl;
+								command[ind] = getch();
+								if(command[ind] == '9')
+									command[ind] = 'e';
+								else if(command[ind] == '8')
+									command[ind] = 'w';
+								else if(command[ind] == '7')
+									command[ind] = 'q';
+								else if(command[ind] == '6')
+									command[ind] = 'd';
+								else if(command[ind] == '5')
+									command[ind] = 'x';
+								else if(command[ind] == '4')
+									command[ind] = 'a';
+								else if(command[ind] == '2')
+									command[ind] = 's';
+								else if(command[ind] == '1')
+									command[ind] = 'z';
+								std::cout << ":)" << std::endl;
+							}
+							else{
+								std::cout << "Automate mode activated." << std::endl;
+							}
+						}
+		#endif
 #endif
 					}
 				}
@@ -2041,18 +2070,11 @@ namespace Environment::Field{
 		std::vector<int> v = temp_me.get_cor();
 		std::string last = "", color, cell;
 		int Width, Hight;
-		#if defined(CROWDSOURCED_TRAINING)
 		Width = 15;
 		if (full1)
 			Hight = 15;
 		else
 			Hight = _H;
-		#else
-		v[2] = std::max(v[2], W), v[2] = std::min(v[2], M - W - 1);
-		v[1] = std::max(v[1], _H), v[1] = std::min(v[1], N - _H - 1);
-		Width = W;
-		Hight = _H;
-		#endif
 		for(int i = v[1] - Hight; i <= v[1] + Hight; ++i, res.push_back('\n'))
 			for(int j = v[2] - Width; j <= v[2] + Width; ++j){
 				cell = ((i < 0 || i >= N || j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit());

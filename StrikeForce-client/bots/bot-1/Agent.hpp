@@ -175,7 +175,7 @@ public:
     //  predict() — non-blocking even during training.
     // ──────────────────────────────────────────
     int predict(const std::vector<float>& obs_vec) {
-        if (cnt_ < T_warmup_) return 0;
+        if (cnt_ <= T_warmup_) return 0;
 
         auto state = to_tensor(obs_vec);          // normalised
         states_.push_back(state);
@@ -200,7 +200,7 @@ public:
     //  update() — store transition, trigger training
     // ──────────────────────────────────────────
     void update(int action, bool is_human) {
-        if (cnt_ < T_warmup_) return;
+        if (cnt_ <= T_warmup_) return;
 
         actions_.push_back(action);
         human_flags_.push_back(is_human);
@@ -234,7 +234,6 @@ public:
         }
     }
 
-#if defined(CROWDSOURCED_TRAINING)
     bool is_manual() {
         if (cnt_ < T_warmup_) { ++cnt_; return true; }
         if (actions_.size() % (T_ / 2) == 0) {
@@ -252,9 +251,10 @@ public:
                 std::cout << "space button pressed" << std::endl;
             }
         }
-        return manual_;
+        return manual_ ^ flip_;
     }
-#endif
+
+    void flip() { if (cnt_ >= T_warmup_) flip_ ^= 1; }
 
     bool in_training() {
         return train_thread_.joinable() && !done_training_;
@@ -262,9 +262,9 @@ public:
 
 private:
     // ── Hyper-params ──────────────────────────
-    bool   training_;
+    bool   training_, flip_;
     int    T_, num_epochs_, disc_epochs_;
-    float  gamma_, gae_lambda_, ppo_clip_, entropy_coef_, value_coef_, aux_coef_;
+    float  gamma_, gae_lambda_, ppo_clip_, entropy_coef_, value_coef_, aux_coef_, flip_ = false;
 
     const int num_actions_  = 9;
     const int num_channels_ = 32;

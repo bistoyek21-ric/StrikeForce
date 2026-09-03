@@ -1607,6 +1607,7 @@ namespace Environment::Field{
 					#else
 					manual = false;
 					#endif
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
@@ -1620,6 +1621,7 @@ namespace Environment::Field{
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					play();
 					continue;
 				}
@@ -1647,16 +1649,26 @@ namespace Environment::Field{
 					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					#if !defined(AUTOMATIC)
 					manual = (getch() != 'y');
+					#else
+					manual = false;
+					#endif
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
 					std::cout << "Any other key: normal" << std::endl;
+					#if !defined(AUTOMATIC)
 					char c = getch();
+					#else
+					char c = 'r';
+					#endif
 					if(c == 'r')
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					play();
 					continue;
 				}
@@ -1684,16 +1696,26 @@ namespace Environment::Field{
 					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					#if !defined(AUTOMATIC)
 					manual = (getch() != 'y');
+					#else
+					manual = false;
+					#endif
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
 					std::cout << "Any other key: normal" << std::endl;
+					#if !defined(AUTOMATIC)
 					char c = getch();
+					#else
+					char c = 'r';
+					#endif
 					if(c == 'r')
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					play();
 					continue;
 				}
@@ -1701,16 +1723,26 @@ namespace Environment::Field{
 					level = 1;
 					mode = "Battle Royal";
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					#if !defined(AUTOMATIC)
 					manual = (getch() != 'y');
+					#else
+					manual = false;
+					#endif
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
 					std::cout << "Any other key: normal" << std::endl;
+					#if !defined(AUTOMATIC)
 					char c = getch();
+					#else
+					char c = 'r';
+					#endif
 					if(c == 'r')
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					play();
 					online = false;
 					continue;
@@ -1718,15 +1750,21 @@ namespace Environment::Field{
                 if(c == '5'){
                 	level = 1;
                     mode = "AI Battle Royal";
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
 					std::cout << "Any other key: normal" << std::endl;
+					#if !defined(AUTOMATIC)
 					char c = getch();
+					#else
+					char c = 'r';
+					#endif
 					if(c == 'r')
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					manual = false;
                     play();
                     online = false;

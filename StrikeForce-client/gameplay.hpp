@@ -862,8 +862,10 @@ namespace Environment::Field{
 #else
 						manual = !manual;
 		#if defined(SLOWMOTION)
-						hum[ind].agent->flip();
-						if(!online){
+						bool worked = hum[ind].agent->flip();
+						if (!worked)
+							std::cout << "You can't switch at this stage." << std::endl;
+						else if(!online){
 							if(manual){
 								std::cout << "Mnual mode activated ...\n"
 									<< "(agent's valid actions only)" << std::endl;
@@ -886,8 +888,9 @@ namespace Environment::Field{
 									command[ind] = 'z';
 								std::cout << ":)" << std::endl;
 							}
-							else{
+							else {
 								std::cout << "Automate mode activated." << std::endl;
+								command[ind] = '+';
 							}
 						}
 		#endif
@@ -930,23 +933,25 @@ namespace Environment::Field{
 				command[ind] = '+';
 				return;
 			}
-			if(command[ind] == 'W' || command[ind] == 'E'){
-				if(command[ind] == 'W')
-					++W;
-				else
-					--W;
-				W = std::min(M / 2 - 1, std::max(W, 0));
-                command[ind] = '+';
-				return;
-			}
-			if(command[ind] == 'R' || command[ind] == 'T'){
-				if(command[ind] == 'R')
-					++_H;
-				else
-					--_H;
-				_H = std::min(N / 2 - 1, std::max(_H, 0));
-				command[ind] = '+';
-				return;
+			if(!using_an_agent){
+				if(command[ind] == 'W' || command[ind] == 'E'){
+					if(command[ind] == 'W')
+						++W;
+					else
+						--W;
+					W = std::min(M / 2 - 1, std::max(W, 0));
+    	            command[ind] = '+';
+					return;
+				}
+				if(command[ind] == 'R' || command[ind] == 'T'){
+					if(command[ind] == 'R')
+						++_H;
+					else
+						--_H;
+					_H = std::min(N / 2 - 1, std::max(_H, 0));
+					command[ind] = '+';
+					return;
+				}
 			}
 			for(const char &e: valid_commands)
 				if(e == command[ind])
@@ -1071,13 +1076,15 @@ namespace Environment::Field{
 			printer.print(" push_dagger: <c>, wing_tactic: <v>, F_898: <b>, lochabrask: <n>\n");
 			printer.print(" AK_47: <m>, M416: <,>, MOSSBERG: <.>, AWM: </>\n");
 			printer.print("-------------------------------------\n");
-			printer.print("How to turn on and off full mode and change width and hight:\n");
-			printer.print(" F: on, O: off\n");
-			printer.print(" W : increase width, E : decrease width (not availabel in crowdsourced training)\n");
-			printer.print(" R : increase hight, T : decrease hight (not availabel in crowdsourced training)\n");
-			printer.print("-------------------------------------\n");
-			printer.print("[1]: you can enable NumLock and then use the keys!\n");
-			printer.print("note: if you do an invalid move nothing will happen.\n");
+			if(!using_an_agent) {
+				printer.print("How to turn on and off full mode and change width and hight:\n");
+				printer.print(" F: on, O: off\n");
+				printer.print(" W : increase width, E : decrease width (not availabel in crowdsourced training)\n");
+				printer.print(" R : increase hight, T : decrease hight (not availabel in crowdsourced training)\n");
+				printer.print("-------------------------------------\n");
+				printer.print("[1]: you can enable NumLock and then use the keys!\n");
+				printer.print("note: if you do an invalid move nothing will happen.\n");
+			}
 #if !defined(CROWDSOURCED_TRAINING)
 			printer.print("* If you selected Automate you can press the space key to disable rendering.\n");
 #endif
@@ -1545,7 +1552,7 @@ namespace Environment::Field{
 			for(bool b = false; true;){
 				full = false;
 				replay_mode = enable_logging = false;
-				_H = 7, W = 24;
+				_H = 7, W = 15;
 				std::cout << head();
 				std::cout << "Game Modes:" << '\n';
 				std::cout << "  1. Solo" << '\n';
@@ -1600,6 +1607,7 @@ namespace Environment::Field{
 					#else
 					manual = false;
 					#endif
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
@@ -1613,6 +1621,7 @@ namespace Environment::Field{
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					play();
 					continue;
 				}
@@ -1640,16 +1649,26 @@ namespace Environment::Field{
 					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					#if !defined(AUTOMATIC)
 					manual = (getch() != 'y');
+					#else
+					manual = false;
+					#endif
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
 					std::cout << "Any other key: normal" << std::endl;
+					#if !defined(AUTOMATIC)
 					char c = getch();
+					#else
+					char c = 'r';
+					#endif
 					if(c == 'r')
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					play();
 					continue;
 				}
@@ -1677,16 +1696,26 @@ namespace Environment::Field{
 					if(level > L || level <= 0)
 						continue;
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					#if !defined(AUTOMATIC)
 					manual = (getch() != 'y');
+					#else
+					manual = false;
+					#endif
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
 					std::cout << "Any other key: normal" << std::endl;
+					#if !defined(AUTOMATIC)
 					char c = getch();
+					#else
+					char c = 'r';
+					#endif
 					if(c == 'r')
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					play();
 					continue;
 				}
@@ -1694,16 +1723,26 @@ namespace Environment::Field{
 					level = 1;
 					mode = "Battle Royal";
 					std::cout << "do you want to use your AI agent? (y: yes/any other key: no)" << std::endl;
+					#if !defined(AUTOMATIC)
 					manual = (getch() != 'y');
+					#else
+					manual = false;
+					#endif
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
 					std::cout << "Any other key: normal" << std::endl;
+					#if !defined(AUTOMATIC)
 					char c = getch();
+					#else
+					char c = 'r';
+					#endif
 					if(c == 'r')
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					play();
 					online = false;
 					continue;
@@ -1711,15 +1750,21 @@ namespace Environment::Field{
                 if(c == '5'){
                 	level = 1;
                     mode = "AI Battle Royal";
+					/*
 					std::cout << "Options:\n";
 					std::cout << "r: replay a logged match\n";
 					std::cout << "l: log the match\n";
 					std::cout << "Any other key: normal" << std::endl;
+					#if !defined(AUTOMATIC)
 					char c = getch();
+					#else
+					char c = 'r';
+					#endif
 					if(c == 'r')
 						replay_mode = true;
 					if(c == 'l')
 						enable_logging = true;
+					*/
 					manual = false;
                     play();
                     online = false;
@@ -2070,11 +2115,17 @@ namespace Environment::Field{
 		std::vector<int> v = temp_me.get_cor();
 		std::string last = "", color, cell;
 		int Width, Hight;
-		Width = 15;
-		if (full1)
-			Hight = 15;
-		else
+		if (using_an_agent) {
+			Width = 15;
+			if (full1)
+				Hight = 15;
+			else
+				Hight = _H;
+		}
+		else{
 			Hight = _H;
+			Width = W;
+		}
 		for(int i = v[1] - Hight; i <= v[1] + Hight; ++i, res.push_back('\n'))
 			for(int j = v[2] - Width; j <= v[2] + Width; ++j){
 				cell = ((i < 0 || i >= N || j < 0 || j >= M) ? temp_cell.showit() : temp_map[i][j].showit());

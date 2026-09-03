@@ -282,7 +282,7 @@ public:
         return manual ^ flip_;
     }
 
-    void flip() { if (cnt > T_initial) flip_ ^= 1; }
+    bool flip() { if (cnt_ >= T_warmup_) { flip_ ^= 1; return true; } return false;}
 
     bool in_training(){
         return is_training;

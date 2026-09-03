@@ -36,7 +36,7 @@ public:
           bool inference_mode = false,
           int T = 1054,
           const std::string &model_dir = "bots/bot-bc-fap/backup",
-          const std::string &dataset_dir = "bots/bot-bc-fap/dataset/data_dagger")
+          const std::string &dataset_dir = "bots/bot-bc-fap/dataset/data_pin")
         : data_gathering_mode_(data_gathering_mode),
           inference_mode_(inference_mode),
           T_(T),
@@ -60,7 +60,8 @@ public:
             }
         }
 
-        model_->to(torch::kCPU);
+        if(inference_mode_)
+            model_->to(torch::kCPU);
 
         // 2. Prepare dataset directory
         if (!dataset_dir_.empty()) {
@@ -144,7 +145,7 @@ public:
         if (cnt_ <= T_initial_ || !warmup_finished_)
             return;
         
-        if(action < 0 || num_actions_ < action)
+        if(action < 0 || num_actions_ <= action)
             action = 0;
         
         // Update RNN state for next step (always needed)
@@ -198,7 +199,7 @@ public:
         return !inference_mode_ ^ flip_;
     }
 
-    void flip() { if (cnt_ > T_initial_ && warmup_finished_) flip_ ^= 1; }
+    bool flip() { if (cnt_ > T_initial_ && warmup_finished_) {flip_ ^= 1; return true; } return false; }
 
     bool in_training() { return data_gathering_mode_; }
 

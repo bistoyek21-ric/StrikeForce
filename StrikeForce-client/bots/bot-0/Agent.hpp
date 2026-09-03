@@ -35,5 +35,5 @@ public:
 
     bool is_manual(){return false ^ flip_;}
 
-    void flip() { flip_ ^= 1; }
+    bool flip() { flip_ ^= 1; return true; }
 };

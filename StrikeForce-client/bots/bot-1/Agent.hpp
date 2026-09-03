@@ -254,7 +254,7 @@ public:
         return manual_ ^ flip_;
     }
 
-    void flip() { if (cnt_ >= T_warmup_) flip_ ^= 1; }
+    bool flip() { if (cnt_ >= T_warmup_) { flip_ ^= 1; return true; } return false;}
 
     bool in_training() {
         return train_thread_.joinable() && !done_training_;

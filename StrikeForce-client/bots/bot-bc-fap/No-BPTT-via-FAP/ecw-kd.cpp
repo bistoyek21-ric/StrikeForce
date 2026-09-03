@@ -38,7 +38,11 @@ SOFTWARE.
 #include <chrono>
 #include <iomanip>
 
-//g++ -std=c++17 model.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && ./app
+//g++ -std=c++17 ecw-kd.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && ./app
+
+int pred_ind, logits_ind;
+
+std::vector<torch::Tensor> pin_fisher, pin_preds, pin_logits, pin_theta;
 
 namespace fs = std::filesystem;
 
@@ -591,6 +595,71 @@ EpisodeResult process_episode(PlayerPolicyNet& model,
     return result;
 }
 
+EpisodeResult process_batch(PlayerPolicyNet& model,
+                  std::unique_ptr<torch::optim::AdamW>& optimizer,
+                  const std::vector<std::string>& episode_files,
+                  int batches_done, int epoch, int start, int BATCH_SIZE,
+                  std::vector<int64_t> indices,
+                  double& best_val_loss,
+                  const std::string& model_path,
+                  const std::string& optim_path,
+                  const std::string& meta_path,
+                  const torch::Device& device,
+                  double GAMMA,
+                  int64_t PADDING,
+                  double GAMMA_FUTURE = 0.9){
+    
+    std::cout << "====== D_fix PHASE: ======" << std::endl;
+    
+    EpisodeResult batch_result;
+
+    batch_result.bb_sum = 0.0;
+    batch_result.bb_valid_count = 0;
+
+    batch_result.r_sum = 0.0;
+    batch_result.r_valid_count = 0;
+
+    for (int64_t b = 0; b < BATCH_SIZE; ++b) {
+        auto st = std::chrono::high_resolution_clock::now();
+
+        auto [states, actions, imitate] = load_episode(episode_files[indices[start + b]], device);
+        auto result = process_episode(model, states, actions, imitate, GAMMA, PADDING, GAMMA_FUTURE);
+
+        auto en = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);
+
+        batch_result.bb_sum += result.bb_sum;
+        batch_result.bb_valid_count += result.bb_valid_count;
+        batch_result.r_sum += result.r_sum;
+        batch_result.r_valid_count += result.r_valid_count;
+
+        double bb_avg_loss = result.bb_sum / (result.bb_valid_count + 0.01);
+        double r_avg_loss = result.r_sum / (result.r_valid_count + 0.01);
+        double avg_loss = bb_avg_loss + r_avg_loss;
+
+        std::cout << "Execution time (to load and process ep, batch sample " << b
+             << "): " << ((int)duration.count()) / 1000000.0 << " s" << std::endl;
+        
+        /*
+        std::cout << "--- Sample: " << b <<
+         ", traing loss: [BB(" << result.bb_valid_count << "):" << bb_avg_loss << 
+         ", R(" << result.r_valid_count << "):" << r_avg_loss << "]" << 
+         " | batch loss:" << avg_loss << " ---" << std::endl;
+        */
+    }
+
+    double bb_avg_loss = batch_result.bb_sum / (batch_result.bb_valid_count + 0.01);
+    double r_avg_loss = batch_result.r_sum / (batch_result.r_valid_count + 0.01);
+    double avg_loss = bb_avg_loss + r_avg_loss;
+
+    std::cout << "=== Epoch " << epoch << ", batch: " << batches_done
+          << ", training loss: [BB(" << batch_result.bb_valid_count << "):" << bb_avg_loss <<
+           ", R(" << batch_result.r_valid_count << "):" << r_avg_loss << "]"
+          << " | total loss:" << avg_loss << " ===\n" << std::endl;
+
+    return batch_result;
+}
+
 // ---------- set model gradients to weighted average of collected grads ----------
 void set_total_grad(PlayerPolicyNet& model, int n, int m) {
     auto named_params = model->named_parameters();
@@ -909,19 +978,230 @@ double validation(PlayerPolicyNet& model,
 }
 
 // -----------------------------------------------------------------------
+//  Handling KL-D process
+// -----------------------------------------------------------------------
+EpisodeResult process_kl_d_episode(PlayerPolicyNet& model,
+                              torch::Tensor states,     // [1, T, C, H, W]
+                              torch::Tensor actions,    // [1, T]
+                              torch::Tensor imitate,    // [1, T]
+                              double lambda, double gamma, int64_t padding, 
+                              double gamma_future = 0.9) {
+    auto device = states.device();
+    int64_t T = states.size(1);
+
+    // weight sum for future loss normalisation (same as before)
+    auto w = torch::zeros({1, padding}).to(device);
+    double sum_w = 0.0, tmp = 1.0;
+    for (int i = 0; i < padding; ++i) {
+        w[0][i] += tmp;
+        sum_w += tmp;
+        tmp *= gamma_future;
+    }
+
+    model->reset_memory();
+
+    EpisodeResult result;
+    result.bb_valid_count = 0;
+    result.bb_sum = 0.0;
+    result.r_valid_count = 0;
+    result.r_sum = 0.0;
+
+    auto prev_action = torch::tensor({5}, torch::kLong).to(device);
+
+    for (int64_t t = 0; t < T; ++t) {
+        auto x = states.select(1, t);
+        auto out = model->forward(x, prev_action);
+        auto pred = out[0];      // [1, PRED_HEADS, N_ACTIONS]
+        auto logits = out[1];    // [1, N_ACTIONS]
+        
+        /*
+        if (t < T - padding)
+            pin_preds.push_back(pred.clone().detach());
+        if (t >= padding)
+            pin_logits.push_back(logits.clone().detach());
+        */
+        
+        // Build step loss (policy loss + future loss)
+        torch::Tensor bb_loss = torch::zeros({1}, device);
+        torch::Tensor r_loss = torch::zeros({1}, device);
+
+        // Future loss (only if there are enough future steps)
+        if (t < T - padding) {
+            auto l_old = torch::log_softmax(pin_preds[pred_ind], -1);
+            auto l_new = torch::log_softmax(pred, -1);
+            ++pred_ind;
+
+            bb_loss = ((torch::exp(l_new) * (l_new - l_old)) * w.view({1, padding, 1})).sum();
+            
+            bb_loss = lambda * bb_loss;
+            bb_loss.backward();
+            result.bb_sum += bb_loss.item<double>();   // accumulate for logging
+
+            result.bb_valid_count += 1;
+        }
+
+        // Policy loss (only for t >= padding)
+        if (t >= padding) {
+            auto l_old = torch::log_softmax(pin_logits[logits_ind], -1);
+            auto l_new = torch::log_softmax(logits, -1); 
+            ++logits_ind;
+
+            r_loss = (torch::exp(l_new) * (l_new - l_old)).sum();
+
+            r_loss = lambda * r_loss;
+            r_loss.backward();
+            result.r_sum += r_loss.item<double>();   // accumulate for logging
+
+            result.r_valid_count += 1;
+        }
+
+        prev_action = actions.select(1, t);
+    }
+
+    model->reset_memory();
+
+    return result;
+}
+
+EpisodeResult process_kl_d_batch(PlayerPolicyNet& model,
+          std::unique_ptr<torch::optim::AdamW>& optimizer,
+          const std::vector<std::string>& pin_files,
+          int batches_done, int epoch,
+          double& best_val_loss,
+          const std::string& model_path,
+          const std::string& optim_path,
+          const std::string& meta_path,
+          const torch::Device& device,
+          double KD_LAMBDA,
+          double GAMMA,
+          int64_t PADDING,
+          double GAMMA_FUTURE = 0.9) {
+    
+    std::cout << "====== KL-D PHASE: ======" << std::endl;
+
+    pred_ind = 0;
+    logits_ind = 0;
+
+    EpisodeResult batch_result;
+
+    batch_result.bb_sum = 0.0;
+    batch_result.bb_valid_count = 0;
+
+    batch_result.r_sum = 0.0;
+    batch_result.r_valid_count = 0;
+    
+    for (int i = 0; i < pin_files.size(); ++i) {    
+        auto st = std::chrono::high_resolution_clock::now();
+
+        auto [states, actions, imitate] = load_episode(pin_files[i], device);
+        auto result = process_kl_d_episode(model, states, actions, imitate, KD_LAMBDA, GAMMA, PADDING, GAMMA_FUTURE);
+
+        auto en = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);
+
+        batch_result.bb_sum += result.bb_sum;
+        batch_result.bb_valid_count += result.bb_valid_count;
+        batch_result.r_sum += result.r_sum;
+        batch_result.r_valid_count += result.r_valid_count;
+
+        double bb_avg_loss = result.bb_sum / (result.bb_valid_count + 0.01);
+        double r_avg_loss = result.r_sum / (result.r_valid_count + 0.01);
+        double avg_loss = bb_avg_loss + r_avg_loss;
+
+        std::cout << "Execution time (to load and process ep, batch sample " << i
+             << "): " << ((int)duration.count()) / 1000000.0 << " s" << std::endl;
+
+        /*
+        std::cout << "KL-D Sample: " << b <<
+         ", traing loss: [BB(" << result.bb_valid_count << "):" << bb_avg_loss << 
+         ", R(" << result.r_valid_count << "):" << r_avg_loss << "]" << 
+         " | batch loss:" << avg_loss << " ---" << std::endl;
+        */
+    }
+    
+    double bb_avg_loss = batch_result.bb_sum / (batch_result.bb_valid_count + 0.01);
+    double r_avg_loss = batch_result.r_sum / (batch_result.r_valid_count + 0.01);
+    double avg_loss = bb_avg_loss + r_avg_loss;
+
+    std::cout << "=== Epoch " << epoch << ", batch: " << batches_done
+          << ", training loss: [BB(" << batch_result.bb_valid_count << "):" << bb_avg_loss <<
+           ", R(" << batch_result.r_valid_count << "):" << r_avg_loss << "]"
+          << " | total loss:" << avg_loss << " ===\n" << std::endl;
+
+    return batch_result;
+}
+
+// -----------------------------------------------------------------------
+//  Handling pin vectors
+// -----------------------------------------------------------------------
+void save_vector(
+    const std::vector<torch::Tensor>& v,
+    const std::string& path
+) {
+    torch::serialize::OutputArchive archive;
+
+    archive.write(
+        "size",
+        torch::tensor(
+            {(int64_t)v.size()},
+            torch::TensorOptions().dtype(torch::kInt64)
+        )
+    );
+
+    for (size_t i = 0; i < v.size(); ++i) {
+        archive.write(
+            "tensor_" + std::to_string(i),
+            v[i]
+        );
+    }
+
+    archive.save_to(path);
+}
+
+std::vector<torch::Tensor> load_vector(
+    const std::string& path, torch::Device& device
+) {
+    torch::serialize::InputArchive archive;
+    archive.load_from(path);
+
+    torch::Tensor size_tensor;
+    archive.read("size", size_tensor);
+
+    int64_t size = size_tensor.item<int64_t>();
+
+    std::vector<torch::Tensor> v;
+    v.reserve(size);
+
+    for (int64_t i = 0; i < size; ++i) {
+        torch::Tensor tensor;
+
+        archive.read(
+            "tensor_" + std::to_string(i),
+            tensor
+        );
+
+        v.push_back(tensor.to(device));
+    }
+
+    return v;
+}
+
+// -----------------------------------------------------------------------
 //  Main training
 // -----------------------------------------------------------------------
 int main(int argc, char* argv[]) {
     // Defaults
+    std::string pin_dir = "../dataset/data_pin";
     std::string data_dir = "../dataset/data_train";
     std::string val_dir = "../dataset/data_val";
     int num_epochs =  512;
 
-    if (argc > 1) data_dir = argv[1];
-    if (argc > 2) num_epochs = std::stoi(argv[2]);
-    if (argc > 3) val_dir = argv[3];
+    if (argc > 1) pin_dir = argv[0];
+    if (argc > 2) data_dir = argv[1];
+    if (argc > 3) val_dir = argv[2];
+    if (argc > 4) num_epochs = std::stoi(argv[3]);
 
-    torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
+    torch::Device device(/*torch::cuda::is_available() ? torch::kCUDA : */torch::kCPU);
     std::cout << "Using device: " << device << std::endl;
 
     // 1. Gather episode file paths
@@ -935,6 +1215,19 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::cout << "Found " << episode_files.size() << " episodes." << std::endl;
+
+
+    std::vector<std::string> pin_files;
+    for (const auto& entry : fs::directory_iterator(pin_dir)) {
+        if (entry.path().extension() == ".pt")
+            pin_files.push_back(entry.path().string());
+    }
+    if (pin_files.empty()) {
+        std::cerr << "No .pt files found in " << pin_dir << std::endl;
+        return 1;
+    }
+    sort(pin_files.begin(), pin_files.end());
+    std::cout << "Found " << pin_files.size() << " pin episodes." << std::endl;
 
     std::vector<std::string> val_files;
     if (fs::exists(val_dir)) {
@@ -965,16 +1258,30 @@ int main(int argc, char* argv[]) {
     start_epoch += 1;
     std::cout << "Resumed from epoch " << (start_epoch-1)
             << " with best loss " << best_val_loss << std::endl;
-
+    
     // 3. Training loop
-    const int64_t BATCH_SIZE = 20;
+    const int64_t BATCH_SIZE = 5;
     const int64_t PADDING = model->PRED_HEADS;
-    const double GAMMA = 2.0;
-    const double GAMMA_FUTURE = 0.9;
+    const double GAMMA = 2.0, GAMMA_FUTURE = 0.9;
+    const double ECW_LAMBDA = 1.0, KD_LAMBDA = 1.0;
 
     std::vector<int64_t> indices(episode_files.size());
     std::iota(indices.begin(), indices.end(), 0);
     std::mt19937 gen(std::random_device{}());
+
+    pin_theta = load_vector("pin_meta/pin_theta.pt", device);
+    pin_fisher = load_vector("pin_meta/pin_fisher.pt", device);
+    pin_preds = load_vector("pin_meta/pin_preds.pt", device);
+    pin_logits = load_vector("pin_meta/pin_logits.pt", device);
+    /*
+    process_kl_d_batch(model,
+             optimizer, pin_files, 0, 0, best_val_loss,
+             model_path, optim_path, meta_path, device,
+             KD_LAMBDA, GAMMA, PADDING, GAMMA_FUTURE);
+    save_vector(pin_preds, "pin_meta/pin_preds.pt");
+    save_vector(pin_logits, "pin_meta/pin_logits.pt");
+    exit(0);
+    */
     /*
     --start_epoch;
     srand(start_epoch);
@@ -1003,75 +1310,90 @@ int main(int argc, char* argv[]) {
             int64_t batch_valid_total = 0;
             model->zero_grad();
 
-            EpisodeResult batch_result;
-
-            batch_result.bb_sum = 0.0;
-            batch_result.bb_valid_count = 0;
-
-            batch_result.r_sum = 0.0;
-            batch_result.r_valid_count = 0;
-
-            // 1. Process each episode individually
-            for (int64_t b = 0; b < BATCH_SIZE; ++b) {
-                auto st = std::chrono::high_resolution_clock::now();
-
-                auto [states, actions, imitate] = load_episode(episode_files[indices[start + b]], device);
-                auto result = process_episode(model, states, actions, imitate, GAMMA, PADDING, GAMMA_FUTURE);
-
-                auto en = std::chrono::high_resolution_clock::now();
-                auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);
-
-                batch_result.bb_sum += result.bb_sum;
-                batch_result.bb_valid_count += result.bb_valid_count;
-                batch_result.r_sum += result.r_sum;
-                batch_result.r_valid_count += result.r_valid_count;
-
-                double bb_avg_loss = result.bb_sum / (result.bb_valid_count + 0.01);
-                double r_avg_loss = result.r_sum / (result.r_valid_count + 0.01);
-                double avg_loss = bb_avg_loss + r_avg_loss;
-
-                std::cout << "Execution time (to load and process ep, batch sample " << b
-                     << "): " << ((int)duration.count()) / 1000000.0 << " s\n";
-
-                std::cout << "--- Sample: " << b <<
-                 ", traing loss: [BB(" << result.bb_valid_count << "):" << bb_avg_loss << 
-                 ", R(" << result.r_valid_count << "):" << r_avg_loss << "]" << 
-                 " | batch loss:" << avg_loss << " ---" << std::endl;
-            }
+            // 1. Process D_fix
+            EpisodeResult batch_result = process_batch(model, optimizer, episode_files,
+                 batches_done, epoch, start, BATCH_SIZE, indices, best_val_loss, model_path, optim_path,
+                  meta_path, device, GAMMA, PADDING, GAMMA_FUTURE);
 
             // 2. Aggregate gradients & step
             if (batch_result.bb_valid_count + batch_result.r_valid_count > 0) {
+                epoch_result.bb_sum += batch_result.bb_sum += 0.0;
+                epoch_result.bb_valid_count += batch_result.bb_valid_count;
+
+                epoch_result.r_sum += batch_result.r_sum;
+                epoch_result.r_valid_count += batch_result.r_valid_count;
 
                 auto st = std::chrono::high_resolution_clock::now();
 
                 set_total_grad(model, batch_result.bb_valid_count, batch_result.r_valid_count);
-                torch::nn::utils::clip_grad_norm_(model->parameters(), 1.0);
                 
+                std::cout << "====== ECW PHASE: ======" << std::endl;
+
+                int sz = model->parameters().size();
+                auto loss_ecw = torch::zeros({1}, device);
+                for(int i = 0; i < sz; ++i)
+                    loss_ecw += (pin_fisher[i] * (model->parameters()[i] - pin_theta[i]).pow(2)).sum();
+                loss_ecw = loss_ecw * ECW_LAMBDA;
+
+                loss_ecw.backward();
+
+                std::cout << "ECW_Loss: " << loss_ecw << '\n' << std::endl;
+
+                std::vector<torch::Tensor> grads;
+
+                for (auto& p: model->parameters()) {
+                    if (p.grad().defined())
+                        grads.push_back(p.grad().clone().detach());
+                    else
+                        grads.push_back(torch::zeros_like(p).to(device));
+                }
+                model->zero_grad();
+
+                EpisodeResult kl_d_batch_result = process_kl_d_batch(model,
+                     optimizer, pin_files, batches_done, epoch, best_val_loss,
+                     model_path, optim_path, meta_path, device,
+                     KD_LAMBDA, GAMMA, PADDING, GAMMA_FUTURE);
+
+                set_total_grad(model, kl_d_batch_result.bb_valid_count, kl_d_batch_result.r_valid_count);
+                
+                for (int i = 0; i < model->parameters().size(); ++i)
+                    if (model->parameters()[i].grad().defined())
+                        grads[i] += model->parameters()[i].grad().clone().detach();
+
+                model->zero_grad();
+
+                auto sum_of_all = torch::zeros({1}, device);
+                for (int i = 0; i < model->parameters().size(); ++i)
+                    sum_of_all += model->parameters()[i].sum();
+                sum_of_all.backward();
+
+                for (int i = 0; i < model->parameters().size(); ++i)
+                    model->parameters()[i].mutable_grad() = grads[i].detach() - 1;
+
+                torch::nn::utils::clip_grad_norm_(model->parameters(), 1.0);
                 optimizer->step();
 
                 model->zero_grad();
 
+                //------------ Safe Sphear -----------
+
+                for (int i = 0; i < model->parameters().size(); ++i) {
+                    auto l = (model->parameters()[i] - pin_theta[i]).norm().item<double>();
+                    auto l2 = pin_theta[i].norm().item<double>() * 0.01;
+                    if (l > l2)
+                        model->parameters()[i] = (pin_theta[i] 
+                         + ((model->parameters()[i] - pin_theta[i]) / l) * l2).clone().detach();
+                }
+
+                //------------------------------------
+
                 auto en = std::chrono::high_resolution_clock::now();
                 auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);
-                
-                double bb_avg_loss = batch_result.bb_sum / (batch_result.bb_valid_count + 0.01);
-                double r_avg_loss = batch_result.r_sum / (batch_result.r_valid_count + 0.01);
-                double avg_loss = bb_avg_loss + r_avg_loss;
-                
-                epoch_result.bb_sum += batch_result.bb_sum;
-                epoch_result.bb_valid_count += batch_result.bb_valid_count;
-                epoch_result.r_sum += batch_result.r_sum;
-                epoch_result.r_valid_count += batch_result.r_valid_count;
 
                 batches_done++;
 
-                std::cout << "*** Execution time (to update parameters, at the end of the batch):"
+                std::cout << "*** Execution time ECW + KL-D: "
                      << ((int)duration.count()) / 1000000.0 << " s. ***\n";
-
-                std::cout << "=== Epoch " << epoch << ", batch: " << batches_done
-                  << ", training loss: [BB(" << batch_result.bb_valid_count << "):" << bb_avg_loss <<
-                   ", R(" << batch_result.r_valid_count << "):" << r_avg_loss << "]"
-                  << " | total loss:" << avg_loss << " ===\n" << std::endl;
             } else {
                 std::cerr << "Warning: whole batch had no valid actions, skipping." << std::endl;
             }

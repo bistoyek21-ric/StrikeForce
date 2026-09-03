@@ -42,6 +42,8 @@ SOFTWARE.
 
 namespace fs = std::filesystem;
 
+static constexpr int64_t N_ACTIONS   = 7;
+
 struct PreLNAttnBlockImpl : torch::nn::Module {
     torch::nn::MultiheadAttention attn{nullptr};
     torch::nn::LayerNorm norm_q{nullptr}, norm_kv{nullptr}, norm_ffn{nullptr};
@@ -93,12 +95,13 @@ struct AFCStageSparseImpl : torch::nn::Module {
     AFCStageSparseImpl(int64_t in_channels, int64_t d_tok_, int64_t d_out_,
                        int64_t n_, int64_t K_ = 6, int64_t n_heads_ = 4)
         : K(K_), d_tok(d_tok_), d_out(d_out_), n(n_), n_heads(n_heads_) {
-        pos1d       = register_parameter("pos1d",    torch::randn({n, d_tok}) * 0.02);
+        pos1d       = register_parameter("pos1d",       torch::randn({n, d_tok}) * 0.02);
+        type_embed  = register_parameter("type_embed",  torch::randn({2, d_tok}) * 0.02);
+        
         queries     = register_parameter("queries",  torch::randn({K, d_tok}) * 0.02);
         query_pe    = register_parameter("query_pe", torch::randn({K, d_tok}) * 0.02);
         axial_block = register_module("axial_block", PreLNAttnBlock(d_tok, n_heads));
 
-        type_embed      = register_parameter("type_embed",      torch::randn({2, d_tok}) * 0.02);
         token_idx_embed = register_parameter("token_idx_embed", torch::randn({K, d_tok}) * 0.02);
         row_coord_embed = register_parameter("row_coord_embed", torch::randn({n, d_tok}) * 0.02);
         col_coord_embed = register_parameter("col_coord_embed", torch::randn({n, d_tok}) * 0.02);
@@ -136,9 +139,9 @@ struct AFCStageSparseImpl : torch::nn::Module {
         auto row_coord = row_coord_embed.index_select(0, row_coord_ids);
         auto col_coord = col_coord_embed.index_select(0, col_coord_ids);
 
-        auto row_label = type_embed[0].view({1,1,d_tok}) + token_idx_embed.view({1,K,d_tok})
+        auto row_label = token_idx_embed.view({1,K,d_tok})
                         + row_coord.view({M,1,d_tok});
-        auto col_label = type_embed[1].view({1,1,d_tok}) + token_idx_embed.view({1,K,d_tok})
+        auto col_label = token_idx_embed.view({1,K,d_tok})
                         + col_coord.view({M,1,d_tok});
 
         row_sel = row_sel + row_label.unsqueeze(0);
@@ -166,8 +169,8 @@ struct AFCStageSparseImpl : torch::nn::Module {
                           const std::vector<std::pair<int64_t,int64_t>>& coords) {
         if (proj) x = proj->forward(x.permute({0,2,3,1})).permute({0,3,1,2});
 
-        auto rows = x.permute({0,2,3,1}) + pos1d.view({1,1,n,d_tok});
-        auto cols = x.permute({0,3,2,1}) + pos1d.view({1,1,n,d_tok});
+        auto rows = x.permute({0,2,3,1}) + (pos1d + type_embed[0]).view({1,1,n,d_tok});
+        auto cols = x.permute({0,3,2,1}) + (pos1d + type_embed[1]).view({1,1,n,d_tok});
 
         auto combined_seq = torch::cat({rows, cols}, 1);
         auto combined = axial_summarize(combined_seq);
@@ -223,8 +226,8 @@ struct AFCStageSparseImpl : torch::nn::Module {
         auto row_seq = v.index({torch::indexing::Slice(), row_gather});
         auto col_seq = v.index({torch::indexing::Slice(), col_gather});
 
-        row_seq = row_seq + pos1d.view({1,1,n,d_tok});
-        col_seq = col_seq + pos1d.view({1,1,n,d_tok});
+        row_seq = row_seq + (pos1d + type_embed[0]).view({1,1,n,d_tok});
+        col_seq = col_seq + (pos1d + type_embed[1]).view({1,1,n,d_tok});
 
         auto combined_seq = torch::cat({row_seq, col_seq}, 1);
         auto combined = axial_summarize(combined_seq);
@@ -275,7 +278,6 @@ struct AFCBackboneSparseImpl : torch::nn::Module {
 TORCH_MODULE(AFCBackboneSparse);
 
 struct PlayerPolicyNetImpl : torch::nn::Module {
-    static constexpr int64_t N_ACTIONS   = 7;
     static constexpr int64_t FIXED_ROW   = 15, FIXED_COL = 15;
     static constexpr int64_t WINDOW_SIZE = 31, PRED_HEADS = 31;
     static constexpr int64_t d_model     = 300;
@@ -352,12 +354,13 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
         for (auto &pred_head: pred_heads)
             prog.push_back(pred_head->forward(A_vec).unsqueeze(1));               // [B, 1, N_ACTIONS]
 
-        auto pred = torch::stack(prog, 1);                                        // [B, PRED_HEADS, N_ACTIONS]
+        auto pred = torch::stack(prog, 1).squeeze(2);                                        // [B, PRED_HEADS, N_ACTIONS]
 
         auto B_vec   = x.index({I::Slice(), I::Slice(),
                                 FIXED_ROW, FIXED_COL}).clone();         // [B, C]
         auto C_vec   = torch::one_hot(prev_action, N_ACTIONS)
                            .to(A_vec.dtype());
+
         auto x_cat   = torch::cat({A_vec.detach(), B_vec, C_vec}, 1);   // [B, afc_d_out2+C+N_ACTIONS]
 
         // Push new token, pop oldest once past the window — out-of-place,

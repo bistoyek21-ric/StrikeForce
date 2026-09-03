@@ -19,7 +19,7 @@
 
 #define SLOWMOTION
 
-//#define DATA_GATHERING_MODE
+#define DATA_GATHERING_MODE
 
 #define DATASET "datasets/bot-bc"
 

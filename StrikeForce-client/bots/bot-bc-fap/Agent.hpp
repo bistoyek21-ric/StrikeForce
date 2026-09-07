@@ -35,7 +35,7 @@ torch::Tensor bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeaws
     auto logits_clone = logits.clone().detach();
     auto probs = torch::softmax(logits_clone, -1);
     probs[0][0] *= 0;
-    probs[0][1] *= 0;
+    probs[0][1] *= 0; // this line is optional (trade off consistancy vs kill-rate) [1]
     int dx1[4] = {1, 0, -1, 0}, dy1[4] = {0, 1, 0, -1};
     int c = 0;
     for (int i = 0; i < 4; ++i) {
@@ -56,7 +56,7 @@ torch::Tensor bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeaws
             c = 1;
         }
     }
-    probs[0][2] *= c;
+    probs[0][2] *= c; // this line is optional (trade off consistancy vs kill-rate) [1.1]
     int dx2[4] = {0, -1, 1, 0}, dy2[4] = {-1, 0, 0, 1};
     for (int i = 0; i < 4; ++i)
         if (state[0][15][d[2] / 2 + dx2[i]][d[3] / 2 + dy2[i]].item<double>() == 0)

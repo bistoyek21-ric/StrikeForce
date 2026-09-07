@@ -427,7 +427,7 @@ torch::Tensor future_pred_loss(
     auto weights = torch::pow(gamma_future, torch::arange(H, pred.options()))
                         .view({1, H, 1});   // [1, H, 1]
 
-    auto log_probs = torch::log_softmax(pred, -1);  // [B, H, N]
+    auto log_probs = torch::log_softmax(pred, -1) * (1 - torch::softmax(pred, -1)).pow(gamma);  // [B, H, N]
 
     auto gathered = log_probs.gather(-1, future_actions.unsqueeze(-1)).squeeze(-1); // [B, H]
     auto loss_per_step = -gathered * weights.squeeze(-1) * mask;
@@ -1031,7 +1031,7 @@ EpisodeResult process_kl_d_episode(PlayerPolicyNet& model,
             auto l_new = torch::log_softmax(pred, -1);
             ++pred_ind;
 
-            bb_loss = ((torch::exp(l_new) * (l_new - l_old)) * w.view({1, padding, 1})).sum();
+            bb_loss = ((torch::exp(l_new) * (l_new - l_old)) * w.view({1, padding, 1})).sum() / sum_w;
             
             bb_loss = lambda * bb_loss;
             bb_loss.backward();
@@ -1260,10 +1260,10 @@ int main(int argc, char* argv[]) {
             << " with best loss " << best_val_loss << std::endl;
     
     // 3. Training loop
-    const int64_t BATCH_SIZE = 5;
+    const int64_t BATCH_SIZE = 14;
     const int64_t PADDING = model->PRED_HEADS;
     const double GAMMA = 2.0, GAMMA_FUTURE = 0.9;
-    const double ECW_LAMBDA = 1.0, KD_LAMBDA = 1.0;
+    const double ECW_LAMBDA = 5.0, KD_LAMBDA = 5.0;
 
     std::vector<int64_t> indices(episode_files.size());
     std::iota(indices.begin(), indices.end(), 0);
@@ -1310,7 +1310,7 @@ int main(int argc, char* argv[]) {
             int64_t batch_valid_total = 0;
             model->zero_grad();
 
-	    auto st = std::chrono::high_resolution_clock::now();
+    	    auto st = std::chrono::high_resolution_clock::now();
 
             // 1. Process D_fix
             EpisodeResult batch_result = process_batch(model, optimizer, episode_files,
@@ -1318,79 +1318,79 @@ int main(int argc, char* argv[]) {
                   meta_path, device, GAMMA, PADDING, GAMMA_FUTURE);
 
             // 2. Aggregate gradients & step
-	    epoch_result.bb_sum += batch_result.bb_sum;
-	    epoch_result.bb_valid_count += batch_result.bb_valid_count;
+    	    epoch_result.bb_sum += batch_result.bb_sum;
+	        epoch_result.bb_valid_count += batch_result.bb_valid_count;
 	    
-	    epoch_result.r_sum += batch_result.r_sum;
-	    epoch_result.r_valid_count += batch_result.r_valid_count;
+    	    epoch_result.r_sum += batch_result.r_sum;
+	        epoch_result.r_valid_count += batch_result.r_valid_count;
 
 
-	  set_total_grad(model, batch_result.bb_valid_count, batch_result.r_valid_count);
+	        set_total_grad(model, batch_result.bb_valid_count, batch_result.r_valid_count);
                 
-	  std::cout << "====== ECW PHASE: ======" << std::endl;
+            std::cout << "====== ECW PHASE: ======" << std::endl;
 
-	  int sz = model->parameters().size();
-	  auto loss_ecw = torch::zeros({1}, device);
-	  for(int i = 0; i < sz; ++i)
-		  loss_ecw += (pin_fisher[i] * (model->parameters()[i] - pin_theta[i]).pow(2)).sum();
-	  loss_ecw = loss_ecw * ECW_LAMBDA;
+	        int sz = model->parameters().size();
+            auto loss_ecw = torch::zeros({1}, device);
+            for(int i = 0; i < sz; ++i)
+                loss_ecw += (pin_fisher[i] * (model->parameters()[i] - pin_theta[i]).pow(2)).sum();
+            loss_ecw = loss_ecw * ECW_LAMBDA;
 
-	  loss_ecw.backward();
+            loss_ecw.backward();
 
-	  std::cout << "ECW_Loss: " << loss_ecw << '\n' << std::endl;
+    	    std::cout << "ECW_Loss: " << loss_ecw << '\n' << std::endl;
 
-	  std::vector<torch::Tensor> grads;
+	        std::vector<torch::Tensor> grads;
 
-	  for (auto& p: model->parameters()) {
-		  if (p.grad().defined())
-			  grads.push_back(p.grad().clone().detach());
-		  else
-			  grads.push_back(torch::zeros_like(p).to(device));
-	  }
-	  model->zero_grad();
+	        for (auto& p: model->parameters()) {
+		        if (p.grad().defined())
+			        grads.push_back(p.grad().clone().detach());
+		        else
+			        grads.push_back(torch::zeros_like(p).to(device));
+	        }
+	        model->zero_grad();
 
-	  EpisodeResult kl_d_batch_result = process_kl_d_batch(model,
+            EpisodeResult kl_d_batch_result = process_kl_d_batch(model,
                      optimizer, pin_files, batches_done, epoch, best_val_loss,
                      model_path, optim_path, meta_path, device,
                      KD_LAMBDA, GAMMA, PADDING, GAMMA_FUTURE);
 
-	  set_total_grad(model, kl_d_batch_result.bb_valid_count, kl_d_batch_result.r_valid_count);
+            set_total_grad(model, kl_d_batch_result.bb_valid_count, kl_d_batch_result.r_valid_count);
                 
-	  for (int i = 0; i < model->parameters().size(); ++i)
-		  if (model->parameters()[i].grad().defined())
-			  grads[i] += model->parameters()[i].grad().clone().detach();
+	        for (int i = 0; i < model->parameters().size(); ++i)
+		        if (model->parameters()[i].grad().defined())
+			        grads[i] += model->parameters()[i].grad().clone().detach();
 
-	  model->zero_grad();
+	        model->zero_grad();
 
-	  auto sum_of_all = torch::zeros({1}, device);
-	  for (int i = 0; i < model->parameters().size(); ++i)
-		  sum_of_all += model->parameters()[i].sum();
-	  sum_of_all.backward();
+	        auto sum_of_all = torch::zeros({1}, device);
+	        for (int i = 0; i < model->parameters().size(); ++i)
+		        sum_of_all += model->parameters()[i].sum();
+	        sum_of_all.backward();
 
-	  for (int i = 0; i < model->parameters().size(); ++i)
-		  model->parameters()[i].mutable_grad() = grads[i].clone().detach();
+	        for (int i = 0; i < model->parameters().size(); ++i)
+		        model->parameters()[i].mutable_grad() = grads[i].clone().detach();
 
-	  torch::nn::utils::clip_grad_norm_(model->parameters(), 1.0);
-	  optimizer->step();
+	        torch::nn::utils::clip_grad_norm_(model->parameters(), 1.0);
+    	    optimizer->step();
 
-	  model->zero_grad();
+	        model->zero_grad();
                 
-	  //------------ Safe Sphear -----------
-	  double step_len = 0.0;
-	  for (int i = 0; i < model->parameters().size(); ++i) {
-		  auto l = (model->parameters()[i] - pin_theta[i]).norm().item<double>();
-		  step_len += l * l;
-	  }
-	  std::cout << "step length: " << std::sqrt(step_len) << std::endl;
-	  //------------------------------------
+	        //------------ Safe Sphear -----------
+    	    double step_len = 0.0;
+	        for (int i = 0; i < model->parameters().size(); ++i) {
+		        auto l = (model->parameters()[i] - pin_theta[i]).norm().item<double>();
+		        step_len += l * l;
+    	    }
+	        std::cout << "distance from theta_0: " << std::sqrt(step_len) << std::endl;
+	        //------------------------------------
 
-	  auto en = std::chrono::high_resolution_clock::now();
-	  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);
+    	    auto en = std::chrono::high_resolution_clock::now();
+	        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(en - st);
 
-	  batches_done++;
+	        batches_done++;
 
-	  std::cout << "*** Execution time D_fix + ECW + KL-D: "
-		  << ((int)duration.count()) / 1000000.0 << " s. ***\n";
+    	    std::cout << "*** Execution time D_fix + ECW + KL-D: "
+	    	  << ((int)duration.count()) / 1000000.0 << " s. ***\n";
         } // end batch loop
 
         double val_avg = 0.0;

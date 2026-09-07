@@ -2037,8 +2037,8 @@ namespace Environment::Field{
 		else if(rand() % 5 < 3)
 			return 'x';
 		else if(rand() % 5 < 3){
-			char c[7] = {'1', '2', 'a', 'w', 's', 'd', 'p'};
-			return c[rand() % 7];
+			char c[6] = {'e', 'a', 'w', 's', 'd', 'p'};
+			return c[rand() % 6];
 		}
 		char c[8] = {'+', 'u', 'f', 'g', 'h', 'j', '[', ']'};
 		return c[rand() % 8];

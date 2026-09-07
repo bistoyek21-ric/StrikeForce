@@ -25,7 +25,7 @@ SOFTWARE.
 #include "../../gameplay.hpp"
 
 namespace Environment::Field{
-
+	// 8, 15, [20, 21, 22, 23]
 	std::vector<float> describe(const node &cell, const Environment::Character::Human &player){
 		std::vector<float> res;
 		// object type |Char bullet wall chest portal-in portal-out tmp| {0, 1}^7      | 7

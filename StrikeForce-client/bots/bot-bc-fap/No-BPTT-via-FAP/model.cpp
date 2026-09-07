@@ -914,7 +914,7 @@ double validation(PlayerPolicyNet& model,
 int main(int argc, char* argv[]) {
     // Defaults
     std::string data_dir = "../dataset/data_train";
-    std::string val_dir = "../dataset/data_val";
+    std::string val_dir = "../dataset/data_pin";
     int num_epochs =  512;
 
     if (argc > 1) num_epochs = std::stoi(argv[1]);
@@ -975,14 +975,14 @@ int main(int argc, char* argv[]) {
     std::vector<int64_t> indices(episode_files.size());
     std::iota(indices.begin(), indices.end(), 0);
     std::mt19937 gen(std::random_device{}());
-    /*
+    
     --start_epoch;
     srand(start_epoch);
     validation(model, optimizer, val_files, start_epoch, best_val_loss,
                  model_path, optim_path, meta_path, device,
                  GAMMA, PADDING, GAMMA_FUTURE);
     exit(0);
-    */
+    
     for (int epoch = start_epoch; epoch < num_epochs; ++epoch) {
 	    srand(epoch);
 

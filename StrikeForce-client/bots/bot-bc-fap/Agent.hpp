@@ -30,29 +30,39 @@ SOFTWARE.
 
 const std::string bot_code = "bot-bc-fap", backup_path = "bots/bot-bc-fap/backup";
 
-torch::Tensor bc_inference(torch::Tensor logits, float temperature = 1, float top_p = 0.8, int top_k = 2) {
-    logits = logits / temperature;
-    auto probs = torch::softmax(logits, -1);
-    auto sorted = torch::sort(probs, -1, true);
-    auto sorted_probs = std::get<0>(sorted);
-    auto sorted_indices = std::get<1>(sorted);
-    
-    if (top_k > 0) {
-        auto indices_range = torch::arange(sorted_probs.size(-1), sorted_probs.options());
-        auto mask_k = indices_range >= top_k;
-        sorted_probs.masked_fill_(mask_k, 0.0);
+torch::Tensor bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeawsd
+    auto d = state.sizes();
+    auto logits_clone = logits.clone().detach();
+    auto probs = torch::softmax(logits_clone, -1);
+    probs[0][0] *= 0;
+    probs[0][1] *= 0;
+    int dx1[4] = {1, 0, -1, 0}, dy1[4] = {0, 1, 0, -1};
+    int c = 0;
+    for (int i = 0; i < 4; ++i) {
+        auto w = state[0][20 + i][d[2] / 2][d[3] / 2].item<double>();
+        if (state[0][8][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0) {
+            if (w != 0)
+                return torch::tensor(1);
+            c = 1;
+        }
+        if (state[0][9][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0) {
+            if (w != 0)
+                return torch::tensor(1);
+            c = 1;
+        }
+        if (state[0][10][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0) {
+            if (w != 0)
+                return torch::tensor(1);
+            c = 1;
+        }
     }
-    
-    auto cumsum_probs = sorted_probs.cumsum(-1);
-    auto mask_p = cumsum_probs > top_p;
-    
-    mask_p.select(-1, 0).fill_(false);
-    
-    sorted_probs.masked_fill_(mask_p, 0.0);
-    auto sum_probs = sorted_probs.sum(-1, true);
-    sorted_probs = sorted_probs / sum_probs;
-    auto sampled_sorted = torch::multinomial(sorted_probs, 1);
-    return sorted_indices.gather(-1, sampled_sorted);
+    probs[0][2] *= c;
+    int dx2[4] = {0, -1, 1, 0}, dy2[4] = {-1, 0, 0, 1};
+    for (int i = 0; i < 4; ++i)
+        if (state[0][15][d[2] / 2 + dx2[i]][d[3] / 2 + dy2[i]].item<double>() == 0)
+                probs[0][3 + i] *= 0;
+    probs = probs / probs.sum();
+    return probs.argmax();
 }
 
 class Agent {
@@ -161,7 +171,7 @@ public:
             //std::cout << "probs:\n" << probs << "\n";
             //std::cout << "pr[0]:\n" << torch::softmax(out[0][0][0].view({1, -1}), 1) << std::endl;
             //return probs.argmax().item<int>();
-            return bc_inference(logits).item<int>();
+            return bc_inference(logits, state).item<int>();
         }
 
         // inference_mode_ == false → human plays (manual), predict is not really used

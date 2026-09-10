@@ -653,7 +653,7 @@ StrikeForce/
 │   │   │   ├── Agent.hpp
 │   │   │   ├── Custom.hpp
 │   │   │   └── Modules.hpp
-│   │   └── bot-bc-focal/            # BC with MGDA (our method)
+│   │   └── bot-bc-fap/            # BC with MGDA (our method)
 │   │       ├── Agent.hpp
 │   │       ├── Custom.hpp
 │   │       └── Modules.hpp
@@ -672,27 +672,42 @@ StrikeForce/
 
 ## 📊 Research Context
 
-### Current Focus: Fair Behavioral Cloning with MGDA
+### Efficient Machine Learning & Behavioral Repair
 
-The latest bots, **bot‑bc** and **bot‑bc‑mgda**, are part of an ongoing study on **multi‑objective imitation learning**. In many demonstrations, action distributions are highly skewed (e.g., moving is much more frequent than shooting or healing). Standard BC tends to sacrifice the rare actions, leading to a loss of diverse behavior.
+The latest operational bot is **`bot-bc-fap`**. Together with its related projects, it is part of an ongoing study on **efficiency and safety in ML**. The two under-preparation papers below describe the architecture and the repair procedure behind this bot.
 
-We treat each action type as a separate loss function and apply the **Multiple‑Gradient Descent Algorithm (MGDA)** to find a weight update that improves all actions simultaneously. The comparison between bot‑bc (single combined loss) and bot‑bc‑mgda (MGDA‑guided update) shows how this approach preserves rare actions without harming overall performance.
+**No Back-Propagation Through Time via Future Action Prediction**  
+Introduces a decoupled imitation-learning architecture for partially observable games. A **Future-Action Predictor (FAP)** backbone is trained only to predict the expert's future actions over a bounded horizon $H$. A separate **Transformer aggregator** then consumes a sliding window of detached latents, local raw observations, and the agent's own action history. Because policy gradients are stopped before the backbone, the method removes **BPTT** from the perception backbone. This gives constant memory $\mathcal{O}(H^2)$ independent of episode length $T$, stable gradients under a pseudo-Markovian assumption, a no-regret aggregation guarantee, and a general bias-variance analysis. This is the efficient training backbone behind `bot-bc-fap`.
+
+**Targeted Behavioral Repair with Contaminated Anchors**  
+Studies post-hoc correction of a specific, identified behavioral failure in a converged policy without retraining from scratch. The repair objective combines a corrective loss on a small $D_{\mathrm{fix}}$ with **EWC** parameter-space preservation and **KD** output-space preservation on an anchor set $D_{\mathrm{anc}}$. The paper formalizes the **contaminated-anchor** setting—where $D_{\mathrm{anc}}$ may itself contain the failure behavior—and analyzes the local multi-step repair dynamics, showing a curvature-weighted repair equilibrium. This is the efficient repair procedure implemented in the `ecw-kd.cpp` path. Here “EWC+KD” is the method; the repository path is spelled `ecw-kd.cpp`.
 
 **Repository links:**
-- `bots/bot-bc/` — pure BC baseline (Actor‑Critic, 9 actions)
-- `bots/bot-bc-focal/` — BC with per‑action MGDA gradients
+- `bots/bot-bc/No-BPTT-via-FAP/model.cpp` — elementary FAP / behavioral-cloning implementation (related to Paper 1)
+- `bots/bot-bc-fap/No-BPTT-via-FAP/ecw-kd.cpp` — EWC+KD behavioral repair (related to Paper 2)
 
-**New BC‑MGDA comparison (work in progress):**
+**No Back-Propagation Through Time via Future Action Prediction:**
 ```bibtex
-@misc{fouladi2026bc-focal,
-  title={Fair Behavioral Cloning via Multi-Objective Gradient Descent in a 2D Battle Royale},
+@misc{fouladi2026fap,
+  title={No Back-Propagation Through Time via Future Action Prediction},
   author={Kasra Fouladi},
   year={2026},
   note={Under preparation}
 }
 ```
 
-**Earlier work on GAIL with crowdsourced training is still available in 'bots/bot-1' and 'bots/bot-1.1'.**
+**Targeted Behavioral Repair with Contaminated Anchors:**
+```bibtex
+@misc{fouladi2026ecw-kd,
+  title={Targeted Behavioral Repair with Contaminated Anchors},
+  author={Kasra Fouladi},
+  year={2026},
+  note={Under preparation}
+}
+```
+
+
+**Earlier work on GAIL with crowdsourced training is still available in 'bots/bot-1' and 'bots/bot-1.1'. There is also an elementry version of `bots/bot-bc-fap` in `bots/bot-bc`.**
 
 ---
 

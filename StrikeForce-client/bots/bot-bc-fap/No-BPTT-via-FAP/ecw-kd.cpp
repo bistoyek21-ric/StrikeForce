@@ -427,7 +427,7 @@ torch::Tensor future_pred_loss(
     auto weights = torch::pow(gamma_future, torch::arange(H, pred.options()))
                         .view({1, H, 1});   // [1, H, 1]
 
-    auto log_probs = torch::log_softmax(pred, -1) * (1 - torch::softmax(pred, -1)).pow(gamma);  // [B, H, N]
+    auto log_probs = torch::log_softmax(pred, -1);  // [B, H, N]
 
     auto gathered = log_probs.gather(-1, future_actions.unsqueeze(-1)).squeeze(-1); // [B, H]
     auto loss_per_step = -gathered * weights.squeeze(-1) * mask;
@@ -1260,7 +1260,7 @@ int main(int argc, char* argv[]) {
             << " with best loss " << best_val_loss << std::endl;
     
     // 3. Training loop
-    const int64_t BATCH_SIZE = 14;
+    const int64_t BATCH_SIZE = 28;
     const int64_t PADDING = model->PRED_HEADS;
     const double GAMMA = 2.0, GAMMA_FUTURE = 0.9;
     const double ECW_LAMBDA = 5.0, KD_LAMBDA = 5.0;

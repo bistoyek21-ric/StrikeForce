@@ -66,8 +66,7 @@ $$
 \begin{cases}
 1, & \text{if agent } A \text{ eliminates agent } B,\\
 0, & \text{otherwise}.
-\end{cases}
-$$
+\end{cases}$$
 
 The same definition applies to agent $B$.
 
@@ -84,9 +83,7 @@ When comparing two models, each model should be evaluated under equivalent initi
 $T_{\mathrm{alive}}$ is the number of frames for which an agent remains alive during an episode.
 
 $$
-T_{\mathrm{alive}}
-=
-\text{number of frames during which the agent is alive}.
+T_{\mathrm{alive}}=\text{number of frames during which the agent is alive}.
 $$
 
 A larger value means that the agent survived for a longer period.
@@ -102,9 +99,7 @@ For an evaluation set containing multiple episodes, the metric may be reported a
 $N_{\mathrm{kills}}$ is the total number of opponents eliminated by the agent during an episode.
 
 $$
-N_{\mathrm{kills}}
-=
-\text{number of successful eliminations}.
+N_{\mathrm{kills}}=\text{number of successful eliminations}.
 $$
 
 For the standard one-versus-one evaluation, this will typically be either zero or one per episode.
@@ -122,17 +117,13 @@ Let $HP(t)$ denote the agent's health at time $t$.
 The accumulated health maintained during the agent's lifetime is defined as:
 
 $$
-A_{\mathrm{HP}}
-=
-\int_{0}^{T_{\mathrm{alive}}} HP(t)\,dt.
+A_{\mathrm{HP}}=\int_{0}^{T_{\mathrm{alive}}} HP(t)\,dt.
 $$
 
 For a frame-based environment, the integral can be approximated by:
 
 $$
-A_{\mathrm{HP}}
-\approx
-\sum_{t=1}^{T_{\mathrm{alive}}} HP_t.
+A_{\mathrm{HP}}\approx\sum_{t=1}^{T_{\mathrm{alive}}} HP_t.
 $$
 
 This metric captures both the agent's health level and the duration for which that health is maintained.
@@ -153,18 +144,13 @@ Let $S(t)$ denote the agent's stamina at time $t$.
 
 The accumulated stamina throughout the agent's lifetime is defined as:
 
-$$
-A_{\mathrm{stamina}}
-=
-\int_{0}^{T_{\mathrm{alive}}} S(t)\,dt.
+$$A_{\mathrm{stamina}}=\int_{0}^{T_{\mathrm{alive}}} S(t)\,dt.
 $$
 
 For a frame-based implementation:
 
 $$
-A_{\mathrm{stamina}}
-\approx
-\sum_{t=1}^{T_{\mathrm{alive}}} S_t.
+A_{\mathrm{stamina}}\approx\sum_{t=1}^{T_{\mathrm{alive}}} S_t.
 $$
 
 This metric measures how much usable stamina the agent maintains over the course of its survival.
@@ -194,17 +180,13 @@ This capability is dynamic during an episode. Being hit may reduce the agent's d
 The accumulated offensive capability is therefore defined as:
 
 $$
-A_{\mathrm{damage}}
-=
-\int_{0}^{T_{\mathrm{alive}}} D(t)\,dt.
+A_{\mathrm{damage}}=\int_{0}^{T_{\mathrm{alive}}} D(t)\,dt.
 $$
 
 For a frame-based implementation:
 
 $$
-A_{\mathrm{damage}}
-\approx
-\sum_{t=1}^{T_{\mathrm{alive}}} D_t.
+A_{\mathrm{damage}}\approx\sum_{t=1}^{T_{\mathrm{alive}}} D_t.
 $$
 
 Thus, $A_{\mathrm{damage}}$ measures sustained offensive capability over the agent's lifetime rather than the damage-per-bullet value at a single instant.
@@ -247,9 +229,7 @@ When multiple episodes are used, the reported values should preferably include a
 For the head-to-head scenario, win rate can additionally be reported:
 
 $$
-\mathrm{WinRate}
-=
-\frac{N_{\mathrm{wins}}}{N_{\mathrm{episodes}}}.
+\mathrm{WinRate}=\frac{N_{\mathrm{wins}}}{N_{\mathrm{episodes}}}.
 $$
 
 ---

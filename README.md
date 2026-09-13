@@ -33,6 +33,7 @@ Whether you're an AI researcher looking for a challenging RL environment, a stud
 10. [Project Structure](#-project-structure)
 11. [Research Context](#-research-context)
 12. [Technical Details](#-technical-details)
+13. [Citation](#-citation)
 
 ---
 
@@ -770,6 +771,28 @@ int random_value = Environment::Random::_rand();
 
 ---
 
+## 📖 Citation
+
+If you use StrikeForce in your research, please cite:
+
+```bibtex
+@misc{fouladi2026strikeforce,
+  title        = {StrikeForce: A 2D Partially Observable Battle-Arena 
+                  Testbed for Imitation Learning and Multi-Agent Research},
+  author       = {Fouladi, Kasra},
+  year         = {2026},
+  doi          = {10.13140/RG.2.2.24446.96326},
+  howpublished = {ResearchGate},
+  url          = {https://doi.org/10.13140/RG.2.2.24446.96326}
+}
+```
+
+**Plain-text citation:**
+
+> Fouladi, K. (2026). *StrikeForce: A 2D Partially Observable Battle-Arena Testbed for Imitation Learning and Multi-Agent Research*. ResearchGate. https://doi.org/10.13140/RG.2.2.24446.96326
+
+---
+
 ## 📝 License
 
 MIT License - see LICENSE file for details.
@@ -801,7 +824,7 @@ We welcome contributions!
 
 **Found a bug?** Open an issue on the repository.
 
-**Need help with your agent?** Check `bots/bot-bc/` for a complete example.
+**Need help with your agent?** Check `bots/bot-bc-fap/` for a complete example.
 
 **Research collaboration?** Email: k4sr405@gmail.com
 

@@ -465,7 +465,7 @@ namespace Environment::Field{
 		bool is_training1;
 
 		int W, _H;
-
+		
 		std::vector<node*> temp;
 
 		std::vector<int> place[2 * B];
@@ -1536,11 +1536,10 @@ namespace Environment::Field{
 				#endif
 			}
 
-			#if defined(CROWDSOURCE_TRAINING)
+			#if defined(CROWDSOURCE_TRAINING) || defined(DATA_GATHERING_MODE)
 			if (using_an_agent)
 				return;
 			#endif
-
 			if(!quit && !replay_mode){
 				Environment::Character::me = hum[ind];
 				update();

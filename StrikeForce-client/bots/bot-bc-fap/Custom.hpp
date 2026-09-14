@@ -168,7 +168,31 @@ namespace Environment::Field{
 		player.set_agent_active();
 	}
 
+	long long KILLS, T_ALIVE, A_HP, A_STAMINA, A_DAMAGE;
+
+	bool view_stats = false;
+
 	void gameplay::view() const {
+		if (!view_stats) {
+			std::cout << "start!" << std::endl;
+			KILLS = 0, T_ALIVE = 0, A_HP = 0, A_STAMINA = 0, A_DAMAGE = 0;
+			view_stats = true;
+		}
+		++T_ALIVE;
+		KILLS = hum[ind].get_kills();
+		A_HP += hum[ind].get_Hp();
+		A_STAMINA += hum[ind].get_stamina();
+		A_DAMAGE += hum[ind].get_damage_effect()[0];
+		if (during_battle == false) {
+			std::cout << "================ METRICS ================\n";
+			std::cout << "KILLS = " << KILLS << ", T_ALIVE = " << T_ALIVE << "\n";
+			std::cout << "A_HP = " << A_HP << ", A_STAMINA = " << A_STAMINA 
+			<< ", A_DAMAGE = " << A_DAMAGE << '\n';
+			std::cout << "=========================================\n";
+			std::cout << "press the space key to continue" << std::endl;
+			while(getch() != ' ');
+			view_stats = false;
+		}
         return;
     }
 }

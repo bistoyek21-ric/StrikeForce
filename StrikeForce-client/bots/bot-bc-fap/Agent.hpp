@@ -70,7 +70,7 @@ public:
     Agent(bool data_gathering_mode = true,
           bool inference_mode = false,
           int T = 1054,
-          const std::string &model_dir = "bots/bot-bc-fap/backup",
+          const std::string &model_dir = "bots/bot-bc-fap/pre-ecw+kd-backup",
           const std::string &dataset_dir = "bots/bot-bc-fap/dataset/data_train")
         : data_gathering_mode_(data_gathering_mode),
           inference_mode_(inference_mode),
@@ -171,7 +171,8 @@ public:
             //std::cout << "probs:\n" << probs << "\n";
             //std::cout << "pr[0]:\n" << torch::softmax(out[0][0][0].view({1, -1}), 1) << std::endl;
             //return probs.argmax().item<int>();
-            return bc_inference(logits, state).item<int>();
+            //return bc_inference(torch::softmax(out[0][0][0].view({1, -1}), 1), state).item<int>();
+            bc_inference(logits, state).item<int>();
         }
 
         // inference_mode_ == false → human plays (manual), predict is not really used

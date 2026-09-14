@@ -173,7 +173,7 @@ public:
             //std::cout << "pr[0]:\n" << torch::softmax(out[0][0][0].view({1, -1}), 1) << std::endl;
             //return probs.argmax().item<int>();
             //return bc_inference(torch::softmax(out[0][0][0].view({1, -1}), 1), state).item<int>();
-            bc_inference(logits, state).item<int>();
+            return bc_inference(logits, state).item<int>();
         }
 
         // inference_mode_ == false → human plays (manual), predict is not really used

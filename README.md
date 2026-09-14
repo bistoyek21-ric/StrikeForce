@@ -689,20 +689,22 @@ Studies post-hoc correction of a specific, identified behavioral failure in a co
 
 **No Back-Propagation Through Time via Future Action Prediction:**
 ```bibtex
-@misc{fouladi2026fap,
+@misc{fouladi2026nopbtt,
   title={No Back-Propagation Through Time via Future Action Prediction},
   author={Kasra Fouladi},
   year={2026},
+  doi={10.13140/RG.2.2.26262.31040},
   note={Under preparation}
 }
 ```
 
 **Targeted Behavioral Repair with Contaminated Anchors:**
 ```bibtex
-@misc{fouladi2026ecw-kd,
+@misc{fouladi2026ecw+kd,
   title={Targeted Behavioral Repair with Contaminated Anchors},
   author={Kasra Fouladi},
   year={2026},
+  doi={10.13140/RG.2.2.24951.59047},
   note={Under preparation}
 }
 ```

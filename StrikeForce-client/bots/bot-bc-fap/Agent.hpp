@@ -30,6 +30,7 @@ SOFTWARE.
 
 const std::string bot_code = "bot-bc-fap", backup_path = "bots/bot-bc-fap/backup";
 
+// MASK1:
 torch::Tensor bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeawsd
     auto d = state.sizes();
     auto logits_clone = logits.clone().detach();
@@ -70,7 +71,7 @@ public:
     Agent(bool data_gathering_mode = true,
           bool inference_mode = false,
           int T = 1054,
-          const std::string &model_dir = "bots/bot-bc-fap/pre-ecw+kd-backup",
+          const std::string &model_dir = "bots/bot-bc-fap/backup",
           const std::string &dataset_dir = "bots/bot-bc-fap/dataset/data_train")
         : data_gathering_mode_(data_gathering_mode),
           inference_mode_(inference_mode),

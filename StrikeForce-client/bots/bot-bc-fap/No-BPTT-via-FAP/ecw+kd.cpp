@@ -38,7 +38,7 @@ SOFTWARE.
 #include <chrono>
 #include <iomanip>
 
-//g++ -std=c++17 ecw-kd.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && ./app
+//g++ -std=c++17 ecw+kd.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && ./app
 
 int pred_ind, logits_ind;
 
@@ -1273,6 +1273,7 @@ int main(int argc, char* argv[]) {
     pin_fisher = load_vector("pin_meta/pin_fisher.pt", device);
     pin_preds = load_vector("pin_meta/pin_preds.pt", device);
     pin_logits = load_vector("pin_meta/pin_logits.pt", device);
+
     /*
     process_kl_d_batch(model,
              optimizer, pin_files, 0, 0, best_val_loss,
@@ -1412,6 +1413,8 @@ int main(int argc, char* argv[]) {
             // If no validation set, use training loss for checkpoint
             if (val_files.empty()/* && avg_loss < best_val_loss*/) {
                 best_val_loss = avg_loss;
+                std::cout << "loss: " << avg_loss << '\n';
+                exit(0);
                 save_checkpoint(model, optimizer, epoch, best_val_loss,
                             model_path, optim_path, meta_path);
                 std::cout << "Checkpoint saved (new best training loss)." << std::endl;

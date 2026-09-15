@@ -914,14 +914,14 @@ double validation(PlayerPolicyNet& model,
 int main(int argc, char* argv[]) {
     // Defaults
     std::string data_dir = "../dataset/data_train";
-    std::string val_dir = "../dataset/data_pin";
-    int num_epochs =  512;
+    std::string val_dir = "../dataset/data_val";
+    int num_epochs = 512;
 
     if (argc > 1) num_epochs = std::stoi(argv[1]);
     if (argc > 2) data_dir = argv[2];
     if (argc > 3) val_dir = argv[3];
 
-    torch::Device device(torch::cuda::is_available() ? torch::kCUDA : torch::kCPU);
+    torch::Device device(/*torch::cuda::is_available() ? torch::kCUDA : */torch::kCPU);
     std::cout << "Using device: " << device << std::endl;
 
     // 1. Gather episode file paths
@@ -967,7 +967,7 @@ int main(int argc, char* argv[]) {
             << " with best loss " << best_val_loss << std::endl;
 
     // 3. Training loop
-    const int64_t BATCH_SIZE = 20;
+    const int64_t BATCH_SIZE = 28;
     const int64_t PADDING = model->PRED_HEADS;
     const double GAMMA = 2.0;
     const double GAMMA_FUTURE = 0.9;
@@ -975,14 +975,14 @@ int main(int argc, char* argv[]) {
     std::vector<int64_t> indices(episode_files.size());
     std::iota(indices.begin(), indices.end(), 0);
     std::mt19937 gen(std::random_device{}());
-    
+    /*
     --start_epoch;
     srand(start_epoch);
     validation(model, optimizer, val_files, start_epoch, best_val_loss,
                  model_path, optim_path, meta_path, device,
                  GAMMA, PADDING, GAMMA_FUTURE);
     exit(0);
-    
+    */
     for (int epoch = start_epoch; epoch < num_epochs; ++epoch) {
 	    srand(epoch);
 

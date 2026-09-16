@@ -31,39 +31,68 @@ SOFTWARE.
 const std::string bot_code = "bot-bc-fap", backup_path = "bots/bot-bc-fap/backup";
 
 // MASK1:
-torch::Tensor bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeawsd
+std::pair<int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeawsd
     auto d = state.sizes();
     auto logits_clone = logits.clone().detach();
     auto probs = torch::softmax(logits_clone, -1);
+    int raw_argmax = probs.argmax().item<int>();
+
+    int dx1[4] = {1, 0, -1, 0}, dy1[4] = {0, 1, 0, -1}, dx2[4] = {0, -1, 1, 0}, dy2[4] = {-1, 0, 0, 1};
+
+    int failure_type = -1; // -1: no failure, 0: wall collision, 1: adjacne enemies, 2: flank enemies
+    int not_failed = false;
+
+    for (int i = 0; i < 4; ++i) {
+        auto w = state[0][20 + i][d[2] / 2][d[3] / 2].item<double>();
+        for (int j = 0; j < 3; ++j)
+            if (state[0][8 + j][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0)
+                if (w != 0) {
+                    if(raw_argmax == 1)
+                        failure_type = -1, not_failed = true;
+                    if (raw_argmax != 1 && !not_failed)
+                        failure_type = 1;
+                }
+    }
+
+    if (failure_type == -1)
+        for (int i = 0; i < 4; ++i) {
+           auto w = state[0][20 + i][d[2] / 2][d[3] / 2].item<double>();
+            for (int j = 0; j < 3; ++j)
+                if (state[0][8 + j][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0)
+                    if (!w) {
+                        if(raw_argmax == 2)
+                            failure_type = -1, not_failed = true;
+                        if (raw_argmax != 2 && !not_failed)
+                            failure_type = 2;
+                    }
+        }
+
+    
+    if (failure_type == -1)
+        for (int i = 0; i < 4; ++i)
+            if (state[0][15][d[2] / 2 + dx2[i]][d[3] / 2 + dy2[i]].item<double>() == 0){
+                if(raw_argmax == 3 + i)
+                    failure_type = 0;
+            }
+
     probs[0][0] *= 0;
     probs[0][1] *= 0; // this line is optional (trade off consistancy vs kill-rate) [1]
-    int dx1[4] = {1, 0, -1, 0}, dy1[4] = {0, 1, 0, -1};
     int c = 0;
     for (int i = 0; i < 4; ++i) {
         auto w = state[0][20 + i][d[2] / 2][d[3] / 2].item<double>();
-        if (state[0][8][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0) {
-            if (w != 0)
-                return torch::tensor(1);
-            c = 1;
-        }
-        if (state[0][9][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0) {
-            if (w != 0)
-                return torch::tensor(1);
-            c = 1;
-        }
-        if (state[0][10][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0) {
-            if (w != 0)
-                return torch::tensor(1);
-            c = 1;
-        }
+        for (int j = 0; j < 3; ++j)
+            if (state[0][8 + j][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0) {
+                if (w != 0)
+                    return {1, failure_type};
+                c = 1;
+            }
     }
     probs[0][2] *= c; // this line is optional (trade off consistancy vs kill-rate) [1.1]
-    int dx2[4] = {0, -1, 1, 0}, dy2[4] = {-1, 0, 0, 1};
     for (int i = 0; i < 4; ++i)
         if (state[0][15][d[2] / 2 + dx2[i]][d[3] / 2 + dy2[i]].item<double>() == 0)
                 probs[0][3 + i] *= 0;
     probs = probs / probs.sum();
-    return probs.argmax();
+    return {probs.argmax().item<int>(), failure_type};
 }
 
 class Agent {
@@ -140,6 +169,13 @@ public:
     }
 
     ~Agent() {
+        log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        log("Total Actions     : " + std::to_string(total_actions));
+        log("Overall Failures  : " + std::to_string(overalls_failures));
+        log("Wall Collisions   : " + std::to_string(failures[0]));
+        log("Adjancent Enemies : " + std::to_string(failures[1]));
+        log("Flanking Enemies  : " + std::to_string(failures[2]));
+        log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
         log_file_.close();
     }
 
@@ -168,12 +204,13 @@ public:
             auto logits = out[1];                     // [1, num_actions_]
             auto probs = torch::softmax(logits, 1);
 
-            //std::cout << "BC Inference: " << bc_inference(logits) << std::endl;
-            //std::cout << "probs:\n" << probs << "\n";
-            //std::cout << "pr[0]:\n" << torch::softmax(out[0][0][0].view({1, -1}), 1) << std::endl;
-            //return probs.argmax().item<int>();
-            //return bc_inference(torch::softmax(out[0][0][0].view({1, -1}), 1), state).item<int>();
-            return bc_inference(logits, state).item<int>();
+            auto [action, failure_type] = bc_inference(logits, state);
+
+            if (failure_type != -1) 
+                ++failures[failure_type], ++overalls_failures;
+            ++total_actions;
+
+            return action;
         }
 
         // inference_mode_ == false → human plays (manual), predict is not really used
@@ -318,6 +355,8 @@ private:
     int cnt_ = 0, cnt_warm_up_ = 0;
     static constexpr int T_initial_ = 512, T_warm_up_ = 128;
     static constexpr int num_actions_ = 7, num_channels_ = 32, grid_size_ = 31;
+
+    int failures[3] = {}, overalls_failures = 0, total_actions = 0;
 
     std::string model_dir_, dataset_dir_;
     PlayerPolicyNet model_{nullptr};

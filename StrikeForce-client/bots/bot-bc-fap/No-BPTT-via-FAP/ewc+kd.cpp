@@ -38,7 +38,7 @@ SOFTWARE.
 #include <chrono>
 #include <iomanip>
 
-//g++ -std=c++17 ecw+kd.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && ./app
+//g++ -std=c++17 ewc+kd.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && ./app
 
 int pred_ind, logits_ind;
 
@@ -1263,7 +1263,7 @@ int main(int argc, char* argv[]) {
     const int64_t BATCH_SIZE = 28;
     const int64_t PADDING = model->PRED_HEADS;
     const double GAMMA = 2.0, GAMMA_FUTURE = 0.9;
-    const double ECW_LAMBDA = 5.0, KD_LAMBDA = 5.0;
+    const double EWC_LAMBDA = 5.0, KD_LAMBDA = 5.0;
 
     std::vector<int64_t> indices(episode_files.size());
     std::iota(indices.begin(), indices.end(), 0);
@@ -1328,17 +1328,17 @@ int main(int argc, char* argv[]) {
 
 	        set_total_grad(model, batch_result.bb_valid_count, batch_result.r_valid_count);
                 
-            std::cout << "====== ECW PHASE: ======" << std::endl;
+            std::cout << "====== EWC PHASE: ======" << std::endl;
 
 	        int sz = model->parameters().size();
-            auto loss_ecw = torch::zeros({1}, device);
+            auto loss_ewc = torch::zeros({1}, device);
             for(int i = 0; i < sz; ++i)
-                loss_ecw += (pin_fisher[i] * (model->parameters()[i] - pin_theta[i]).pow(2)).sum();
-            loss_ecw = loss_ecw * ECW_LAMBDA;
+                loss_ewc += (pin_fisher[i] * (model->parameters()[i] - pin_theta[i]).pow(2)).sum();
+            loss_ewc = loss_ewc * EWC_LAMBDA;
 
-            loss_ecw.backward();
+            loss_ewc.backward();
 
-    	    std::cout << "ECW_Loss: " << loss_ecw << '\n' << std::endl;
+    	    std::cout << "EWC_Loss: " << loss_ewc << '\n' << std::endl;
 
 	        std::vector<torch::Tensor> grads;
 
@@ -1390,7 +1390,7 @@ int main(int argc, char* argv[]) {
 
 	        batches_done++;
 
-    	    std::cout << "*** Execution time D_fix + ECW + KL-D: "
+    	    std::cout << "*** Execution time D_fix + EWC + KL-D: "
 	    	  << ((int)duration.count()) / 1000000.0 << " s. ***\n";
         } // end batch loop
 

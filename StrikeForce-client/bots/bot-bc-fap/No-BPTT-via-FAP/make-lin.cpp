@@ -1034,7 +1034,7 @@ int main(int argc, char* argv[]) {
     DeafualtPlayerPolicyNet old_model{nullptr};
     old_model = DeafualtPlayerPolicyNet();
 
-    torch::load(old_model, "../pre-ecw+kd-backup/model.pt");
+    torch::load(old_model, "../pre-ewc+kd-backup/model.pt");
 
     PlayerPolicyNet model{nullptr};
     model = PlayerPolicyNet();
@@ -1055,7 +1055,7 @@ int main(int argc, char* argv[]) {
             std::cout << "param: " << param.key() << "\n";
         std::cout << "cnt= " << cnt << '\n';
     }
-    torch::save(model, "../pre-ecw+kd-backup(lin)/model.pt");
+    torch::save(model, "../pre-ewc+kd-backup(lin)/model.pt");
     }
     */
     // Defaults
@@ -1099,9 +1099,9 @@ int main(int argc, char* argv[]) {
 
     model = PlayerPolicyNet();
 
-    const std::string model_path = "../pre-ecw+kd-backup(lin)/model.pt";
-    const std::string optim_path = "../pre-ecw+kd-backup(lin)/optimizer.pt";
-    const std::string meta_path  = "../pre-ecw+kd-backup(lin)/meta.txt";
+    const std::string model_path = "../pre-ewc+kd-backup(lin)/model.pt";
+    const std::string optim_path = "../pre-ewc+kd-backup(lin)/optimizer.pt";
+    const std::string meta_path  = "../pre-ewc+kd-backup(lin)/meta.txt";
 
     int start_epoch = 0;
     double best_val_loss = std::numeric_limits<double>::infinity();

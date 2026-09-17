@@ -681,11 +681,11 @@ The latest operational bot is **`bot-bc-fap`**. Together with its related projec
 Introduces a decoupled imitation-learning architecture for partially observable games. A **Future-Action Predictor (FAP)** backbone is trained only to predict the expert's future actions over a bounded horizon $H$. A separate **Transformer aggregator** then consumes a sliding window of detached latents, local raw observations, and the agent's own action history. Because policy gradients are stopped before the backbone, the method removes **BPTT** from the perception backbone. This gives constant memory $\mathcal{O}(H^2)$ independent of episode length $T$, stable gradients under a pseudo-Markovian assumption, a no-regret aggregation guarantee, and a general bias-variance analysis. This is the efficient training backbone behind `bot-bc-fap`.
 
 **Targeted Behavioral Repair with Contaminated Anchors**  
-Studies post-hoc correction of a specific, identified behavioral failure in a converged policy without retraining from scratch. The repair objective combines a corrective loss on a small $D_{\mathrm{fix}}$ with **EWC** parameter-space preservation and **KD** output-space preservation on an anchor set $D_{\mathrm{anc}}$. The paper formalizes the **contaminated-anchor** setting—where $D_{\mathrm{anc}}$ may itself contain the failure behavior—and analyzes the local multi-step repair dynamics, showing a curvature-weighted repair equilibrium. This is the efficient repair procedure implemented in the `ecw-kd.cpp` path. Here “EWC+KD” is the method; the repository path is spelled `ecw-kd.cpp`.
+Studies post-hoc correction of a specific, identified behavioral failure in a converged policy without retraining from scratch. The repair objective combines a corrective loss on a small $D_{\mathrm{fix}}$ with **EWC** parameter-space preservation and **KD** output-space preservation on an anchor set $D_{\mathrm{anc}}$. The paper formalizes the **contaminated-anchor** setting—where $D_{\mathrm{anc}}$ may itself contain the failure behavior—and analyzes the local multi-step repair dynamics, showing a curvature-weighted repair equilibrium. This is the efficient repair procedure implemented in the `ewc-kd.cpp` path. Here “EWC+KD” is the method; the repository path is spelled `ewc-kd.cpp`.
 
 **Repository links:**
 - `bots/bot-bc/No-BPTT-via-FAP/model.cpp` — elementary FAP / behavioral-cloning implementation (related to Paper 1)
-- `bots/bot-bc-fap/No-BPTT-via-FAP/ecw-kd.cpp` — EWC+KD behavioral repair (related to Paper 2)
+- `bots/bot-bc-fap/No-BPTT-via-FAP/ewc-kd.cpp` — EWC+KD behavioral repair (related to Paper 2)
 
 **Artifacts, checkpoints, and datasets:**
 
@@ -713,7 +713,7 @@ If you use any of these artifacts in your work, please cite the corresponding pa
 
 **Targeted Behavioral Repair with Contaminated Anchors:**
 ```bibtex
-@misc{fouladi2026ecw+kd,
+@misc{fouladi2026ewc+kd,
   title={Targeted Behavioral Repair with Contaminated Anchors},
   author={Kasra Fouladi},
   year={2026},

@@ -1,6 +1,6 @@
 # Benchmarks:
 
-## pre-ecw+kd-backup [MASK1]:
+## pre-ewc+kd-backup [MASK1]:
 **Experiment 1**:
 ```
 ================ METRICS ================
@@ -74,7 +74,7 @@ A_HP = 142019041, A_STAMINA = 183535200, A_DAMAGE = 28372820
 
 ------------------
 
-## pre-ecw+kd-backup (head 0) [MASK1]:
+## pre-ewc+kd-backup (head 0) [MASK1]:
 
 **Experiment 1**:
 ```
@@ -149,7 +149,7 @@ A_HP = 65635168, A_STAMINA = 53082160, A_DAMAGE = 3187216
 
 ------------------
 
-## pre-ecw+kd-backup (linear aggregator) [MASK1]:
+## pre-ewc+kd-backup (linear aggregator) [MASK1]:
 
 **Experiment 1**:
 ```

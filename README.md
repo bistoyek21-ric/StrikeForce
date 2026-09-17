@@ -687,6 +687,19 @@ Studies post-hoc correction of a specific, identified behavioral failure in a co
 - `bots/bot-bc/No-BPTT-via-FAP/model.cpp` — elementary FAP / behavioral-cloning implementation (related to Paper 1)
 - `bots/bot-bc-fap/No-BPTT-via-FAP/ecw-kd.cpp` — EWC+KD behavioral repair (related to Paper 2)
 
+**Artifacts, checkpoints, and datasets:**
+
+Pre-trained checkpoints, training logs, demonstration datasets, and evaluation outputs for both papers are publicly available:
+
+- 📦 [StrikeForce Research Artifacts (Google Drive)](https://drive.google.com/drive/folders/1S2dE6DfzBU09ILpeJJ8UvtTGE0gAU-x1?usp=sharing)
+
+This folder contains the shared material for:
+
+- **No Back-Propagation Through Time via Future Action Prediction** — FAP backbone checkpoints, Transformer-aggregator checkpoints, linear-aggregator baseline checkpoints, and the corresponding demonstration episodes used for evaluation.
+- **Targeted Behavioral Repair with Contaminated Anchors** — pre-repair ($\theta_0$), naive fine-tuning ($\theta_{\mathrm{FT}}$), and EWC+KD repair ($\theta^{*}$) checkpoints, anchor and corrective datasets, and raw-logit failure-rate logs.
+
+If you use any of these artifacts in your work, please cite the corresponding paper (see the BibTeX entries below).
+
 **No Back-Propagation Through Time via Future Action Prediction:**
 ```bibtex
 @misc{fouladi2026nopbtt,

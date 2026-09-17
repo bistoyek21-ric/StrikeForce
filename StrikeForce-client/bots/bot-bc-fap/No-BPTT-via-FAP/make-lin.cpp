@@ -38,7 +38,7 @@ SOFTWARE.
 #include <chrono>
 #include <iomanip>
 
-//g++ -std=c++17 model.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && ./app
+//g++ -std=c++17 make-lin.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda && ./app
 
 namespace fs = std::filesystem;
 
@@ -277,7 +277,7 @@ struct AFCBackboneSparseImpl : torch::nn::Module {
 };
 TORCH_MODULE(AFCBackboneSparse);
 
-struct PlayerPolicyNetImpl : torch::nn::Module {
+struct DeafualtPlayerPolicyNetImpl : torch::nn::Module {
     static constexpr int64_t FIXED_ROW   = 15, FIXED_COL = 15;
     static constexpr int64_t WINDOW_SIZE = 31, PRED_HEADS = 31;
     static constexpr int64_t d_model     = 300;
@@ -299,7 +299,7 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
     std::deque<torch::Tensor> buffer_queue;   // each: [B, d_model]
     int64_t buffer_batch_size = -1;           // tracks B to know when to reset
 
-    PlayerPolicyNetImpl(int64_t C_ = 32, int64_t n_ = 31, int64_t afc_d_out2 = 256)
+    DeafualtPlayerPolicyNetImpl(int64_t C_ = 32, int64_t n_ = 31, int64_t afc_d_out2 = 256)
         : n(n_), C(C_) {
         afc = register_module("afc", AFCBackboneSparse(C, 128, 128, 256, afc_d_out2, n, 6));
 
@@ -395,7 +395,118 @@ struct PlayerPolicyNetImpl : torch::nn::Module {
         return {pred, logits/*, value*/};
     }
 };
+TORCH_MODULE(DeafualtPlayerPolicyNet);
+
+struct PlayerPolicyNetImpl : torch::nn::Module {
+    static constexpr int64_t FIXED_ROW   = 15, FIXED_COL = 15;
+    static constexpr int64_t WINDOW_SIZE = 31, PRED_HEADS = 31;
+    static constexpr int64_t d_model     = 300;
+
+    int64_t n, C;
+    AFCBackboneSparse afc{nullptr};
+    torch::nn::Linear  proj_in{nullptr};
+    torch::nn::LayerNorm proj_norm{nullptr};
+    PreLNAttnBlock /*tf_value{nullptr},*/ tf_policy{nullptr};
+    torch::Tensor cls_token, pos_embed;
+    torch::nn::Linear /*value_head{nullptr},*/ policy_head{nullptr}, new_policy_head{nullptr};
+    
+    std::vector<torch::nn::Linear> pred_heads;
+
+    // --- sliding-window buffer (replaces the old in-place ring buffer) ---
+    // Each element keeps its own autograd graph. Pushing/popping naturally
+    // truncates gradient flow once a token falls outside WINDOW_SIZE frames,
+    // with no in-place writes and no manual detach() needed for that purpose.
+    std::deque<torch::Tensor> buffer_queue;   // each: [B, d_model]
+    int64_t buffer_batch_size = -1;           // tracks B to know when to reset
+
+    PlayerPolicyNetImpl(int64_t C_ = 32, int64_t n_ = 31, int64_t afc_d_out2 = 256)
+        : n(n_), C(C_) {
+        afc = register_module("afc", AFCBackboneSparse(C, 128, 128, 256, afc_d_out2, n, 6));
+
+        for (int i = 0; i < PRED_HEADS; ++i)
+            pred_heads.push_back(
+                register_module("pred_head_" + std::to_string(i), torch::nn::Linear(afc_d_out2, N_ACTIONS))
+            );
+
+        int64_t concat_dim = afc_d_out2 + C + N_ACTIONS; // 297
+        proj_in   = register_module("proj_in",  torch::nn::Linear(concat_dim, d_model));
+        proj_norm = register_module("proj_norm", torch::nn::LayerNorm(
+                        torch::nn::LayerNormOptions({d_model})));
+
+        //tf_value  = register_module("tf_value",  PreLNAttnBlock(d_model, 10));
+        tf_policy = register_module("tf_policy", PreLNAttnBlock(d_model, 10));
+
+        cls_token = register_parameter("cls_token", torch::randn({1, 1, d_model}) * 0.02);
+        pos_embed = register_parameter("pos_embed",
+                        torch::randn({1, 1 + WINDOW_SIZE, d_model}) * 0.02);
+
+        //value_head  = register_module("value_head",  torch::nn::Linear(d_model, 1));
+        policy_head = register_module("policy_head", torch::nn::Linear(d_model, N_ACTIONS));
+        new_policy_head = register_module("new_policy_head", torch::nn::Linear(WINDOW_SIZE * d_model, N_ACTIONS));
+        
+        reset_memory();
+    }
+
+    // Call this at every true episode boundary. Fully clears the sliding
+    // window so no context (value or gradient) leaks across episodes.
+    void reset_memory() {
+        buffer_queue.clear();
+        buffer_batch_size = -1;
+    }
+
+    std::vector<torch::Tensor> forward(
+        torch::Tensor x, torch::Tensor prev_action) {
+
+        namespace I = torch::indexing;
+        auto B = x.size(0);
+        auto device = x.device();
+
+        // If batch size changes mid-use, the queue no longer makes sense — reset.
+        if (buffer_batch_size != B) {
+            reset_memory();
+            buffer_batch_size = B;
+        }
+
+        // Build current timestep feature
+        auto afc_out = afc->forward(x);                         // [B, 1, afc_d_out2]
+        auto A_vec   = afc_out.squeeze(1);                      // [B, afc_d_out2]
+
+        std::vector<torch::Tensor> prog;
+        for (auto &pred_head: pred_heads)
+            prog.push_back(pred_head->forward(A_vec).unsqueeze(1));               // [B, 1, N_ACTIONS]
+
+        auto pred = torch::stack(prog, 1).squeeze(2);                                        // [B, PRED_HEADS, N_ACTIONS]
+
+        auto B_vec   = x.index({I::Slice(), I::Slice(),
+                                FIXED_ROW, FIXED_COL}).clone();         // [B, C]
+        auto C_vec   = torch::one_hot(prev_action, N_ACTIONS)
+                           .to(A_vec.dtype());
+
+        auto x_cat   = torch::cat({A_vec.detach(), B_vec, C_vec}, 1);   // [B, afc_d_out2+C+N_ACTIONS]
+
+        // Push new token, pop oldest once past the window — out-of-place,
+        // each element keeps its own graph, no version-counter issues.
+        buffer_queue.push_back(x_cat);
+        if ((int64_t)buffer_queue.size() > WINDOW_SIZE)
+            buffer_queue.pop_front();
+
+        // Stack the current window in chronological order: [B, L, d_model]
+        std::vector<torch::Tensor> raw_frames(buffer_queue.begin(), buffer_queue.end()), frames;
+
+        auto window = torch::zeros({B * WINDOW_SIZE - (int)raw_frames.size(), d_model}).to(device);
+
+        for (int i = 0; i < raw_frames.size(); ++i)
+            window = torch::cat({window, proj_norm->forward(proj_in->forward(raw_frames[i]))}, 0);
+
+        window = window.view({B, WINDOW_SIZE * d_model});
+        
+        auto logits  = new_policy_head->forward(window);
+
+        return {pred, logits/*, value*/};
+    }
+};
 TORCH_MODULE(PlayerPolicyNet);
+
 
 // -----------------------------------------------------------------------
 //  Focal loss
@@ -565,7 +676,7 @@ EpisodeResult process_episode(PlayerPolicyNet& model,
             auto aux_loss = future_pred_loss(pred, future_targets, mask, gamma_future, gamma);
             bb_loss += aux_loss / (w * mask).sum();
 
-            bb_loss.backward();
+            //bb_loss.backward(); idle
             result.bb_sum += bb_loss.item<double>();   // accumulate for logging
 
             result.bb_valid_count += 1;
@@ -606,6 +717,9 @@ void set_total_grad(PlayerPolicyNet& model, int n, int m) {
                 param.mutable_grad() = param.grad().clone().detach() / (m +  0.01);
             }
         } else {
+            param.mutable_grad() = torch::zeros_like(param);
+        }
+        if (name.find("new_policy_head") == std::string::npos) {
             param.mutable_grad() = torch::zeros_like(param);
         }
     }
@@ -912,16 +1026,48 @@ double validation(PlayerPolicyNet& model,
 //  Main training
 // -----------------------------------------------------------------------
 int main(int argc, char* argv[]) {
+    /*{
+    torch::NoGradGuard no_grad;
+    
+    torch::Device device(torch::kCPU);
+    
+    DeafualtPlayerPolicyNet old_model{nullptr};
+    old_model = DeafualtPlayerPolicyNet();
+
+    torch::load(old_model, "../pre-ecw+kd-backup/model.pt");
+
+    PlayerPolicyNet model{nullptr};
+    model = PlayerPolicyNet();
+
+    auto old_params = old_model->named_parameters();
+    auto params = model->named_parameters();
+    
+    for(auto &param: params){
+        int cnt = 0;
+        for (auto &old_param: old_params) {
+            if (param.key() == old_param.key()) {
+                std::cout << "param: " << param.key() << "\n";
+                param.value().copy_(old_param.value().clone().detach());
+                ++cnt;
+            }
+        }
+        if(cnt == 0)
+            std::cout << "param: " << param.key() << "\n";
+        std::cout << "cnt= " << cnt << '\n';
+    }
+    torch::save(model, "../pre-ecw+kd-backup(lin)/model.pt");
+    }
+    */
     // Defaults
     std::string data_dir = "../dataset/data_pin";
     std::string val_dir = "../dataset/data_val";
-    int num_epochs = 512;
+    int num_epochs = 375;
 
     if (argc > 1) num_epochs = std::stoi(argv[1]);
     if (argc > 2) data_dir = argv[2];
     if (argc > 3) val_dir = argv[3];
 
-    torch::Device device(/*torch::cuda::is_available() ? torch::kCUDA : */torch::kCPU);
+    torch::Device device(torch::kCPU);
     std::cout << "Using device: " << device << std::endl;
 
     // 1. Gather episode file paths
@@ -953,9 +1099,9 @@ int main(int argc, char* argv[]) {
 
     model = PlayerPolicyNet();
 
-    const std::string model_path = "../backup/model.pt";
-    const std::string optim_path = "../backup/optimizer.pt";
-    const std::string meta_path  = "../backup/meta.txt";
+    const std::string model_path = "../pre-ecw+kd-backup(lin)/model.pt";
+    const std::string optim_path = "../pre-ecw+kd-backup(lin)/optimizer.pt";
+    const std::string meta_path  = "../pre-ecw+kd-backup(lin)/meta.txt";
 
     int start_epoch = 0;
     double best_val_loss = std::numeric_limits<double>::infinity();
@@ -975,14 +1121,7 @@ int main(int argc, char* argv[]) {
     std::vector<int64_t> indices(episode_files.size());
     std::iota(indices.begin(), indices.end(), 0);
     std::mt19937 gen(std::random_device{}());
-    /*
-    --start_epoch;
-    srand(start_epoch);
-    validation(model, optimizer, val_files, start_epoch, best_val_loss,
-                 model_path, optim_path, meta_path, device,
-                 GAMMA, PADDING, GAMMA_FUTURE);
-    exit(0);
-    */
+    
     for (int epoch = start_epoch; epoch < num_epochs; ++epoch) {
 	    srand(epoch);
 
@@ -1097,7 +1236,7 @@ int main(int argc, char* argv[]) {
                   << " | total avg loss:" << avg_loss << " ~~~\n" << std::endl;
 
             // If no validation set, use training loss for checkpoint
-            if (val_files.empty()/* && avg_loss < best_val_loss*/) {
+            if (val_files.empty()) {
                 best_val_loss = avg_loss;
                 save_checkpoint(model, optimizer, epoch, best_val_loss,
                             model_path, optim_path, meta_path);
@@ -1110,5 +1249,6 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Training finished." << std::endl;
+    //*/
     return 0;
 }

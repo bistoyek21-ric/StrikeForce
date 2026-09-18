@@ -706,8 +706,7 @@ If you use any of these artifacts in your work, please cite the corresponding pa
   title={No Back-Propagation Through Time via Future Action Prediction},
   author={Kasra Fouladi},
   year={2026},
-  doi={10.13140/RG.2.2.26262.31040},
-  note={Under preparation}
+  doi={10.13140/RG.2.2.18971.43049}
 }
 ```
 
@@ -717,8 +716,7 @@ If you use any of these artifacts in your work, please cite the corresponding pa
   title={Targeted Behavioral Repair with Contaminated Anchors},
   author={Kasra Fouladi},
   year={2026},
-  doi={10.13140/RG.2.2.24951.59047},
-  note={Under preparation}
+  doi={10.13140/RG.2.2.11421.68328}
 }
 ```
 

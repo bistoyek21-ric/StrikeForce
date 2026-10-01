@@ -28,7 +28,7 @@ SOFTWARE.
 
 #include "Modules.hpp"          // brings PlayerPolicyNet, TORCH_MODULE etc.
 
-const std::string bot_code = "bot-bc-fap", backup_path = "bots/bot-bc-fap/backup-FT";
+const std::string bot_code = "bot-bc-fap", backup_path = "bots/bot-bc-fap/backup";
 
 // MASK1:
 std::tuple<int, int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeawsd

@@ -28,10 +28,10 @@ SOFTWARE.
 
 #include "Modules.hpp"          // brings PlayerPolicyNet, TORCH_MODULE etc.
 
-const std::string bot_code = "bot-bc-fap", backup_path = "bots/bot-bc-fap/backup";
+const std::string bot_code = "bot-bc-fap", backup_path = "bots/bot-bc-fap/backup-FT";
 
 // MASK1:
-std::pair<int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeawsd
+std::tuple<int, int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeawsd
     auto d = state.sizes();
     auto logits_clone = logits.clone().detach();
     auto probs = torch::softmax(logits_clone, -1);
@@ -40,6 +40,7 @@ std::pair<int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //
     int dx1[4] = {1, 0, -1, 0}, dy1[4] = {0, 1, 0, -1}, dx2[4] = {0, -1, 1, 0}, dy2[4] = {-1, 0, 0, 1};
 
     int failure_type = -1; // -1: no failure, 0: wall collision, 1: adjacne enemies, 2: flank enemies
+    int success_type = -1;
     int not_failed = false;
 
     for (int i = 0; i < 4; ++i) {
@@ -48,7 +49,7 @@ std::pair<int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //
             if (state[0][8 + j][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0)
                 if (w != 0) {
                     if(raw_argmax == 1)
-                        failure_type = -1, not_failed = true;
+                        failure_type = -1, success_type = 1, not_failed = true;
                     if (raw_argmax != 1 && !not_failed)
                         failure_type = 1;
                 }
@@ -61,19 +62,24 @@ std::pair<int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //
                 if (state[0][8 + j][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0)
                     if (!w) {
                         if(raw_argmax == 2)
-                            failure_type = -1, not_failed = true;
+                            failure_type = -1, success_type = 2, not_failed = true;
                         if (raw_argmax != 2 && !not_failed)
                             failure_type = 2;
                     }
         }
 
     
-    if (failure_type == -1)
+    if (failure_type == -1) {
+        bool happened = false;
         for (int i = 0; i < 4; ++i)
             if (state[0][15][d[2] / 2 + dx2[i]][d[3] / 2 + dy2[i]].item<double>() == 0){
                 if(raw_argmax == 3 + i)
                     failure_type = 0;
+                happened = true;
             }
+        if (failure_type == -1 && happened && success_type == -1)
+            success_type = 0;
+    }
 
     probs[0][0] *= 0;
     probs[0][1] *= 0; // this line is optional (trade off consistancy vs kill-rate) [1]
@@ -83,7 +89,7 @@ std::pair<int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //
         for (int j = 0; j < 3; ++j)
             if (state[0][8 + j][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0) {
                 if (w != 0)
-                    return {1, failure_type};
+                    return {1, failure_type, success_type};
                 c = 1;
             }
     }
@@ -92,7 +98,7 @@ std::pair<int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //
         if (state[0][15][d[2] / 2 + dx2[i]][d[3] / 2 + dy2[i]].item<double>() == 0)
                 probs[0][3 + i] *= 0;
     probs = probs / probs.sum();
-    return {probs.argmax().item<int>(), failure_type};
+    return {probs.argmax().item<int>(), failure_type, success_type};
 }
 
 class Agent {
@@ -100,7 +106,7 @@ public:
     Agent(bool data_gathering_mode = true,
           bool inference_mode = false,
           int T = 1054,
-          const std::string &model_dir = "bots/bot-bc-fap/backup",
+          const std::string &model_dir = backup_path,
           const std::string &dataset_dir = "bots/bot-bc-fap/dataset/data_train")
         : data_gathering_mode_(data_gathering_mode),
           inference_mode_(inference_mode),
@@ -170,11 +176,17 @@ public:
 
     ~Agent() {
         log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-        log("Total Actions     : " + std::to_string(total_actions));
-        log("Overall Failures  : " + std::to_string(overalls_failures));
-        log("Wall Collisions   : " + std::to_string(failures[0]));
-        log("Adjancent Enemies : " + std::to_string(failures[1]));
-        log("Flanking Enemies  : " + std::to_string(failures[2]));
+        log("Total Actions        : " + std::to_string(total_actions));
+        log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        log("Overall Failures     : " + std::to_string(overalls_failures));
+        log("Wall Collisions   (-): " + std::to_string(failures[0]));
+        log("Adjancent Enemies (-): " + std::to_string(failures[1]));
+        log("Flanking Enemies  (-): " + std::to_string(failures[2]));
+        log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        log("Overall Success      : " + std::to_string(overalls_success));
+        log("Wall Collisions   (+): " + std::to_string(success[0]));
+        log("Adjancent Enemies (+): " + std::to_string(success[1]));
+        log("Flanking Enemies  (+): " + std::to_string(success[2]));
         log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
         log_file_.close();
     }
@@ -204,10 +216,12 @@ public:
             auto logits = out[1];                     // [1, num_actions_]
             auto probs = torch::softmax(logits, 1);
 
-            auto [action, failure_type] = bc_inference(logits, state);
+            auto [action, failure_type, success_type] = bc_inference(logits, state);
 
             if (failure_type != -1) 
                 ++failures[failure_type], ++overalls_failures;
+            if (success_type != -1)
+                ++success[success_type], ++overalls_success;
             ++total_actions;
 
             return action;
@@ -357,6 +371,7 @@ private:
     static constexpr int num_actions_ = 7, num_channels_ = 32, grid_size_ = 31;
 
     int failures[3] = {}, overalls_failures = 0, total_actions = 0;
+    int success[3] = {}, overalls_success = 0;
 
     std::string model_dir_, dataset_dir_;
     PlayerPolicyNet model_{nullptr};

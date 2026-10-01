@@ -184,13 +184,12 @@ namespace Environment::Field{
 		A_STAMINA += hum[ind].get_stamina();
 		A_DAMAGE += hum[ind].get_damage_effect()[0];
 		if (during_battle == false) {
-			std::cout << "================ METRICS ================\n";
-			std::cout << "KILLS = " << KILLS << ", T_ALIVE = " << T_ALIVE << "\n";
-			std::cout << "A_HP = " << A_HP << ", A_STAMINA = " << A_STAMINA 
+			std::ofstream log_file(backup_path + "/agent_log.log", std::ios::app);
+			log_file << "================ METRICS ================\n";
+			log_file << "KILLS = " << KILLS << ", T_ALIVE = " << T_ALIVE << "\n";
+			log_file << "A_HP = " << A_HP << ", A_STAMINA = " << A_STAMINA 
 			<< ", A_DAMAGE = " << A_DAMAGE << '\n';
-			std::cout << "=========================================\n";
-			std::cout << "press the space key to continue" << std::endl;
-			while(getch() != ' ');
+			log_file.close();
 			view_stats = false;
 		}
         return;

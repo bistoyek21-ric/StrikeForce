@@ -134,6 +134,10 @@ namespace Environment::Field{
 		return res;
 	}
 
+	long long KILLS, T_ALIVE, A_HP, A_STAMINA, A_DAMAGE;
+
+	bool view_stats = false;
+
 	char gameplay::bot(Environment::Character::Human& player) const {
 		if(!player.get_active_agent())
 			return '+';
@@ -158,8 +162,12 @@ namespace Environment::Field{
 					if (5.0 < ch[k][i * 31 + j])
 						obs.push_back(10 - (10.0 / (beta * (ch[k][i * 31 + j] - 5) + 2)));
 					else
-						obs.push_back(ch[k][i * 31 + j]);	
-		return action[player.agent->predict(obs)];
+						obs.push_back(ch[k][i * 31 + j]);
+
+		char res = action[player.agent->predict(obs)];
+		if (T_ALIVE < 4)
+			return 'm';
+		return res;
     }
 
 	void gameplay::prepare(Environment::Character::Human& player){
@@ -167,10 +175,6 @@ namespace Environment::Field{
 		player.agent = new Agent(/*data_gathering=*/false, /*inference=*/true);
 		player.set_agent_active();
 	}
-
-	long long KILLS, T_ALIVE, A_HP, A_STAMINA, A_DAMAGE;
-
-	bool view_stats = false;
 
 	void gameplay::view() const {
 		if (!view_stats) {
@@ -189,6 +193,8 @@ namespace Environment::Field{
 			log_file << "KILLS = " << KILLS << ", T_ALIVE = " << T_ALIVE << "\n";
 			log_file << "A_HP = " << A_HP << ", A_STAMINA = " << A_STAMINA 
 			<< ", A_DAMAGE = " << A_DAMAGE << '\n';
+			log_file << "A_HP/T_ALIVE = " << 1.0 * A_HP / T_ALIVE << ", A_STAMINA/T_ALIVE = " << 1.0 * A_STAMINA / T_ALIVE
+			<< ", A_DAMAGE/T_ALIVE = " << 1.0 * A_DAMAGE / T_ALIVE << '\n';
 			log_file.close();
 			view_stats = false;
 		}

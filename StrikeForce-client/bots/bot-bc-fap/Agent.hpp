@@ -195,11 +195,11 @@ public:
     //  predict – called every environment step
     // ---------------------------------------------------------------
     int predict(const std::vector<float>& obs) {
-        if (cnt_ <= T_initial_)
+        if (cnt_ <= T_initial_ && !inference_mode_)
             return 0;                     // initial warm‑up
 
         // During warm‑up (before T_warm_up_) we play randomly
-        if (!warmup_finished_)
+        if (!warmup_finished_  && !inference_mode_)
             return rand() % num_actions_;
         
         auto state = torch::tensor(obs, torch::kFloat32).view({1, num_channels_, grid_size_, grid_size_});
@@ -235,7 +235,7 @@ public:
     //  update – called after the action is actually executed
     // ---------------------------------------------------------------
     void update(int action, bool imitate) {
-        if (cnt_ <= T_initial_ || !warmup_finished_)
+        if ((cnt_ <= T_initial_ || !warmup_finished_) && !inference_mode_)
             return;
         
         if(action < 0 || num_actions_ <= action)
@@ -269,13 +269,13 @@ public:
     //  is_manual – tells the environment whether to listen to human input
     // ---------------------------------------------------------------
     bool is_manual() {
-        if (cnt_ < T_initial_) {
+        if (cnt_ < T_initial_ && !inference_mode_) {
             ++cnt_;
             return true;
         }
 
         // During session warm‑up (first T_warm_up_ frames after T_initial_) → random, not manual
-        if (cnt_ >= T_initial_ && cnt_warm_up_ < T_warm_up_) {
+        if (cnt_ >= T_initial_ && cnt_warm_up_ < T_warm_up_ && !inference_mode_) {
             ++cnt_warm_up_;
             ++cnt_;
             if (cnt_warm_up_ == T_warm_up_) {
@@ -285,16 +285,16 @@ public:
 
                 std::cout << "---------\nepisode Begins:" << std::endl;
                 
-                return !inference_mode_ ^ flip_;
+                return flip_;
             }
             return false;   // not manual yet
         }
 
         // After warm‑up, manual = NOT inference_mode_
-        return !inference_mode_ ^ flip_;
+        return flip_;
     }
 
-    bool flip() { if (cnt_ > T_initial_ && warmup_finished_) {flip_ ^= 1; return true; } return false; }
+    bool flip() { if ((cnt_ > T_initial_ && warmup_finished_) || inference_mode_) {flip_ ^= 1; return true; } return false; }
 
     bool in_training() { return data_gathering_mode_; }
 

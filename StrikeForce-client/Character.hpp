@@ -390,7 +390,7 @@ namespace Environment::Character{
 
 		bool punch(Environment::Item::Bullet &b){
 			Environment::Item::Weapon p;
-			p.ready(std::max(compute_damage(mindamage_def, 1), mindamage), 0, 1);
+			p.ready(std::max({compute_damage(mindamage_def, 1), mindamage, 20}), 0, 1);
 			std::vector<int> cor_ = {cor[0], cor[1] + wdx[way - 1], cor[2] + wdy[way - 1]};
 			b.shot(cor_, way, p, (uintptr_t)this);
 			return true;
@@ -401,7 +401,7 @@ namespace Environment::Character{
 			if(stamina + w.get_stamina() < 0)
 				return false;
 			stamina += w.get_stamina();
-			w.set_damage(std::max(compute_damage(w.get_damage(), w.get_range()), w.get_damage() + mindamage));
+			w.set_damage(std::max({compute_damage(w.get_damage(), w.get_range()), w.get_damage() + mindamage, 20}));
 			std::vector<int> cor_ = {cor[0], cor[1] + wdx[way - 1], cor[2] + wdy[way - 1]};
 			b.shot(cor_, way, w, (uintptr_t)this);
 			return true;
@@ -409,7 +409,7 @@ namespace Environment::Character{
 
 		bool throw_it(Environment::Item::Bullet &b){
 			b = backpack.list_throw[backpack.ind].first;
-			b.set_damage(std::max(b.get_damage(), b.get_damage() + mindamage));
+			b.set_damage(std::max({b.get_damage(), b.get_damage() + mindamage, 20}));
 			if(stamina + b.get_stamina() < 0)
 				return false;
 			if(backpack.list_throw[backpack.ind].second.second < 1){
@@ -428,16 +428,16 @@ namespace Environment::Character{
 
 		std::vector<int> get_damage_effect() const{
 		    int vec = backpack.vec;
-		    int dmg = std::max(compute_damage(mindamage_def, 1), mindamage);
+		    int dmg = std::max({compute_damage(mindamage_def, 1), mindamage, 20});
             if(vec == 1){
                 auto b = &backpack.list_throw[backpack.ind].first;
                 if(0 <= stamina + b->get_stamina())
-                    return {std::max({b->get_damage(), b->get_damage() + mindamage, dmg}), b->get_effect()};
+                    return {std::max({b->get_damage(), b->get_damage() + mindamage, dmg, 20}), b->get_effect()};
             }
             if(vec == 2){
                 auto w = &backpack.list_w[backpack.ind].first;
                 if(0 <= stamina + w->get_stamina())
-                    return {std::max({compute_damage(w->get_damage(), w->get_range()), w->get_damage() + mindamage, dmg}), w->get_effect()};
+                    return {std::max({compute_damage(w->get_damage(), w->get_range()), w->get_damage() + mindamage, dmg, 20}), w->get_effect()};
             }
             return {dmg, 0};
 		}
@@ -837,7 +837,7 @@ namespace Environment::Character{
 	public:
 		bool punch(Environment::Item::Bullet &b, int way){
 			Environment::Item::Weapon p;
-			p.ready(std::max(0, mindamage), 0, 1);
+			p.ready(std::max(10, mindamage), 0, 1);
 			std::vector<int> cor_ = {cor[0], cor[1] + wdx[way], cor[2] + wdy[way]};
 			b.shot(cor_, way + 1, p, 0);
 			return true;

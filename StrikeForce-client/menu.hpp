@@ -368,7 +368,11 @@ namespace Environment::Character{
             std::cout << "\n----------------------------\n";
             std::cout << "to choose an option write it's section number" << '\n';
             std::cout << "----------------------------" << std::endl;
-            char c = getch();
+            #if defined(AUTOMATIC)
+			char c = '1';
+			#else
+			char c = getch();
+			#endif
             if(c == '1')
                 Environment::Field::g.open();
             if(c == '2')

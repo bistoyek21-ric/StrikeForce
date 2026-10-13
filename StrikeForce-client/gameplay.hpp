@@ -24,6 +24,8 @@ SOFTWARE.
 */
 #include "Character.hpp"
 
+int SEED = 0;
+
 int rand_(){
 	return rand();
 }
@@ -1279,6 +1281,7 @@ namespace Environment::Field{
 			recomZ = nullptr;
 			recomH = nullptr;
 			temp.clear();
+			chest=0;
 			for(int i = 0; i < B; ++i)
 				active[i] = mb[i] = false;
 			for(int i = 0; i < Z; ++i)
@@ -1589,7 +1592,7 @@ namespace Environment::Field{
 						#if !defined(AUTOMATIC)
 						level = getch() - '0';
 						#else
-						level = 10;
+						level = 9;
 						#endif
 						if(Environment::Character::me.get_level_solo() < level && level <= L && level > 0){
 							std::cout << "you can't choose this level" << std::endl;
@@ -1839,9 +1842,21 @@ namespace Environment::Field{
 		using_an_agent = !manual;
 		if(using_an_agent && !replay_mode)
 			prepare(Environment::Character::me);
+		#if defined(DATA_GATHERING_MODE)
+		if (SEED == 64)
+			exit(0);
+		int seed = SEED;
+		++SEED;
+		//std::cout << "Enter the seed: " << std::endl;
+		//std::cin >> seed;
+		srand(seed);
+		serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
+		Environment::Random::_srand(seed, serial_number);
+		#else
 		srand(tb);
 		serial_number = (rand_() & 1023) + ((rand_() & 1023) << 10) + ((rand_() & 1023) << 20);
 		Environment::Random::_srand(tb, serial_number);
+		#endif
 		int players;
 		if(replay_mode){
 			while (true){

@@ -414,21 +414,32 @@ The `obs` vector in `predict()` contains a **31×31 grid** around the player, co
 
 ## 🎓 Training Your Agent
 
-### Training Macros
+### Macros
 
-Control training behavior in `macros.hpp`:
+Control behavior in `macros.hpp`:
 
 ```cpp
-// Enable crowdsourced learning (uses API server)
-#define CROWDSOURCED_TRAINING
+//#define CROWDSOURCED_TRAINING
 
-// Freeze parts of the network
-#define FREEZE_REWARDNET_BLOCK
-#define FREEZE_AGENT_BLOCK
+//#define DISTRIBUTED_LEARNING
 
-// Transfer learning from reward network
-#define TL_IMPORT_REWARDNET
-#define FREEZE_TL_BLOCK
+//#define FREEZE_REWARDNET_BLOCK
+//#define TL_IMPORT_REWARDNET
+//#define FREEZE_TL_BLOCK
+
+//#define FREEZE_AGENT_BLOCK
+
+//#define USE_AGENT_IN_SQUAD_NPCS
+
+//#define AUTOMATIC
+
+//#define HIGHLY_OPTIMIZED
+
+#define SLOWMOTION
+
+//#define DATA_GATHERING_MODE
+
+#define DATASET "datasets/bot-bc"
 ```
 
 ### Example: GAIL (bot-1)
@@ -533,11 +544,6 @@ curl -X POST \
 # Delete a bot (and all backups)
 curl -X POST \
   "http://SERVER_URL/StrikeForce/admin/delete_bot?admin_key=YOUR_KEY&bot=my-bot"
-```
-
-**Admin Key Hash** (in `server.py`):
-```python
-admin_key_hash = "b18b078c272d0ac43301ec84cea2f61b0c1fb1b961de7d6aa5ced573cb9132aa"
 ```
 
 #### Client Endpoints
@@ -650,11 +656,11 @@ StrikeForce/
 │   │   │   ├── Agent.hpp
 │   │   │   ├── Custom.hpp
 │   │   │   └── RewardNet.hpp
-│   │   ├── bot-bc/                 # Behavioral Cloning (baseline)
+│   │   ├── bot-bc/                 # Behavioral Cloning (naive approach)
 │   │   │   ├── Agent.hpp
 │   │   │   ├── Custom.hpp
 │   │   │   └── Modules.hpp
-│   │   └── bot-bc-fap/            # BC with MGDA (our method)
+│   │   └── bot-bc-fap/            # BC with an efficient model (our method)
 │   │       ├── Agent.hpp
 │   │       ├── Custom.hpp
 │   │       └── Modules.hpp
@@ -663,10 +669,8 @@ StrikeForce/
 │   ├── character/                  # Character configs
 │   └── accounts/                   # User data
 │
-├── StrikeForce-server/
-│   └── server.cpp                  # Match server
-│
-└── server.py                       # API/backup server
+└── StrikeForce-server/
+    └── server.cpp                  # Match server
 ```
 
 ---

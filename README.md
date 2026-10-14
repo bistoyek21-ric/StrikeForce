@@ -624,9 +624,9 @@ namespace Environment::Field {
 
 ### Creating a New Map
 
-1. **Create file**: `StrikeForce-client/map/floor4.txt`
+1. **Create or change some files**: e.g. `StrikeForce-client/map/floor4.txt`
 2. **Design layout**: Use symbols above, ensure dimensions match
-3. **Update F constant**: Change `F = 3` to `F = 4` in `gameplay.hpp`
+3. **Update F, N and M constants**: Change 'F', 'N' and 'M' in `gameplay.hpp`
 4. **Recompile**: `g++ -std=c++17 main.cpp -o StrikeForce ...`
 
 ---
@@ -688,7 +688,7 @@ Introduces a decoupled imitation-learning architecture for partially observable 
 Studies post-hoc correction of a specific, identified behavioral failure in a converged policy without retraining from scratch. The repair objective combines a corrective loss on a small $D_{\mathrm{fix}}$ with **EWC** parameter-space preservation and **KD** output-space preservation on an anchor set $D_{\mathrm{anc}}$. The paper formalizes the **contaminated-anchor** setting—where $D_{\mathrm{anc}}$ may itself contain the failure behavior—and analyzes the local multi-step repair dynamics, showing a curvature-weighted repair equilibrium. This is the efficient repair procedure implemented in the `ewc-kd.cpp` path. Here “EWC+KD” is the method; the repository path is spelled `ewc-kd.cpp`.
 
 **Repository links:**
-- `bots/bot-bc/No-BPTT-via-FAP/model.cpp` — elementary FAP / behavioral-cloning implementation (related to Paper 1)
+- `bots/bot-bc-fap/No-BPTT-via-FAP/model.cpp` — elementary FAP / behavioral-cloning implementation (related to Paper 1)
 - `bots/bot-bc-fap/No-BPTT-via-FAP/ewc-kd.cpp` — EWC+KD behavioral repair (related to Paper 2)
 
 **Artifacts, checkpoints, and datasets:**
@@ -742,7 +742,7 @@ If you use any of these artifacts in your work, please cite the corresponding pa
 
 - **Frame Rate**: 100 FPS (configurable in `GraphicPrinter.hpp`)
 - **Action Delay**: 40ms between decisions (see `lim` in `Custom.hpp`)
-- **Map Size**: 30×100×3 (floors × width × height)
+- **Map Size**: 3×100×30 (floors × width × height)
 
 ### Memory Management
 

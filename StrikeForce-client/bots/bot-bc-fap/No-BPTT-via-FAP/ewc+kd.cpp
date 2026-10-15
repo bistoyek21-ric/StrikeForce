@@ -408,7 +408,7 @@ torch::Tensor focal_loss(torch::Tensor logits, torch::Tensor targets, double gam
     auto log_probs = torch::log_softmax(logits, 1);
     auto target_log_probs = log_probs.gather(1, targets.unsqueeze(1)).squeeze(1);
     auto p_t = torch::exp(target_log_probs);
-    auto focal_weight = torch::pow(1 - p_t, gamma);
+    auto focal_weight = torch::pow(1 - p_t, gamma).detach(); // to making H_{total} >= 0
     auto loss = -focal_weight * target_log_probs;
     return loss;
 }

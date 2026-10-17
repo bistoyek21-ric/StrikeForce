@@ -11,16 +11,16 @@ Derived:    S1 = K/T
             r_H = A_HP / T
             r_Sigma = A_stamina / T
             r_D = A_damage / T
-Composite:  M_H = K * A_HP / T
-            M_Sigma = K * A_stamina / T
-            M_D = K * A_damage / T
+Composite:  M_H = K * A_HP / (T^2)
+            M_Sigma = K * A_stamina / (T^2)
+            M_D = K * A_damage / (T^2)
 
 All metrics are higher-is-better. No success/failure categories are reported.
 -----------------------------------
 python compare_models.py \
-    --models P=../pre-ewc+kd-backup/agent_log.log \
-             B=../backup/agent_log.log \
-             F=../backup-FT/agent_log.log \
+    --models M1=../pre-ewc+kd-backup/agent_log-no-agg.log \
+             M2=../pre-ewc+kd-backup/agent_log.log \
+             M3=../'pre-ewc+kd-backup(lin)'/agent_log.log \
     --latex out/ --figures out/figures/ --export out/
 """
 
@@ -77,9 +77,9 @@ METRIC_DISPLAY = {
     "r_HP":                   r"$r_H = A_{\mathrm{HP}}/T$",
     "r_Stamina":              r"$r_\sigma = A_{\mathrm{stam}}/T$",
     "r_Damage":               r"$r_D = A_{\mathrm{dmg}}/T$",
-    "M_HP":                   r"$M_H = K A_{\mathrm{HP}}/T$",
-    "M_Stamina":              r"$M_\sigma = K A_{\mathrm{stam}}/T$",
-    "M_Damage":               r"$M_D = K A_{\mathrm{dmg}}/T$",
+    "M_HP":                   r"$M_H = K A_{\mathrm{HP}}/T^2$",
+    "M_Stamina":              r"$M_\sigma = K A_{\mathrm{stam}}/T^2$",
+    "M_Damage":               r"$M_D = K A_{\mathrm{dmg}}/T^2$",
 }
 
 LATEX_NAME_MAP = {
@@ -157,10 +157,10 @@ def add_derived(df: pd.DataFrame) -> pd.DataFrame:
     df["r_Stamina"] = Sig / T
     df["r_Damage"]  = D / T
 
-    # Composite: kill * resource / T
-    df["M_HP"]      = K * H / T
-    df["M_Stamina"] = K * Sig / T
-    df["M_Damage"]  = K * D / T
+    # Composite: kill * resource / T^2
+    df["M_HP"]      = K * H / (T**2)
+    df["M_Stamina"] = K * Sig / (T**2)
+    df["M_Damage"]  = K * D / (T**2)
 
     return df
 
@@ -485,9 +485,9 @@ class ConsoleReporter:
         hdr("SECTION 3 — COMPOSITE METRICS (anti-loafing)")
         print(f"{'Metric':<26}" + "".join(f"{n:>15}" for n in a.names)
               + f"{'best':>10}")
-        for k, label in [("M_HP", "M_H = K A_HP/T"),
-                         ("M_Stamina", "M_Sig = K A_stam/T"),
-                         ("M_Damage", "M_D = K A_dmg/T")]:
+        for k, label in [("M_HP", "M_H = K A_HP/(T^2)"),
+                         ("M_Stamina", "M_Sig = K A_stam/(T^2)"),
+                         ("M_Damage", "M_D = K A_dmg/(T^2)")]:
             row = f"{label:<26}"
             means = {}
             for n in a.names:
@@ -731,9 +731,9 @@ class LatexReporter:
                     + r" \\" "\n")
             f.write(r"\midrule" "\n")
             rows = [
-                ("M_HP",      r"$M_H = K\,A_\mathrm{HP}/T$"),
-                ("M_Stamina", r"$M_\sigma = K\,A_\mathrm{stam}/T$"),
-                ("M_Damage",  r"$M_D = K\,A_\mathrm{dmg}/T$"),
+                ("M_HP",      r"$M_H = K\,A_\mathrm{HP}/T^2$"),
+                ("M_Stamina", r"$M_\sigma = K\,A_\mathrm{stam}/T^2$"),
+                ("M_Damage",  r"$M_D = K\,A_\mathrm{dmg}/T^2$"),
             ]
             for k, name in rows:
                 vals = [f"${a.frames[n][k].mean():.6g}$" for n in a.names]
@@ -742,7 +742,7 @@ class LatexReporter:
             f.write(r"\end{tabular}" "\n")
             f.write(
                 rf"\caption{{Composite metrics over $n={a.n}$ paired episodes. "
-                rf"$K^2$ in the numerator penalizes models with low kill rate; "
+                rf"$K/T$ in the numerator penalizes models with low kill rate; "
                 rf"all higher-is-better.}}"
                 "\n"
             )

@@ -706,21 +706,25 @@ If you use any of these artifacts in your work, please cite the corresponding pa
 
 **No Back-Propagation Through Time via Future Action Prediction:**
 ```bibtex
-@misc{fouladi2026nopbtt,
-  title={No Back-Propagation Through Time via Future Action Prediction},
-  author={Kasra Fouladi},
-  year={2026},
-  doi={10.13140/RG.2.2.18971.43049}
+@misc{fouladi2026nobptt,
+    title           = {No Back-Propagation Through Time via Future Action Prediction},
+    author          = {Fouladi, Kasra},
+    year            = {2026},
+    doi             = {10.13140/RG.2.2.18971.43049},
+    howpublished    = {ResearchGate},
+    url             = {https://doi.org/10.13140/RG.2.2.18971.43049}
 }
 ```
 
 **Targeted Behavioral Repair with Contaminated Anchors:**
 ```bibtex
 @misc{fouladi2026ewc+kd,
-  title={Targeted Behavioral Repair with Contaminated Anchors},
-  author={Kasra Fouladi},
-  year={2026},
-  doi={10.13140/RG.2.2.11421.68328}
+    title           = {Targeted Behavioral Repair with Contaminated Anchors},
+    author          = {Fouladi, Kasra},
+    year            = {2026},
+    doi             = {10.13140/RG.2.2.11421.68328},
+    howpublished    = {ResearchGate},
+    url             = {https://doi.org/10.13140/RG.2.2.11421.68328}
 }
 ```
 

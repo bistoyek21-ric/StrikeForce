@@ -1,0 +1,6 @@
+# PRESET baseline_pure_ppo — the teacher is OFF: behaves like the original PPO (Experiment A), apart from the
+# adjacent-facing "aim" potential. Use it to re-establish a reliable baseline before anything else.
+ppo.expert_mix = 0
+ppo.bc_coef = 0
+ppo.bc_floor = 0
+ppo.policy_coef = 1

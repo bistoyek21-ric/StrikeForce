@@ -1,0 +1,385 @@
+/*
+MIT License
+
+Copyright (c) 2025 bistoyek21 R.I.C.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+*/
+
+//g++ -std=c++17 main.cpp -o app -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda -lsfml-graphics -lsfml-window -lsfml-system && ./app
+// Add -lws2_32 on Windows
+
+#include "Modules.hpp"          // brings PlayerPolicyNet, TORCH_MODULE etc.
+
+const std::string bot_code = "bot-bc-fap", backup_path = "bots/bot-bc-fap/backup";
+
+// MASK1:
+std::tuple<int, int, int> bc_inference(torch::Tensor logits, torch::Tensor state) { //+xeawsd
+    auto d = state.sizes();
+    auto logits_clone = logits.clone().detach();
+    auto probs = torch::softmax(logits_clone, -1);
+    int raw_argmax = probs.argmax().item<int>();
+
+    int dx1[4] = {1, 0, -1, 0}, dy1[4] = {0, 1, 0, -1}, dx2[4] = {0, -1, 1, 0}, dy2[4] = {-1, 0, 0, 1};
+
+    int failure_type = -1; // -1: no failure, 0: wall collision, 1: adjacne enemies, 2: flank enemies
+    int success_type = -1;
+    int not_failed = false;
+
+    for (int i = 0; i < 4; ++i) {
+        auto w = state[0][20 + i][d[2] / 2][d[3] / 2].item<double>();
+        for (int j = 0; j < 3; ++j)
+            if (state[0][8 + j][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0)
+                if (w != 0) {
+                    if(raw_argmax == 1)
+                        failure_type = -1, success_type = 1, not_failed = true;
+                    if (raw_argmax != 1 && !not_failed)
+                        failure_type = 1;
+                }
+    }
+
+    if (failure_type == -1)
+        for (int i = 0; i < 4; ++i) {
+           auto w = state[0][20 + i][d[2] / 2][d[3] / 2].item<double>();
+            for (int j = 0; j < 3; ++j)
+                if (state[0][8 + j][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0)
+                    if (!w) {
+                        if(raw_argmax == 2)
+                            failure_type = -1, success_type = 2, not_failed = true;
+                        if (raw_argmax != 2 && !not_failed)
+                            failure_type = 2;
+                    }
+        }
+
+    
+    if (failure_type == -1) {
+        bool happened = false;
+        for (int i = 0; i < 4; ++i)
+            if (state[0][15][d[2] / 2 + dx2[i]][d[3] / 2 + dy2[i]].item<double>() == 0){
+                if(raw_argmax == 3 + i)
+                    failure_type = 0;
+                happened = true;
+            }
+        if (failure_type == -1 && happened && success_type == -1)
+            success_type = 0;
+    }
+
+    probs[0][0] *= 0;
+    probs[0][1] *= 0; // this line is optional (trade off consistancy vs kill-rate) [1]
+    int c = 0;
+    for (int i = 0; i < 4; ++i) {
+        auto w = state[0][20 + i][d[2] / 2][d[3] / 2].item<double>();
+        for (int j = 0; j < 3; ++j)
+            if (state[0][8 + j][d[2] / 2 + dx1[i]][d[3] / 2 + dy1[i]].item<double>() != 0) {
+                if (w != 0)
+                    return {1, failure_type, success_type};
+                c = 1;
+            }
+    }
+    probs[0][2] *= c; // this line is optional (trade off consistancy vs kill-rate) [1.1]
+    for (int i = 0; i < 4; ++i)
+        if (state[0][15][d[2] / 2 + dx2[i]][d[3] / 2 + dy2[i]].item<double>() == 0)
+                probs[0][3 + i] *= 0;
+    probs = probs / probs.sum();
+    return {probs.argmax().item<int>(), failure_type, success_type};
+}
+
+class Agent {
+public:
+    Agent(bool data_gathering_mode = true,
+          bool inference_mode = false,
+          int T = 1054,
+          const std::string &model_dir = backup_path,
+          const std::string &dataset_dir = "bots/bot-bc-fap/dataset/data_train")
+        : data_gathering_mode_(data_gathering_mode),
+          inference_mode_(inference_mode),
+          T_(T),
+          model_dir_(model_dir),
+          dataset_dir_(dataset_dir)
+    {
+        prev_action_ = torch::tensor({5}, torch::kLong);
+        
+        // 1. Load model
+        if(inference_mode_)
+            model_ = PlayerPolicyNet();
+        
+        if (!model_dir_.empty()) {
+            if (std::filesystem::exists(model_dir_)) {
+                if (std::filesystem::exists(model_dir_ + "/model.pt") && inference_mode_)
+                    torch::load(model_, model_dir_ + "/model.pt");
+                 log_file_.open(model_dir_ + "/agent_log.log", std::ios::app);
+            } else {
+                std::filesystem::create_directories(model_dir_);
+                log_file_.open(model_dir_ + "/agent_log.log", std::ios::app);
+            }
+        }
+
+        if(inference_mode_)
+            model_->to(torch::kCPU);
+
+        // 2. Prepare dataset directory
+        if (!dataset_dir_.empty()) {
+            if (!std::filesystem::exists(dataset_dir_))
+                std::filesystem::create_directories(dataset_dir_);
+            // Find next episode number
+            episode_count_ = 0;
+            for (const auto& entry : std::filesystem::directory_iterator(dataset_dir_)) {
+                std::string fname = entry.path().filename().string();
+                if (fname.find("episode_") == 0 && fname.size() > 10 && fname.substr(fname.size()-3) == ".pt") {
+                    try {
+                        int num = std::stoi(fname.substr(8, fname.size() - 11));
+                        if (num + 1 > episode_count_)
+                            episode_count_ = num + 1;
+                    } catch (...) {}
+                }
+            }
+        }
+
+        if (inference_mode_)
+            log("=========\nAgent parameters: " + std::to_string(param_count()));
+        else
+            log("=========\n---------");
+        
+        log("Inference mode : " + std::to_string(inference_mode_));
+        log("Data gathering : " + std::to_string(data_gathering_mode_));
+        log("T              : " + std::to_string(T_));
+        log("Model path     : " + model_dir_ + "/model.pt");
+        log("Dataset dir    : " + dataset_dir_);
+        log("Next episode   : " + std::to_string(episode_count_));
+
+        if (inference_mode_) {
+            model_->eval();          // always eval – no training gradients needed
+            auto dummy = torch::zeros({1, num_channels_, grid_size_, grid_size_});
+            model_->forward(dummy, prev_action_);
+            model_->reset_memory();
+        }
+
+        freq_ = torch::zeros({num_actions_});
+    }
+
+    ~Agent() {
+        log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        log("Total Actions        : " + std::to_string(total_actions));
+        log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        log("Overall Failures     : " + std::to_string(overalls_failures));
+        log("Wall Collisions   (-): " + std::to_string(failures[0]));
+        log("Adjancent Enemies (-): " + std::to_string(failures[1]));
+        log("Flanking Enemies  (-): " + std::to_string(failures[2]));
+        log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        log("Overall Success      : " + std::to_string(overalls_success));
+        log("Wall Collisions   (+): " + std::to_string(success[0]));
+        log("Adjancent Enemies (+): " + std::to_string(success[1]));
+        log("Flanking Enemies  (+): " + std::to_string(success[2]));
+        log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        log_file_.close();
+    }
+
+    // ---------------------------------------------------------------
+    //  predict – called every environment step
+    // ---------------------------------------------------------------
+    int predict(const std::vector<float>& obs) {
+        if (cnt_ <= T_initial_ && !inference_mode_)
+            return 0;                     // initial warm‑up
+
+        // During warm‑up (before T_warm_up_) we play randomly
+        if (!warmup_finished_  && !inference_mode_)
+            return rand() % num_actions_;
+        
+        auto state = torch::tensor(obs, torch::kFloat32).view({1, num_channels_, grid_size_, grid_size_});
+
+        // Store state for episode saving (if data gathering is on)
+        if (data_gathering_mode_)
+            episode_states_.push_back(state.clone());
+
+        // After warm‑up, behaviour depends on inference_mode_
+        if (inference_mode_) {
+            // Model decides
+            torch::NoGradGuard no_grad;
+            auto out = model_->forward(state, prev_action_);
+            auto logits = out[1];                     // [1, num_actions_]
+            auto probs = torch::softmax(logits, 1);
+
+            auto [action, failure_type, success_type] = bc_inference(logits, state);
+
+            if (failure_type != -1) 
+                ++failures[failure_type], ++overalls_failures;
+            if (success_type != -1)
+                ++success[success_type], ++overalls_success;
+            ++total_actions;
+
+            return action;
+        }
+
+        // inference_mode_ == false → human plays (manual), predict is not really used
+        return 0;
+    }
+
+    // ---------------------------------------------------------------
+    //  update – called after the action is actually executed
+    // ---------------------------------------------------------------
+    void update(int action, bool imitate) {
+        if ((cnt_ <= T_initial_ || !warmup_finished_) && !inference_mode_)
+            return;
+        
+        if(action < 0 || num_actions_ <= action)
+            action = 0;
+        
+        // Update RNN state for next step (always needed)
+        prev_action_ = torch::tensor({action}, torch::kLong);
+
+        freq_[action] += 1;
+
+        //std::cout << "imitate: " << imitate << ", action: " << action + 1 << std::endl;
+
+        // Recording: only if data_gathering_mode_ is true and we are past warm‑up
+        if (data_gathering_mode_) {
+            episode_actions_.push_back(prev_action_.clone());
+            
+            episode_imitate_.push_back(
+                torch::tensor({(int)imitate}, torch::kLong)
+            );
+            
+            // When the buffer fills up to T_, a full episode is complete
+            if (episode_actions_.size() == T_) {
+                save_episode();
+                cnt_warm_up_ = 0;
+                warmup_finished_ = false;
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------
+    //  is_manual – tells the environment whether to listen to human input
+    // ---------------------------------------------------------------
+    bool is_manual() {
+        if (cnt_ < T_initial_ && !inference_mode_) {
+            ++cnt_;
+            return true;
+        }
+
+        // During session warm‑up (first T_warm_up_ frames after T_initial_) → random, not manual
+        if (cnt_ >= T_initial_ && cnt_warm_up_ < T_warm_up_ && !inference_mode_) {
+            ++cnt_warm_up_;
+            ++cnt_;
+            if (cnt_warm_up_ == T_warm_up_) {
+                warmup_finished_ = true;
+
+                log("---------");
+
+                std::cout << "---------\nepisode Begins:" << std::endl;
+                
+                return flip_;
+            }
+            return false;   // not manual yet
+        }
+
+        // After warm‑up, manual = NOT inference_mode_
+        return flip_;
+    }
+
+    bool flip() { if ((cnt_ > T_initial_ && warmup_finished_) || inference_mode_) {flip_ ^= 1; return true; } return false; }
+
+    bool in_training() { return data_gathering_mode_; }
+
+private:
+    // ---------------------------------------------------------------
+    //  Episode saving (data gathering)
+    // ---------------------------------------------------------------
+    void save_episode() {
+        if (episode_states_.size() != episode_actions_.size()) {
+            std::cerr << "Error: state/action count mismatch!\n";
+            std::cerr << "states: " << episode_states_.size() << '\n';
+            std::cerr << "actions:" << episode_actions_.size() << '\n';
+            std::cerr << "=====================================\n";
+            return;
+        }
+
+        // Stack into tensors: [1, T, C, H, W] and [1, T]
+        auto states_tensor = torch::stack(episode_states_, 0).squeeze(1).unsqueeze(0);
+        auto actions_tensor = torch::stack(episode_actions_, 0).squeeze(-1).unsqueeze(0);
+        auto imitation_tensor = torch::stack(episode_imitate_, 0).squeeze(-1).unsqueeze(0);
+
+        std::string path = dataset_dir_ + "/episode_" + std::to_string(episode_count_) + ".pt";
+        torch::serialize::OutputArchive archive;
+        archive.write("states", states_tensor);
+        archive.write("actions", actions_tensor);
+        archive.write("imitate", imitation_tensor);
+        archive.save_to(path);
+
+
+        log("Episode saved: " + path + " (" + std::to_string(states_tensor.size(0)) + " frames)");
+        log("frequency:");
+        log(freq_ / states_tensor.size(1));
+
+        episode_count_++;
+
+        freq_ = torch::zeros({num_actions_});
+
+        // Clean up
+        episode_states_.clear();
+        episode_actions_.clear();
+        episode_imitate_.clear();
+        
+        if (inference_mode_)
+            model_->reset_memory();   // reset sliding window for next episode
+        std::cout << "Episode saved!" << std::endl;
+    }
+
+    // ---------------------------------------------------------------
+    //  logging helper
+    // ---------------------------------------------------------------
+    template<typename T>
+    void log(const T& msg) {
+        if (log_file_.is_open()) {
+            log_file_ << msg << std::endl;
+            log_file_.flush();
+        }
+    }
+
+    int64_t param_count() {
+        int64_t n = 0;
+        for (const auto& p : model_->parameters())
+            n += p.numel();
+        return n;
+    }
+
+    // ---------------------------------------------------------------
+    //  member variables
+    // ---------------------------------------------------------------
+    bool inference_mode_, data_gathering_mode_;
+    bool warmup_finished_ = false, flip_ = false;
+    int T_;
+    int cnt_ = 0, cnt_warm_up_ = 0;
+    static constexpr int T_initial_ = 512, T_warm_up_ = 128;
+    static constexpr int num_actions_ = 7, num_channels_ = 32, grid_size_ = 31;
+
+    int failures[3] = {}, overalls_failures = 0, total_actions = 0;
+    int success[3] = {}, overalls_success = 0;
+
+    std::string model_dir_, dataset_dir_;
+    PlayerPolicyNet model_{nullptr};
+
+    torch::Tensor prev_action_, freq_;
+    std::vector<torch::Tensor> episode_states_;   // raw observations [1,C,H,W] each step
+    std::vector<torch::Tensor> episode_actions_, episode_imitate_;  // action/imitate tensors [1]
+
+    int episode_count_ = 0;
+    std::ofstream log_file_;
+};

@@ -1,0 +1,53 @@
+# bots/bot-ppo/config.txt — optional run-time overrides (no recompilation needed).
+# Syntax:  key = value      '#' starts a comment.   Unknown keys are reported in agent_log.log.
+# Every key below is shown with its DEFAULT; uncomment a line to change it.
+
+# ── PPO ────────────────────────────────────────────
+# ppo.rollout_len     = 512
+# ppo.min_train_steps = 64
+# ppo.num_epochs      = 4
+# ppo.gamma           = 0.99
+# ppo.gae_lambda      = 0.95
+# ppo.lr              = 0.0003
+# ppo.ppo_clip        = 0.2
+# ppo.entropy_coef    = 0.02
+# ppo.adv_std_floor   = 0.1      # advantages / max(std, floor)
+# ppo.bc_coef         = 1.0      # imitation-loss weight at the start (teacher = scripted policy in Custom.hpp)
+# ppo.bc_floor        = 0.05
+# ppo.bc_decay_updates = 150     # updates until the teacher weight/mixing reach floor / 0
+# ppo.expert_mix      = 0.5      # initial probability of EXECUTING the teacher's action (0 = labels only)
+# ppo.value_coef      = 0.5
+# ppo.max_grad_norm   = 0.5
+# ppo.target_kl       = 0.03
+# ppo.normalize_adv   = 1
+# ppo.deterministic_eval = 0
+# ppo.seed            = 0
+# ppo.value_norm      = 1        # PopArt value normalisation
+# ppo.value_norm_beta = 0.1
+# ppo.value_sigma_min = 0.01
+# ppo.save_every_updates = 10    # 0 = never (extra checkpoints/model_u<k>.pt)
+# ppo.save_every_episodes = 20   # headless batch runs: disk write every k games and at exit
+# ppo.stats_csv       = bots/bot-ppo/backup/training_stats.csv
+# ppo.metrics_csv     = bots/bot-ppo/backup/metrics.csv
+
+# ── Reward shaping ─────────────────────────────────
+# shaping.kill_bonus      = 1.0
+# shaping.death_penalty   = 1.0
+# shaping.area_scale      = 0.005
+# shaping.w_hp            = 0.5
+# shaping.w_stamina       = 0.2
+# shaping.w_damage        = 0.3
+# shaping.dealt_potential = 0.5
+# shaping.potential_cap   = 3.0
+# shaping.approach_potential = 0.10   # reward for walking towards the nearest enemy (potential-based)
+# shaping.aim_potential      = 0.15   # reward for having an enemy in the line of fire (potential-based)
+# shaping.view_radius        = 15
+# shaping.terminal_potential_zero = 1
+# shaping.reward_clip     = 2.0
+# shaping.hp_ref          = 1000
+# shaping.stamina_ref     = 1000
+# shaping.damage_ref      = 200
+# shaping.enemy_hp_ref    = 1000
+# shaping.norm_cap        = 1.5
+ppo.deterministic_eval = 1
+ppo.deterministic_eval = 1

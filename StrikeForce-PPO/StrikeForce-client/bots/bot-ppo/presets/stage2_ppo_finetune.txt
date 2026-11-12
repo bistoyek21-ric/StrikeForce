@@ -1,0 +1,7 @@
+# PRESET stage2_ppo_finetune — PPO on top of a stage-1 checkpoint, teacher only as a constant anchor (lambda = 0.3), never executed.
+ppo.policy_coef = 1
+ppo.bc_coef = 1
+ppo.bc_floor = 0.3
+ppo.bc_decay_updates = 0
+ppo.expert_mix = 0
+ppo.entropy_coef = 0.02

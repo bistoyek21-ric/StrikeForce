@@ -1,0 +1,10 @@
+# PRESET stage1_imitation — pure imitation of the scripted teacher (DAgger): the PPO policy loss is switched OFF.
+# Purpose: prove that the real network can imitate the teacher BEFORE any RL is added.
+# Pass criterion (derived from a small offline imitator, see docs section 9): the FROZEN, STOCHASTIC policy reaches
+# clearly more than 5 kills / 1000 steps in Timer L1 (random play: 1.2, offline imitator: 7.1, teacher: 43).
+ppo.policy_coef = 0
+ppo.bc_coef = 1
+ppo.bc_floor = 1
+ppo.bc_decay_updates = 1000000
+ppo.expert_mix = 0.3
+ppo.entropy_coef = 0

@@ -75,7 +75,7 @@ public:
 sf::ConvexShape createTriangle(int direction, sf::FloatRect bounds, sf::Color fillColor, float x, float y){
     sf::ConvexShape triangle(3);
     triangle.setFillColor(fillColor);
-    float w = bounds.width, h = bounds.height;
+    float w = bounds.size.x, h = bounds.size.y;
     switch(direction){
         case 1:
             triangle.setPoint(0, sf::Vector2f(0, 0));
@@ -100,7 +100,7 @@ sf::ConvexShape createTriangle(int direction, sf::FloatRect bounds, sf::Color fi
         default:
             break;
     }
-    triangle.setPosition(x + bounds.left, y + bounds.top);
+    triangle.setPosition(sf::Vector2f(x + bounds.position.x, y + bounds.position.y));
     return triangle;
 }
 
@@ -130,7 +130,7 @@ private:
     float startX = 5.f;
     float startY = 5.f;
 
-    sf::RenderWindow* window;
+    sf::RenderWindow* window = nullptr;
 
     sf::Color ansiColor(int code, bool isForeground){
         switch(code){
@@ -155,14 +155,14 @@ private:
     }
 
     void renderLoop(){
-        sf::RenderWindow w(sf::VideoMode(W, H), "StrikeForce");
+        sf::RenderWindow w(sf::VideoMode({W, H}), "StrikeForce");
         window = &w;
         window->setFramerateLimit(100);
         while(window->isOpen() && running){
-            sf::Event event;
-            while(window->pollEvent(event))
-                if(event.type == sf::Event::Closed)
+            while(const std::optional event = window->pollEvent()){
+                if(event->is<sf::Event::Closed>())
                     window->close();
+            }
             std::unique_lock lock(mtx);
             cv.wait_for(lock, std::chrono::milliseconds(25));
             if(clearRequested){
@@ -177,16 +177,16 @@ private:
             float yOffset = startY;
             for(const auto& entry: buffer){
                 float xOffset = startX;
-                for(int i = 0; i < entry.text.size(); ++i){
+                for(size_t i = 0; i < entry.text.size(); ++i){
                     char c = entry.text[i];
                     std::string s; s.push_back(c);
-                    sf::Text text(s, font, charSize);
+                    sf::Text text(font, s, charSize);
                     text.setFillColor(entry.textColor[i]);
-                    text.setPosition(xOffset, yOffset);
+                    text.setPosition(sf::Vector2f(xOffset, yOffset));
                     sf::FloatRect bounds = text.getLocalBounds();
-                    sf::RectangleShape bgRect(sf::Vector2f(bounds.width, bounds.height));
+                    sf::RectangleShape bgRect(sf::Vector2f(bounds.size.x, bounds.size.y));
                     bgRect.setFillColor(entry.bgColor[i]);
-                    bgRect.setPosition(xOffset + bounds.left, yOffset + bounds.top);
+                    bgRect.setPosition(sf::Vector2f(xOffset + bounds.position.x, yOffset + bounds.position.y));
                     if(1 <= s[0] && s[0] <= 4){
                         sf::ConvexShape triangle = createTriangle(s[0], bounds, entry.textColor[i], xOffset, yOffset);
                         window->draw(bgRect);
@@ -236,7 +236,7 @@ private:
 
 public:
     GraphicPrinter(unsigned int characterSize = 14, unsigned int H = 800, unsigned int W = 800) : charSize(characterSize), H(H), W(W){
-        if(!font.loadFromFile("./DejaVuSansMono.ttf")) {
+        if(!font.openFromFile("./DejaVuSansMono.ttf")) {
             std::cout << "press enter" << std::endl;
             std::string s;
             std::getline(std::cin, s);
@@ -254,7 +254,8 @@ public:
         cv.notify_all();
         if(renderThread.joinable())
             renderThread.join();
-        window->close();
+        if(window)
+            window->close();
     }
 
     void print(const std::string& str){

@@ -40,6 +40,7 @@ SOFTWARE.
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include <atomic>
 
 #if defined(HIGHLY_OPTIMIZED)
 
@@ -122,15 +123,14 @@ private:
 
     std::mutex mtx;
     std::condition_variable cv;
-    bool running = false;
+    std::atomic<bool> running = false;
+    std::atomic<bool> stopRequested = false;
     std::thread renderThread;
     bool clearRequested = false;
 
     float lineSpacing = 1.2f;
     float startX = 5.f;
     float startY = 5.f;
-
-    sf::RenderWindow* window = nullptr;
 
     sf::Color ansiColor(int code, bool isForeground){
         switch(code){
@@ -155,25 +155,34 @@ private:
     }
 
     void renderLoop(){
-        sf::RenderWindow w(sf::VideoMode({W, H}), "StrikeForce");
-        window = &w;
-        window->setFramerateLimit(100);
-        while(window->isOpen() && running){
-            while(const std::optional event = window->pollEvent()){
+        sf::RenderWindow window(sf::VideoMode({W, H}), "StrikeForce");
+        window.setFramerateLimit(100);
+        while(window.isOpen() && running){
+            while(const std::optional event = window.pollEvent()){
                 if(event->is<sf::Event::Closed>())
-                    window->close();
+                    window.close();
             }
-            std::unique_lock lock(mtx);
-            cv.wait_for(lock, std::chrono::milliseconds(25));
-            if(clearRequested){
-                buffer.clear();
-                clearRequested = false;
+            if(stopRequested.load(std::memory_order_acquire)){
+                window.close();
+                break;
             }
-            while(!printQueue.empty()){
-                parsePrint(printQueue.front());
-                printQueue.pop();
+            {
+                std::unique_lock lock(mtx);
+                cv.wait_for(lock, std::chrono::milliseconds(25));
+                if(clearRequested){
+                    buffer.clear();
+                    clearRequested = false;
+                }
+                while(!printQueue.empty()){
+                    parsePrint(printQueue.front());
+                    printQueue.pop();
+                }
             }
-            window->clear(sf::Color::Black);
+            if(stopRequested.load(std::memory_order_acquire)){
+                window.close();
+                break;
+            }
+            window.clear(sf::Color::Black);
             float yOffset = startY;
             for(const auto& entry: buffer){
                 float xOffset = startX;
@@ -189,18 +198,18 @@ private:
                     bgRect.setPosition(sf::Vector2f(xOffset + bounds.position.x, yOffset + bounds.position.y));
                     if(1 <= s[0] && s[0] <= 4){
                         sf::ConvexShape triangle = createTriangle(s[0], bounds, entry.textColor[i], xOffset, yOffset);
-                        window->draw(bgRect);
-                        window->draw(triangle);
+                        window.draw(bgRect);
+                        window.draw(triangle);
                     }
                     else{
-                        window->draw(bgRect);
-                        window->draw(text);
+                        window.draw(bgRect);
+                        window.draw(text);
                     }
                     xOffset += charSize * lineSpacing / 2;
                 }
                 yOffset += charSize * lineSpacing;
             }
-            window->display();
+            window.display();
         }
     }
 
@@ -244,18 +253,18 @@ public:
     }
 
     void start(){
+        stopRequested = false;
         running = true;
         renderThread = std::thread(&GraphicPrinter::renderLoop, this);
     }
 
     void stop(){
         cls();
+        stopRequested.store(true, std::memory_order_release);
         running = false;
         cv.notify_all();
         if(renderThread.joinable())
             renderThread.join();
-        if(window)
-            window->close();
     }
 
     void print(const std::string& str){

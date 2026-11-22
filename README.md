@@ -303,11 +303,9 @@ Edit `selected_custom.hpp`:
 ### Step 5: Compile & Test
 
 ```bash
-g++ -std=c++17 main.cpp -o StrikeForce \
-    -lsfml-graphics -lsfml-window -lsfml-system \
-    -ltorch -ltorch_cpu -lc10
-
-./StrikeForce
+g++ -std=c++17 main.cpp -o app \
+    -ltorch -ltorch_cpu -ltorch_cuda -lc10 -lc10_cuda \
+    -lsfml-graphics -lsfml-window -lsfml-system && ./app
 # -lws_32 in windows is required
 ```
 
@@ -467,10 +465,10 @@ std::vector<int> actions;   // Action history
 ### Hosting a Match Server
 
 ```bash
-cd StrikeForce-server
+cd ../StrikeForce-server
 g++ -std=c++17 server.cpp -pthread -ltbb -o app_server
 ./app_server
-# in some settings -ltbb is not nessecary and in windows -lws_32 is required
+# in some settings -ltbb is not needed and in windows -lws_32 is required
 ```
 
 **Configuration:**
@@ -517,6 +515,7 @@ The API server (`server.py`) provides:
 ### Setup
 
 ```bash
+cd ../
 git clone https://github.com/bistoyek21-ric/StrikeForceAPI.git
 cd StrikeForceAPI
 pip install flask pycryptodome

@@ -24,6 +24,8 @@ SOFTWARE.
 */
 #include "Character.hpp"
 
+int constexpr MAX_SEED = 64;
+
 int SEED = 0;
 
 int rand_(){
@@ -1843,7 +1845,7 @@ namespace Environment::Field{
 		if(using_an_agent && !replay_mode)
 			prepare(Environment::Character::me);
 		#if defined(DATA_GATHERING_MODE)
-		if (SEED == 64)
+		if (SEED == MAX_SEED)
 			exit(0);
 		int seed = SEED;
 		++SEED;
